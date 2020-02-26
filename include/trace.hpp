@@ -234,6 +234,9 @@ private:
   TraceDqr::DQErr parseDataAcquisition(NexusMessage &nm,Analytics &analytics);
   TraceDqr::DQErr parseOwnershipTrace(NexusMessage &nm,Analytics &analytics);
   TraceDqr::DQErr parseError(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseIndirectHistory(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseIndirectHistoryWS(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseResourceFull(NexusMessage &nm,Analytics &analytics);
 };
 
 // class Disassembler: class to help in the dissasemblhy of instrucitons

@@ -52,6 +52,7 @@ public:
 
   typedef uint64_t ADDRESS;
   typedef uint64_t TIMESTAMP;
+  typedef int RCode;
 
   enum {
 	TRACE_HAVE_INSTINFO = 0x01,
@@ -100,8 +101,8 @@ public:
   	TCODE_AUXACCESS_WRITENEXT     = 25,
   	TCODE_AUXACCESS_RESPONSE      = 26,
   	TCODE_RESURCEFULL             = 27,
-  	TCODE_INDIRECTBRANCHHISOTRY   = 28,
-  	TCODE_INDIRECTBRANCHHISORY_WS = 29,
+  	TCODE_INDIRECTBRANCHHISTORY   = 28,
+  	TCODE_INDIRECTBRANCHHISTORY_WS = 29,
   	TCODE_REPEATBRANCH            = 30,
   	TCODE_REPEATINSTRUCITON       = 31,
   	TCODE_REPEATSINSTURCIONT_WS   = 32,
@@ -241,14 +242,14 @@ public:
 
 	static uint32_t targetFrequency;
 
-	int        	   msgNum;
+	int                 msgNum;
 	TraceDqr::TCode     tcode;
-    bool       	   haveTimestamp;
+    bool       	        haveTimestamp;
     TraceDqr::TIMESTAMP timestamp;
     TraceDqr::ADDRESS   currentAddress;
     TraceDqr::TIMESTAMP time;
 
-    uint8_t        coreId;
+    uint8_t             coreId;
 
     union {
     	struct {
@@ -272,6 +273,27 @@ public:
     	} indirectBranchWS;
     	struct {
     		int             i_cnt;
+    		TraceDqr::ADDRESS    u_addr;
+    		TraceDqr::BType      b_type;
+    		uint64_t		history;
+    	} indirectHistory;
+    	struct {
+    		int             i_cnt;
+    		TraceDqr::ADDRESS    f_addr;
+    		TraceDqr::BType      b_type;
+    		uint64_t		history;
+    		TraceDqr::SyncReason sync;
+    	} indirectHistoryWS;
+    	struct {
+    		TraceDqr::RCode rCode;
+    		union {
+    			int i_cnt;
+    			uint64_t history;
+    			int count;
+    		};
+    	} resourceFull;
+    	struct {
+    		int             i_cnt;
     		TraceDqr::ADDRESS    f_addr;
     		TraceDqr::SyncReason sync;
     	} sync;
@@ -279,6 +301,7 @@ public:
     		uint8_t etype;
     	} error;
     	struct {
+    		uint64_t history;
     		int     i_cnt;
     		uint8_t cdf;
     		uint8_t evcode;
@@ -308,6 +331,10 @@ public:
 	uint32_t getAddr();
 	uint32_t getIdTag();
 	uint32_t getProcess();
+	uint32_t getRCode();
+	uint64_t getRData();
+	uint32_t getCount();
+	uint64_t getHistory();
 };
 
 #ifdef SWIG
@@ -317,7 +344,7 @@ public:
 class Analytics {
 public:
 	Analytics();
-	TraceDqr::DQErr updateTraceInfo(uint32_t core_id,TraceDqr::TCode tcode,uint32_t bits,uint32_t meso_bits,uint32_t ts_bits,uint32_t addr_bits);
+	TraceDqr::DQErr updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32_t meso_bits,uint32_t ts_bits,uint32_t addr_bits);
 	TraceDqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize);
 	int currentTraceMsgNum() { return num_trace_msgs_all_cores; }
 	void setSrcBits(int sbits) { srcBits = sbits; }
@@ -354,6 +381,9 @@ private:
 		uint32_t num_trace_dataacq;
 		uint32_t num_trace_dbranchws;
 		uint32_t num_trace_ibranchws;
+		uint32_t num_trace_ihistory;
+		uint32_t num_trace_ihistoryws;
+		uint32_t num_trace_resourcefull;
 		uint32_t num_trace_correlation;
 		uint32_t num_trace_auxaccesswrite;
 		uint32_t num_trace_ownership;
@@ -370,6 +400,9 @@ private:
 		uint32_t trace_bits_dataacq;
 		uint32_t trace_bits_dbranchws;
 		uint32_t trace_bits_ibranchws;
+		uint32_t trace_bits_ihistory;
+		uint32_t trace_bits_ihistoryws;
+		uint32_t trace_bits_resourcefull;
 		uint32_t trace_bits_correlation;
 		uint32_t trace_bits_auxaccesswrite;
 		uint32_t trace_bits_ownership;
@@ -378,6 +411,11 @@ private:
 		uint32_t num_trace_ts;
 		uint32_t num_trace_uaddr;
 		uint32_t num_trace_faddr;
+		uint32_t num_trace_ihistory_taken_branches;
+		uint32_t num_trace_ihistory_nottaken_branches;
+		uint32_t num_trace_resourcefull_i_cnt;
+		uint32_t num_trace_resourcefull_hist;
+		uint32_t num_trace_resourcefull_count;
 
 		uint32_t trace_bits_ts;
 		uint32_t trace_bits_ts_max;
@@ -390,6 +428,8 @@ private:
 		uint32_t trace_bits_faddr;
 		uint32_t trace_bits_faddr_max;
 		uint32_t trace_bits_faddr_min;
+
+		uint32_t trace_bits_hist;
 	} core[DQR_MAXCORES];
 };
 
