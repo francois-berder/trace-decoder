@@ -1564,51 +1564,102 @@ proc readSRAMData {core} {
 }
 
 proc writeSRAM {core file} {
-  set fp [open "$file" wb]
+  if {$file == "stdout"} {
+    set tracewp [gettracewp $core]
 
-  set tracewp [gettracewp $core]
+    if {($tracewp & 1) == 0 } { ;# buffer has not wrapped
+      set tracebegin 0
+      set traceend $tracewp
 
-  if {($tracewp & 1) == 0 } { ;# buffer has not wrapped
-    set tracebegin 0
-    set traceend $tracewp
+      echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
 
-    echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
+      setreadptr $core 0
 
-    setreadptr $core 0
+      set f ""
 
-    for {set i 0} {$i < $traceend} {incr i 4} {
-      pack w [eval readSRAMData $core] -intle 32
-      puts -nonewline $fp $w
+      for {set i 0} {$i < $traceend} {incr i 4} {
+        set w [format %08x [eval readSRAMData $core]]
+	append f $w
+      }
+    } else {
+      echo "Trace wrapped"
+      set tracebegin [expr $tracewp & 0xfffffffe]
+      set traceend [getTraceBufferSize $core]
+
+      echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
+
+      setreadptr $core $tracebegin
+
+      set f ""
+
+      for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+        set w [format %08x [eval readSRAMData $core]]
+	append f $w
+      }
+
+      set tracebegin 0
+      set traceend [expr $tracewp & 0xfffffffe]
+
+      echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+
+      setreadptr $core 0
+
+      for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+        set w [format %08x [eval readSRAMData $core]]
+	append f $w
+      }
     }
+
+    riscv set_prefer_sba off
+
+    return $f
   } else {
-    echo "Trace wrapped"
-    set tracebegin [expr $tracewp & 0xfffffffe]
-    set traceend [getTraceBufferSize $core]
+      set fp [open "$file" wb]
 
-    echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
+      set tracewp [gettracewp $core]
 
-    setreadptr $core $tracebegin
+      if {($tracewp & 1) == 0 } { ;# buffer has not wrapped
+        set tracebegin 0
+        set traceend $tracewp
 
-    for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-      pack w [eval readSRAMData $core] -intle 32
-      puts -nonewline $fp $w
+        echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
+
+        setreadptr $core 0
+
+        for {set i 0} {$i < $traceend} {incr i 4} {
+          pack w [eval readSRAMData $core] -intle 32
+          puts -nonewline $fp $w
+        }
+      } else {
+        echo "Trace wrapped"
+        set tracebegin [expr $tracewp & 0xfffffffe]
+        set traceend [getTraceBufferSize $core]
+
+        echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
+
+        setreadptr $core $tracebegin
+
+        for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+          pack w [eval readSRAMData $core] -intle 32
+          puts -nonewline $fp $w
+        }
+
+        set tracebegin 0
+        set traceend [expr $tracewp & 0xfffffffe]
+
+        echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+
+        setreadptr $core 0
+
+        for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+          pack w [eval readSRAMData $core] -intle 32
+          puts -nonewline $fp $w
+        }
     }
 
-    set tracebegin 0
-    set traceend [expr $tracewp & 0xfffffffe]
-
-    echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
-
-    setreadptr $core 0
-
-    for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-      pack w [eval readSRAMData $core] -intle 32
-      puts -nonewline $fp $w
-    }
+    close $fp
+    riscv set_prefer_sba off
   }
-
-  close $fp
-  riscv set_prefer_sba off
 }
 
 proc writeSBA {core file} {
@@ -1669,20 +1720,8 @@ proc wtb {{file "trace.rtd"}} {
   if {$has_funnel} {
     set s [getSink "funnel"]
     switch [string toupper $s] {
-      "SRAM" { writeSRAM "funnel" $file }
-      "SBA" { writeSBA "funnel" $file }
-    }
-
-    set coreList [parseCoreList "all"]
-
-    foreach core $coreList {
-      set fn $file.$core
-
-      set s [getSink "funnel"]
-      switch [string toupper $s] {
-        "SRAM" { writeSRAM $core $fn }
-        "SBA" { writeSBA $core $fn }
-      }
+      "SRAM" { set f [writeSRAM "funnel" $file]}
+      "SBA" { set f [writeSBA "funnel" $file]}
     }
   } else {
     set coreList [parseCoreList "all"]
@@ -1697,9 +1736,12 @@ proc wtb {{file "trace.rtd"}} {
       }
       
       switch [string toupper $s] {
-      "SRAM" { writeSRAM $core $fn}
-      "SBA" { writeSBA $core $fn }
+      "SRAM" { set f [writeSRAM $core $fn]}
+      "SBA" { set f [writeSBA $core $fn]}
       }
+    }
+    if {$file == "stdout"} {
+      return $f
     }
   }
 }
