@@ -41,9 +41,9 @@ int Trace::decodeInstructionSize(uint32_t inst, int &inst_size)
   return disassembler->decodeInstructionSize(inst,inst_size);
 }
 
-int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
-	return disassembler->decodeInstruction(instruction,inst_size,inst_type,immeadiate,is_branch);
+	return disassembler->decodeInstruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
 }
 
 Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
@@ -150,12 +150,10 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 	currentAddress[i] = 0;
   }
 
-  for (int i = 0; (size_t)i < sizeof i_cnt / sizeof i_cnt[0]; i++ ) {
-	i_cnt[i] = 0;
-  }
+  counts = new Count [DQR_MAXCORES];
 
   for (int i = 0; (size_t)i < sizeof state / sizeof state[0]; i++ ) {
-	state[i] = TRACE_STATE_GETFIRSTYNCMSG;
+	state[i] = TRACE_STATE_GETFIRSTSYNCMSG;
   }
 
   readNewTraceMessage = true;
@@ -219,6 +217,11 @@ Trace::~Trace()
 	if (itcPrint  != nullptr) {
 		delete itcPrint;
 		itcPrint = nullptr;
+	}
+
+	if (counts != nullptr) {
+		delete [] counts;
+		counts = nullptr;
 	}
 }
 
@@ -308,6 +311,14 @@ TraceDqr::ADDRESS Trace::computeAddress()
 	case TraceDqr::TCODE_WATCHPOINT:
 		break;
 	case TraceDqr::TCODE_CORRELATION:
+		break;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		currentAddress[currentCore] = currentAddress[currentCore] ^ (nm.indirectHistory.u_addr << 1);	// note - this is the next address!
+		break;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		currentAddress[currentCore] = nm.indirectHistoryWS.f_addr << 1;
+		break;
+	case TraceDqr::TCODE_RESOURCEFULL:
 		break;
 	default:
 		break;
@@ -475,6 +486,299 @@ std::string Trace::flushITCPrintStr(int core, bool &haveData,double &startTime,d
 	return s;
 }
 
+// this function takes the starting address and runs one instruction only!!
+// The result is the address it stops at. It also consumes the counts (i-cnt,
+// history, taken, not-taken) when appropriate!
+
+TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc)
+{
+	TraceDqr::CountType ct;
+	uint32_t inst;
+	int inst_size;
+	TraceDqr::InstType inst_type;
+	int32_t immediate;
+	bool isBranch;
+	int rc;
+	TraceDqr::Reg rs1;
+	TraceDqr::Reg rd;
+	bool isTaken;
+
+	status = elfReader->getInstructionByAddress(addr,inst);
+	if (status != TraceDqr::DQERR_OK) {
+		printf("Error: nextAddr(): getInstructionByAddress() failed\n");
+
+		printf("Addr: %08x\n",addr);
+
+		return status;
+	}
+
+	// figure out how big the instruction is
+
+	rc = decodeInstruction(inst,inst_size,inst_type,rs1,rd,immediate,isBranch);
+	if (rc != 0) {
+		printf("Error: nextAddr(): Cannot decode instruction %04x\n",inst);
+
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	switch (inst_type) {
+	case TraceDqr::INST_UNKNOWN:
+		pc = addr + inst_size/8;
+		break;
+	case TraceDqr::INST_JAL:
+		// rd = pc+4 (rd can be r0)
+		// pc = pc + (sign extended immediate offset) * 2
+		// plan unconditional jumps use rd -> r0
+		// inferrable
+		// unconditional
+
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) {
+			counts->push(core,addr + inst_size/8);
+		}
+
+		pc = addr + immediate * 2;
+		break;
+	case TraceDqr::INST_JALR:
+		// rd = pc+4 (rd can be r0)
+		// pc = pc + ((sign extended immediate offset) + rs) & 0xffe
+		// plain unconditional jumps use rd -> r0
+		// not inferrable
+		// unconditional
+
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) {
+			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) {
+				counts->push(core,addr+inst_size/8);
+				pc = -1;
+			}
+			else if (rd != rs1) {
+				pc = counts->pop(core);
+				counts->push(core,addr+inst_size/8);
+			}
+			else {
+				counts->push(core,addr+inst_size/8);
+				pc = -1;
+			}
+		}
+		else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+			pc = counts->pop(core);
+		}
+		else {
+			pc = -1;
+		}
+		break;
+	case TraceDqr::INST_BEQ:
+	case TraceDqr::INST_BNE:
+	case TraceDqr::INST_BLT:
+	case TraceDqr::INST_BGE:
+	case TraceDqr::INST_BLTU:
+	case TraceDqr::INST_BGEU:
+	case TraceDqr::INST_C_BEQZ:
+	case TraceDqr::INST_C_BNEZ:
+		// pc = pc + (sign extend immediate offset) * 2 (BLTU and BGEU are not sign extended)
+		// inferrable conditional
+
+		ct = counts->getCurrentCountType(core);
+		switch (ct) {
+		case TraceDqr::COUNTTYPE_none:
+			printf("Error: nextAddr(): instruction counts consumed\n");
+
+			return TraceDqr::DQERR_ERR;
+		case TraceDqr::COUNTTYPE_i_cnt:
+			// don't know if the branch is taken or not, so we don't know the next addr
+			pc = -1;
+			break;
+		case TraceDqr::COUNTTYPE_history:
+			//consume history bit here and set pc accordingly
+
+			rc = counts->consumeHistory(core,isTaken);
+			if ( rc != 0) {
+				printf("Error: nextAddr(): consumeHistory() failed\n");
+
+				status = TraceDqr::DQERR_ERR;
+
+				return status;
+			}
+
+			if (isTaken) {
+				pc = addr + immediate * 2;
+			}
+			else {
+				pc = addr + inst_size / 8;
+			}
+			break;
+		case TraceDqr::COUNTTYPE_taken:
+			rc = counts->consumeTakenCount(core);
+			if ( rc != 0) {
+				printf("Error: nextAddr(): consumeTakenCount() failed\n");
+
+				status = TraceDqr::DQERR_ERR;
+
+				return status;
+			}
+
+			pc = addr + immediate * 2;
+			break;
+		case TraceDqr::COUNTTYPE_notTaken:
+			rc = counts->consumeNotTakenCount(core);
+			if ( rc != 0) {
+				printf("Error: nextAddr(): consumeTakenCount() failed\n");
+
+				status = TraceDqr::DQERR_ERR;
+
+				return status;
+			}
+
+			pc = addr + immediate * 2;
+			break;
+		}
+		break;
+	case TraceDqr::INST_C_J:
+		// pc = pc + (signed extended immediate offset) * 2
+		// inferrable unconditional
+
+		pc = addr + immediate * 2;
+		break;
+	case TraceDqr::INST_C_JAL:
+		// x1 = pc + 2
+		// pc = pc + (signed extended immediate offset) * 2
+		// inferrable unconditional
+
+		counts->push(core,addr + inst_size/8);
+		pc = addr + immediate * 2;
+		break;
+	case TraceDqr::INST_C_JR:
+		// pc = pc + rs1
+		// not inferrable unconditional
+
+		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+			pc = counts->pop(core);
+		}
+		else {
+			pc = -1;
+		}
+		break;
+	case TraceDqr::INST_C_JALR:
+		// x1 = pc + 2
+		// pc = pc + rs1
+		// not inferrble unconditional
+
+		if (rs1 == TraceDqr::REG_5) {
+			pc = counts->pop(core);
+			counts->push(core,addr+inst_size/8);
+		}
+		else {
+			counts->push(core,addr+inst_size/8);
+			pc = -1;
+		}
+		break;
+	default:
+		pc = addr + inst_size / 8;
+		break;
+	}
+
+	// Always consume i-cnt
+
+	rc = counts->consumeICnt(core,inst_size/8);
+	if ( rc != 0) {
+		printf("Error: nextAddr(): consumeICnt() failed\n");
+
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+// adjust pc, faddr, timestamp based on faddr, uaddr, timestamp, and message type.
+// Do not adjust counts! They are handled elsewhere
+
+TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts)
+{
+	switch (nm.tcode) {
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_CORRELATION:
+		if (nm.haveTimestamp) {
+			ts = ts ^ nm.timestamp;
+		}
+		break;
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+		if (nm.haveTimestamp) {
+			ts = ts ^ nm.timestamp;
+		}
+		faddr = faddr ^ (nm.indirectBranch.u_addr << 1);
+		pc = faddr;
+		break;
+	case TraceDqr::TCODE_SYNC:
+		if (nm.haveTimestamp) {
+			ts = nm.timestamp;
+		}
+		faddr = nm.sync.f_addr << 1;
+		pc = faddr;
+		break;
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+		if (nm.haveTimestamp) {
+			ts = nm.timestamp;
+		}
+		faddr = nm.directBranchWS.f_addr << 1;
+		pc = faddr;
+		break;
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		if (nm.haveTimestamp) {
+			ts = nm.timestamp;
+		}
+		faddr = nm.indirectBranchWS.f_addr << 1;
+		pc = faddr;
+		break;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		if (nm.haveTimestamp) {
+			ts = ts ^ nm.timestamp;
+		}
+		faddr = faddr ^ (nm.indirectHistory.u_addr << 1);
+		pc = faddr;
+		break;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		if (nm.haveTimestamp) {
+			ts = nm.timestamp;
+		}
+		faddr = nm.indirectHistoryWS.f_addr << 1;
+		pc = faddr;
+		break;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+	default:
+		printf("Error: Trace::processTraceMessage(): Unsupported TCODE\n");
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgInfo,Source *srcInfo,int *flags)
 {
 	TraceDqr::DQErr ec;
@@ -545,6 +849,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	assert(sfp != nullptr);
 
 	TraceDqr::DQErr rc;
+	TraceDqr::ADDRESS addr;
 
 //	printf("Instinfo: %08llx, MsgInfo: %08x, srcInfo: %08x\n",instInfo,msgInfo,srcInfo);
 
@@ -599,7 +904,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			if (startMessageNum <= 1) {
 				// if starting at beginning, just switch to normal state for starting
 
-				state[currentCore] = TRACE_STATE_GETFIRSTYNCMSG;
+				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 				break;
 			}
 
@@ -611,6 +916,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_SYNC:
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 				messageSync[currentCore]->msgs[0] = nm;
 				messageSync[currentCore]->index = 1;
 
@@ -623,6 +929,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH:
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+			case TraceDqr::TCODE_RESOURCEFULL:
 				if (messageSync[currentCore]->index == 0) {
 					if (nm.msgNum >= startMessageNum) {
 						// can't start at this trace message because we have not seen a sync yet
@@ -703,158 +1011,95 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			// compute address from trace message queued up in messageSync->msgs
 
-			for (int i = 0; i < messageSync[currentCore]->index; i++) {
-				switch (messageSync[currentCore]->msgs[i].tcode) {
-				case TraceDqr::TCODE_DIRECT_BRANCH:
-					// need to get the direct branch instruction so we can compute the next address.
-					// Instruction should be at currentAddress - 1 or -2, which is the last known address)
-					// plus the i-cnt in this trace message (i-cnt is the number of 16 byte blocks in this
-					// span of insturctions between last trace message and this trace message) - 1 if the
-					// last instruction in the block is 16 bits, or -2 if the last instruction is 32 bits.
-					// The problem is we don't know, and checking the length bits in the last two
-					// 16 bit words will not always work. So we just compute instruction sizes from
-					// the last known address to this trace message to find the last instruciton.
+			// first message should be a sync type. If not, error!
 
-					TraceDqr::ADDRESS addr;
+			if (messageSync[currentCore]->index <= 0) {
+				printf("Error: nextInstruction(): state TRACE_STATE_COMPUTESTARTGINGADDRESS has no trace messages\n");
 
-					addr = currentAddress[currentCore];
+				state[currentCore] = TRACE_STATE_ERROR;
 
-					i_cnt[currentCore] = messageSync[currentCore]->msgs[i].directBranch.i_cnt;
+				status = TraceDqr::DQERR_ERR;
+				return status;
+			}
 
-					if (messageSync[currentCore]->msgs[i].haveTimestamp) {
-						lastTime[currentCore] = lastTime[currentCore] ^ messageSync[currentCore]->msgs[i].timestamp;
-					}
+			// first message should be some kind of sync message
 
-					while (i_cnt[currentCore] > 0) {
-						status = elfReader->getInstructionByAddress(addr,inst);
-						if (status != TraceDqr::DQERR_OK) {
-							printf("Error: getInstructionByAddress failed\n");
+			lastFaddr[currentCore] = messageSync[currentCore]->msgs[0].getF_Addr() << 1;
+			if (lastFaddr[currentCore] == (TraceDqr::ADDRESS)(-1 << 1)) {
+				printf("Error: nextInstruction: state TRACE_STATE_COMPUTESTARTINGADDRESS: no starting F-ADDR for first trace message\n");
 
-							printf("Addr: %08x\n",addr);
+				state[currentCore] = TRACE_STATE_ERROR;
 
-							state[currentCore] = TRACE_STATE_ERROR;
+				status = TraceDqr::DQERR_ERR;
+				return status;
+			}
 
-							return status;
-						}
+			currentAddress[currentCore] = lastFaddr[currentCore];
 
-						// figure out how big the instruction is
+			if (messageSync[currentCore]->msgs[0].haveTimestamp) {
+				lastTime[currentCore] = messageSync[currentCore]->msgs[0].timestamp;
+			}
 
-						int rc;
+			// thow away all counts from the first trace message!! then use them starting with the second
 
-						rc = decodeInstructionSize(inst,inst_size);
-						if (rc != 0) {
-							printf("Error: Cann't decode size of instruction %04x\n",inst);
+			// start at one because we have already consumed 0 (its faddr and timestamp are all we
+			// need).
 
-							state[currentCore] = TRACE_STATE_ERROR;
+			for (int i = 1; i < messageSync[currentCore]->index; i++) {
+				rc = counts->setCounts(&messageSync[currentCore]->msgs[i]);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: nextInstruction: state TRACE_STATE_COMPUTESTARTINGADDRESS: Count::seteCounts()\n");
 
-							status = TraceDqr::DQERR_ERR;
-							return status;
-						}
-
-						switch (inst_size) {
-						case 16:
-							i_cnt[currentCore] -= 1;
-							if (i_cnt[currentCore] > 0) {
-								addr += 2;
-							}
-							break;
-						case 32:
-							i_cnt[currentCore] -= 2;
-							if (i_cnt[currentCore] > 0) {
-								addr += 4;
-							}
-							break;
-						default:
-							printf("Error: unsupported instruction size: %d\n",inst_size);
-
-							state[currentCore] = TRACE_STATE_ERROR;
-
-							status = TraceDqr::DQERR_ERR;
-							return status;
-						}
-					}
-
-					decodeInstruction(inst,inst_size,inst_type,immeadiate,is_branch);
-
-					if (is_branch == false) {
-						status = TraceDqr::DQERR_ERR;
-
-						state[currentCore] = TRACE_STATE_ERROR;
-
-						return status;
-					}
-
-					switch (inst_type) {
-					case TraceDqr::INST_JAL:
-					case TraceDqr::INST_BEQ:
-					case TraceDqr::INST_BNE:
-					case TraceDqr::INST_BLT:
-					case TraceDqr::INST_BGE:
-					case TraceDqr::INST_BLTU:
-					case TraceDqr::INST_BGEU:
-					case TraceDqr::INST_C_J:
-					case TraceDqr::INST_C_JAL:
-					case TraceDqr::INST_C_BEQZ:
-					case TraceDqr::INST_C_BNEZ:
-						currentAddress[currentCore] = addr + immeadiate;
-						break;
-					default:
-						printf("Error: Bad instruction type in state TRACE_STATE_COMPUTESTARTINGADDRESS. TCODE_DIRECT_BRANCH: %d\n",inst_type);
-
-						state[currentCore] = TRACE_STATE_ERROR;
-						status = TraceDqr::DQERR_ERR;
-						return status;
-					}
-					break;
-				case TraceDqr::TCODE_INDIRECT_BRANCH:
-					lastFaddr[currentCore] = lastFaddr[currentCore] ^ (messageSync[currentCore]->msgs[i].indirectBranch.u_addr << 1);
-					currentAddress[currentCore] = lastFaddr[currentCore];
-					if (messageSync[currentCore]->msgs[i].haveTimestamp) {
-						lastTime[currentCore] = lastTime[currentCore] ^ messageSync[currentCore]->msgs[i].timestamp;
-					}
-					break;
-				case TraceDqr::TCODE_SYNC:
-					lastFaddr[currentCore] = messageSync[currentCore]->msgs[i].sync.f_addr << 1;
-					currentAddress[currentCore] = lastFaddr[currentCore];
-					if (messageSync[currentCore]->msgs[i].haveTimestamp) {
-						lastTime[currentCore] = messageSync[currentCore]->msgs[i].timestamp;
-					}
-					break;
-				case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-					lastFaddr[currentCore] = messageSync[currentCore]->msgs[i].directBranchWS.f_addr << 1;
-					currentAddress[currentCore] = lastFaddr[currentCore];
-					if (messageSync[currentCore]->msgs[i].haveTimestamp) {
-						lastTime[currentCore] = messageSync[currentCore]->msgs[i].timestamp;
-					}
-					break;
-				case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-					lastFaddr[currentCore] = messageSync[currentCore]->msgs[i].indirectBranchWS.f_addr << 1;
-					currentAddress[currentCore] = lastFaddr[currentCore];
-					if (messageSync[currentCore]->msgs[i].haveTimestamp) {
-						lastTime[currentCore] = messageSync[currentCore]->msgs[i].timestamp;
-					}
-					break;
-				case TraceDqr::TCODE_CORRELATION:
-					printf("Error: should never see this!!\n");
 					state[currentCore] = TRACE_STATE_ERROR;
 
-					status = TraceDqr::DQERR_ERR;
-					return status;
-				case TraceDqr::TCODE_AUXACCESS_WRITE:
-				case TraceDqr::TCODE_OWNERSHIP_TRACE:
-				case TraceDqr::TCODE_ERROR:
-					// just skip these for now. Later we will add additional support for them,
-					// such as handling the error or setting the process ID from the message
-					if (messageSync[currentCore]->msgs[i].haveTimestamp) {
-						lastTime[currentCore] = lastTime[currentCore] ^ messageSync[currentCore]->msgs[i].timestamp;
-					}
-					break;
-				default:
-					state[currentCore] = TRACE_STATE_ERROR;
+					status = rc;
 
-					status = TraceDqr::DQERR_ERR;
 					return status;
 				}
+
+				TraceDqr::ADDRESS currentPc = currentAddress[currentCore];
+				TraceDqr::ADDRESS newPc;
+
+				// now run through the code updating the pc until we consume all the counts for the current message
+
+				while (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
+					if (addr == (TraceDqr::ADDRESS)-1) {
+						printf("Error: NextInstruction(): state TRACE_STATE_COMPUTESTARTINGADDRESS: can't compute address\n");
+
+						status = TraceDqr::DQERR_ERR;
+
+						state[currentCore] = TRACE_STATE_ERROR;
+
+						return status;
+					}
+
+					rc = nextAddr(currentCore,currentPc,newPc);
+					if (newPc == (TraceDqr::ADDRESS)-1) {
+						if (counts->getCurrentCountType(currentCore != TraceDqr::COUNTTYPE_none)) {
+							printf("Error: NextInstruction(): state TRACE_STATE_COMPUTESTARTINGADDRESS: counts not consumed\n");
+
+							status = TraceDqr::DQERR_ERR;
+							state[currentCore] = TRACE_STATE_ERROR;
+							return status;
+						}
+					}
+					else {
+						currentPc = newPc;
+					}
+				}
+
+				// If needed, adjust pc based on u-addr/f-addr info for current trace message
+
+				rc = processTraceMessage(messageSync[currentCore]->msgs[i],currentPc,lastFaddr[currentCore],lastTime[currentCore]);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_COMPUTESTARTINGADDRESS: counts not consumed\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+					return status;
+				}
+
+				currentAddress[currentCore] = currentPc;
 			}
 
 			readNewTraceMessage = true;
@@ -873,7 +1118,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 			}
 			break;
-		case TRACE_STATE_GETFIRSTYNCMSG:
+		case TRACE_STATE_GETFIRSTSYNCMSG:
 //			printf("state TRACE_STATE_GETFIRSTSYNCMSG\n");
 
 			// read trace messages until a sync is found. Should be the first message normally
@@ -890,54 +1135,54 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			switch (nm.tcode) {
 			case TraceDqr::TCODE_SYNC:
-				nm.sync.i_cnt = 0; // just making sure on first sync message
-				lastFaddr[currentCore] = nm.sync.f_addr << 1;
-				currentAddress[currentCore] = lastFaddr[currentCore];
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = nm.timestamp;
-				}
-
-				readNewTraceMessage = true;
-				state[currentCore] = TRACE_STATE_GETSECONDMSG;
-				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-				nm.directBranchWS.i_cnt = 0; // just making sure on first sync message
-				lastFaddr[currentCore] = nm.directBranchWS.f_addr << 1;
-				currentAddress[currentCore] = lastFaddr[currentCore];
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = nm.timestamp;
-				}
-
-				readNewTraceMessage = true;
-				state[currentCore] = TRACE_STATE_GETSECONDMSG;
-				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-				nm.indirectBranchWS.i_cnt = 0; // just making sure on first sync message
-				lastFaddr[currentCore] = nm.indirectBranchWS.f_addr << 1;
-				currentAddress[currentCore] = lastFaddr[currentCore];
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = nm.timestamp;
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+					return status;
 				}
 
-				readNewTraceMessage = true;
 				state[currentCore] = TRACE_STATE_GETSECONDMSG;
 				break;
-			default:
-				// if we haven't found a sync message yet, keep the state the same so it will
-				// kepp looking for a sync. Could also set he process ID if seen and handle
-				// any TCODE_ERROR message
-
-				// until we find our first sync, we don't know the time (need a full timestamp)
-
-				readNewTraceMessage = true;
-
-				nm.timestamp = 0;
+			case TraceDqr::TCODE_OWNERSHIP_TRACE:
+			case TraceDqr::TCODE_DIRECT_BRANCH:
+			case TraceDqr::TCODE_INDIRECT_BRANCH:
+			case TraceDqr::TCODE_DATA_ACQUISITION:
+			case TraceDqr::TCODE_ERROR:
+			case TraceDqr::TCODE_CORRELATION:
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+			case TraceDqr::TCODE_RESOURCEFULL:
+				nm.timestamp = 0;	// don't start clock until we have a sync and a full time
 				lastTime[currentCore] = 0;
+				currentAddress[currentCore] = 0;
 				break;
+
+			case TraceDqr::TCODE_DEBUG_STATUS:
+			case TraceDqr::TCODE_DEVICE_ID:
+			case TraceDqr::TCODE_DATA_WRITE:
+			case TraceDqr::TCODE_DATA_READ:
+			case TraceDqr::TCODE_CORRECTION:
+			case TraceDqr::TCODE_DATA_WRITE_WS:
+			case TraceDqr::TCODE_DATA_READ_WS:
+			case TraceDqr::TCODE_WATCHPOINT:
+			default:
+				printf("Error: nextInstructin(): state TRACE_STATE_GETFIRSTSYNCMSG: unsupported or invalid TCODE\n");
+
+				state[currentCore] = TRACE_STATE_ERROR;
+				status = TraceDqr::DQERR_ERR;
+
+				return status;
 			}
 
+			readNewTraceMessage = true;
+
 			// here we return the trace messages before we have actually started tracing
-			// this could be at the start of a trace, or after leaving a trace bec ause of
+			// this could be at the start of a trace, or after leaving a trace because of
 			// a correlation message
 
 			if (msgInfo != nullptr) {
@@ -955,11 +1200,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		case TRACE_STATE_GETSECONDMSG:
 //			printf("state TRACE_STATE_GETSECONDMSG\n");
 
-			// only message with i-cnt will release from this state
+			// only message with i-cnt/hist/taken/notTaken will release from this state
 
-			// return any message without an i-cnt
+			// return any message without an i-cnt (or hist, taken/not taken)
 
-			// do not return message with i-cnt; process them when i-cnt expires
+			// do not return message with i-cnt/hist/taken/not taken; process them when counts expires
 
 			if ((endMessageNum != 0) && (nm.msgNum > endMessageNum)) {
 				printf("stopping at trace message %d\n",endMessageNum);
@@ -971,36 +1216,33 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			switch (nm.tcode) {
 			case TraceDqr::TCODE_SYNC:
-				i_cnt[currentCore] = nm.sync.i_cnt;
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-				i_cnt[currentCore] = nm.directBranchWS.i_cnt;
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-				i_cnt[currentCore] = nm.indirectBranchWS.i_cnt;
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH:
-				i_cnt[currentCore] = nm.directBranch.i_cnt;
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
-				i_cnt[currentCore] = nm.indirectBranch.i_cnt;
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
 			case TraceDqr::TCODE_CORRELATION:
-				i_cnt[currentCore] = nm.correlation.i_cnt;
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+			case TraceDqr::TCODE_RESOURCEFULL:
+				// don't update timestamp until messages are retired!
+
+				rc = counts->setCounts(&nm);
+				if (rc != TraceDqr::DQERR_OK) {
+					state[currentCore] = TRACE_STATE_ERROR;
+					status = rc;
+
+					return status;
+				}
+
 				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
 				break;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 			case TraceDqr::TCODE_ERROR:
-				// these message have no address or i.cnt info, so we still need to get
+				// these message have no address or count info, so we still need to get
 				// another message.
 
-				// might want to keep track of press, but will add that later
+				// might want to keep track of process, but will add that later
 
 				// for now, return message;
 
@@ -1031,124 +1273,33 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		case TRACE_STATE_RETIREMESSAGE:
 //			printf("state TRACE_STATE_RETIREMESSAGE\n");
 
-			// Process message being retired (currently in nm) i_cnt has gone to 0
+			// Process message being retired (currently in nm) i_cnt/taken/not taken/history has gone to 0
+			// compute next address
+
+//			set lastFaddr,currentAddress,lastTime.
+//			readNewTraceMessage = true;
+//			state = Trace_State_GetNextMsg;
+//			return messageInfo.
+
+			// retire message should be run anytime any count expires - i-cnt, history, taken, not taken
 
 			switch (nm.tcode) {
+			// sync type messages say where to set pc to
 			case TraceDqr::TCODE_SYNC:
-				lastFaddr[currentCore] = nm.sync.f_addr << 1;
-				currentAddress[currentCore] = lastFaddr[currentCore];
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = nm.timestamp;
-				}
-
-				if (msgInfo != nullptr) {
-					messageInfo = nm;
-					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = currentAddress[currentCore];
-
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
-						*msgInfo = &messageInfo;
-					}
-				}
-
-				readNewTraceMessage = true;
-				state[currentCore] = TRACE_STATE_GETNEXTMSG;
-				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-				lastFaddr[currentCore] = nm.directBranchWS.f_addr << 1;
-				currentAddress[currentCore] = lastFaddr[currentCore];
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = nm.timestamp;
-				}
-
-				if (msgInfo != nullptr) {
-					messageInfo = nm;
-					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = currentAddress[currentCore];
-
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
-						*msgInfo = &messageInfo;
-					}
-				}
-
-				readNewTraceMessage = true;
-				state[currentCore] = TRACE_STATE_GETNEXTMSG;
-				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-				lastFaddr[currentCore] = nm.indirectBranchWS.f_addr << 1;
-				currentAddress[currentCore] = lastFaddr[currentCore];
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = nm.timestamp;
-				}
-
-				if (msgInfo != nullptr) {
-					messageInfo = nm;
-					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = currentAddress[currentCore];
-
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
-						*msgInfo = &messageInfo;
-					}
-				}
-
-				readNewTraceMessage = true;
-				state[currentCore] = TRACE_STATE_GETNEXTMSG;
-				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH:
-				// note: inst is set in the state before this state (TRACE_STATE_GETNEXTINSTRUCTION)
-				// instr must be valid to get to this point, so use it for computing new address
-
-				decodeInstruction(inst,inst_size,inst_type,immeadiate,is_branch);
-
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = lastTime[currentCore] ^ nm.timestamp;
-				}
-
-				switch (inst_type) {
-				case TraceDqr::INST_JAL:
-				case TraceDqr::INST_BEQ:
-				case TraceDqr::INST_BNE:
-				case TraceDqr::INST_BLT:
-				case TraceDqr::INST_BGE:
-				case TraceDqr::INST_BLTU:
-				case TraceDqr::INST_BGEU:
-				case TraceDqr::INST_C_J:
-				case TraceDqr::INST_C_JAL:
-				case TraceDqr::INST_C_BEQZ:
-				case TraceDqr::INST_C_BNEZ:
-					currentAddress[currentCore] = currentAddress[currentCore] + immeadiate;
-
-					if (msgInfo != nullptr) {
-						messageInfo = nm;
-						messageInfo.time = lastTime[currentCore];
-						messageInfo.currentAddress = currentAddress[currentCore];
-
-						if (messageInfo.processITCPrintData(itcPrint) == false) {
-							*msgInfo = &messageInfo;
-						}
-					}
-
-					// Do not return info yet. Cycle again untill we fill in
-					// an inst data struct as well
-
-					break;
-				default:
-					printf("inst: %08x, size: %d, type: %d, imeadiate: %08x, is_branch: %d\n",inst,inst_size,inst_type,immeadiate,is_branch);
-					printf("Error: Bad instruction type in state TRACE_STATE_RETIREMESSAGE:TCODE_DIRECT_BRANCH: %d\n",inst_type);
-
-					state[currentCore] = TRACE_STATE_ERROR;
-					status = TraceDqr::DQERR_ERR;
-					return status;
-				}
-
-				readNewTraceMessage = true;
-				state[currentCore] = TRACE_STATE_GETNEXTMSG;
-				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
-				lastFaddr[currentCore] = lastFaddr[currentCore] ^ (nm.indirectBranch.u_addr << 1);
-				currentAddress[currentCore] = lastFaddr[currentCore];
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = lastTime[currentCore] ^ nm.timestamp;
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+			case TraceDqr::TCODE_RESOURCEFULL:
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_RETIREMESSAGE: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+					return status;
 				}
 
 				if (msgInfo != nullptr) {
@@ -1165,10 +1316,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_GETNEXTMSG;
 				break;
 			case TraceDqr::TCODE_CORRELATION:
-
 				// correlation has i_cnt, but no address info
-
-				// leaving trace mode - need to get next sync
 
 				if (nm.haveTimestamp) {
 					lastTime[currentCore] = lastTime[currentCore] ^ nm.timestamp;
@@ -1177,7 +1325,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
-//					messageInfo.currentAddress = currentAddress;
+
+					// leaving trace mode - addr should be last faddr + i_cnt *2
+
 					messageInfo.currentAddress = lastFaddr[currentCore] + nm.correlation.i_cnt*2;
 
 					if (messageInfo.processITCPrintData(itcPrint) == false) {
@@ -1186,7 +1336,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				readNewTraceMessage = true;
-				state[currentCore] = TRACE_STATE_GETFIRSTYNCMSG;
+
+				// leaving trace mode - need to get next sync
+
+				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 				break;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
@@ -1194,11 +1347,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// these messages have no address or i-cnt info and should have been
 				// instantly retired when they were read.
 
+
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
 				return status;
 			default:
-				printf("Error: bad tcode type in sate TRACE_STATE_GETNEXTMSG.TCODE_DIRECT_BRANCH\n");
+				printf("Error: bad tcode type in sate TRACE_STATE_GETNEXTMSG\n");
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
@@ -1210,7 +1364,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		case TRACE_STATE_GETNEXTMSG:
 //			printf("state TRACE_STATE_GETNEXTMSG\n");
 
-			// exit this state when message with i-cnt is read
+			// exit this state when message with i-cnt, history, taken, or not-taken is read
 
 			if ((endMessageNum != 0) && (nm.msgNum > endMessageNum)) {
 				printf("stopping at trace message %d\n",endMessageNum);
@@ -1222,27 +1376,25 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			switch (nm.tcode) {
 			case TraceDqr::TCODE_DIRECT_BRANCH:
-				i_cnt[currentCore] = nm.directBranch.i_cnt;
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
-				i_cnt[currentCore] = nm.indirectBranch.i_cnt;
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
 			case TraceDqr::TCODE_SYNC:
-				i_cnt[currentCore] = nm.sync.i_cnt;
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-				i_cnt[currentCore] = nm.directBranchWS.i_cnt;
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-				i_cnt[currentCore] = nm.indirectBranchWS.i_cnt;
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
 			case TraceDqr::TCODE_CORRELATION:
-				i_cnt[currentCore] = nm.correlation.i_cnt;
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+			case TraceDqr::TCODE_RESOURCEFULL:
+				rc = counts->setCounts(&nm);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: nextInstruction: state TRACE_STATE_COMPUTESTARTINGADDRESS: Count::seteCounts()\n");
+
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					status = rc;
+
+					return status;
+				}
+
 				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
 				break;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
@@ -1279,18 +1431,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		case TRACE_STATE_GETNEXTINSTRUCTION:
 //			printf("Trace::NextInstruction():TRACE_STATE_GETNEXTINSTRUCTION\n");
 
-			// get instruction at addr
-
-			TraceDqr::ADDRESS addr;
+			// NOte! should first process addr, and then compute next addr!!! If can't compute next addr,
+			// retire the message!!
 
 			addr = currentAddress[currentCore];
 
-//		    where to put file object? Should above be part of file object? Make a section object??
-
-//		    need to have a list of sections of code. lookup section based on address, use that section for symbol
-//			and line number lookup.
-//          also, read in file by line and keep an array of lines. Need to handle the #line and #file directrives
-//			check if objdump follows #line and #file preprocessor directives (sure it will)
+			uint32_t inst;
+			int inst_size;
 
 			status = elfReader->getInstructionByAddress(addr,inst);
 			if (status != TraceDqr::DQERR_OK) {
@@ -1307,6 +1454,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			int rc;
 
+			// what does this state do?
+			//	- adjust currentAddr to next instruction, taking jumps, etc
+			//	- update analytics
+			//	- set next state if counts expire
+			//	- return instInfo, srcInfo
+
 			rc = decodeInstructionSize(inst,inst_size);
 			if (rc != 0) {
 				printf("Error: Cann't decode size of instruction %04x\n",inst);
@@ -1322,28 +1475,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				return status;
 			}
 
-			switch (inst_size) {
-			case 16:
-				i_cnt[currentCore] -= 1;
-				if (i_cnt[currentCore] > 0) {
-					currentAddress[currentCore] += 2;
-				}
-				break;
-			case 32:
-				i_cnt[currentCore] -= 2;
-				if (i_cnt[currentCore] > 0) {
-					currentAddress[currentCore] += 4;
-				}
-				break;
-			default:
-				printf("Error: unsupported instruction size: %d\n",inst_size);
-				state[currentCore] = TRACE_STATE_ERROR;
-				status = TraceDqr::DQERR_ERR;
-				return status;
-			}
-
-			// calling disassemble() fills in the instructionInfo object
-
 			Disassemble(addr);
 
 			if (instInfo != nullptr) {
@@ -1356,16 +1487,27 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				*srcInfo = &sourceInfo;
 			}
 
-			if (i_cnt[currentCore] <= 0) {
-				// update addr based on saved nexus message
-				// get next nexus message
+			// compute next address (retire this instruction)
 
-				state[currentCore] = TRACE_STATE_RETIREMESSAGE;
+			rc = nextAddr(currentCore,currentAddress[currentCore],addr);
+			if (addr == (TraceDqr::ADDRESS)-1) {
+				if (counts->getCurrentCountType(currentCore != TraceDqr::COUNTTYPE_none)) {
+					// counts have expired. Read next trace message and update
 
-				// note: break below runs that state machine agaain and does not fall through
-				// to code below if ()
+					state[currentCore] = TRACE_STATE_RETIREMESSAGE;
+				}
+				else {
+					// something went wrong! This should never happen!
 
-				break;
+					printf("Error: nextInstructcion(): nextAddr() returned error\n");
+
+					state[currentCore] = TRACE_STATE_ERROR;
+					status = TraceDqr::DQERR_ERR;
+					return status;
+				}
+			}
+			else {
+				currentAddress[currentCore] = addr;
 			}
 
 			status = TraceDqr::DQERR_OK;

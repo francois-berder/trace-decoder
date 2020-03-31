@@ -100,12 +100,12 @@ public:
   	TCODE_AUXACCESS_READNEXT      = 24,
   	TCODE_AUXACCESS_WRITENEXT     = 25,
   	TCODE_AUXACCESS_RESPONSE      = 26,
-  	TCODE_RESURCEFULL             = 27,
+  	TCODE_RESOURCEFULL             = 27,
   	TCODE_INDIRECTBRANCHHISTORY   = 28,
   	TCODE_INDIRECTBRANCHHISTORY_WS = 29,
   	TCODE_REPEATBRANCH            = 30,
-  	TCODE_REPEATINSTRUCITON       = 31,
-  	TCODE_REPEATSINSTURCIONT_WS   = 32,
+  	TCODE_REPEATINSTRUCTION       = 31,
+  	TCODE_REPEATINSTRUCTION_WS   = 32,
   	TCODE_CORRELATION             = 33,
   	TCODE_INCIRCUITTRACE          = 34,
 
@@ -161,6 +161,50 @@ public:
 		INST_C_JALR,
 		INST_C_BEQZ,
 		INST_C_BNEZ,
+	};
+
+	enum CountType{
+		COUNTTYPE_none,
+		COUNTTYPE_i_cnt,
+		COUNTTYPE_history,
+		COUNTTYPE_taken,
+		COUNTTYPE_notTaken
+	};
+
+	enum Reg {
+		REG_0 = 0,
+		REG_1 = 1,
+		REG_2 = 2,
+		REG_3 = 3,
+		REG_4 = 4,
+		REG_5 = 5,
+		REG_6 = 6,
+		REG_7 = 7,
+		REG_8 = 8,
+		REG_9 = 9,
+		REG_10 = 10,
+		REG_11 = 11,
+		REG_12 = 12,
+		REG_13 = 13,
+		REG_14 = 14,
+		REG_15 = 15,
+		REG_16 = 16,
+		REG_17 = 17,
+		REG_18 = 18,
+		REG_19 = 19,
+		REG_20 = 20,
+		REG_21 = 21,
+		REG_22 = 22,
+		REG_23 = 23,
+		REG_24 = 24,
+		REG_25 = 25,
+		REG_26 = 26,
+		REG_27 = 27,
+		REG_28 = 28,
+		REG_29 = 29,
+		REG_30 = 30,
+		REG_31 = 31,
+		REG_unknown,
 	};
 };
 
@@ -289,7 +333,8 @@ public:
     		union {
     			int i_cnt;
     			uint64_t history;
-    			int count;
+    			int takenCount;
+    			int notTakenCount;
     		};
     	} resourceFull;
     	struct {
@@ -333,7 +378,6 @@ public:
 	uint32_t getProcess();
 	uint32_t getRCode();
 	uint64_t getRData();
-	uint32_t getCount();
 	uint64_t getHistory();
 };
 
@@ -481,7 +525,7 @@ public:
 
 private:
 	enum state {
-		TRACE_STATE_GETFIRSTYNCMSG,
+		TRACE_STATE_GETFIRSTSYNCMSG,
 		TRACE_STATE_GETSECONDMSG,
 		TRACE_STATE_GETSTARTTRACEMSG,
 		TRACE_STATE_COMPUTESTARTINGADDRESS,
@@ -492,15 +536,16 @@ private:
 		TRACE_STATE_ERROR
 	};
 
-	TraceDqr::DQErr       status;
+	TraceDqr::DQErr        status;
 	class SliceFileParser *sfp;
 	class ElfReader       *elfReader;
 	class Symtab          *symtab;
 	class Disassembler    *disassembler;
 	class ITCPrint        *itcPrint;
-	TraceDqr::ADDRESS     currentAddress[DQR_MAXCORES];
-	TraceDqr::ADDRESS	 lastFaddr[DQR_MAXCORES];
-	TraceDqr::TIMESTAMP   lastTime[DQR_MAXCORES];
+	TraceDqr::ADDRESS      currentAddress[DQR_MAXCORES];
+	TraceDqr::ADDRESS	   lastFaddr[DQR_MAXCORES];
+	TraceDqr::TIMESTAMP    lastTime[DQR_MAXCORES];
+	class Count           *counts;
 	enum state       state[DQR_MAXCORES];
 	bool             readNewTraceMessage;
 	int              currentCore;
@@ -522,20 +567,22 @@ private:
 
 	//	or maybe have this stuff in the nexus messages??
 
-	int i_cnt[DQR_MAXCORES];
+//	should this stuff be local? Do we need to remmember it?
 
-	uint32_t                inst = -1;
-	int                     inst_size = -1;
-	TraceDqr::InstType inst_type = TraceDqr::InstType::INST_UNKNOWN;
-	int32_t                 immeadiate = -1;
-	bool                    is_branch = false;
+//	uint32_t                inst = -1;
+//	int                     inst_size = -1;
+//	TraceDqr::InstType inst_type = TraceDqr::InstType::INST_UNKNOWN;
+//	int32_t                 immediate = -1;
+//	bool                    is_branch = false;
 
 	class NexusMessageSync *messageSync[DQR_MAXCORES];
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
-	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
+	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc);
 
 	TraceDqr::ADDRESS computeAddress();
+	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts);
 };
 
 #endif /* DQR_HPP_ */
