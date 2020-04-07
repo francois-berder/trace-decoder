@@ -503,6 +503,8 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	TraceDqr::Reg rd;
 	bool isTaken;
 
+	printf("Trace::nextAddr(core=%d,addr=%08x,pc=%08x)\n",core,addr,pc);
+
 	status = elfReader->getInstructionByAddress(addr,inst);
 	if (status != TraceDqr::DQERR_OK) {
 		printf("Error: nextAddr(): getInstructionByAddress() failed\n");
@@ -513,6 +515,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	}
 
 	// figure out how big the instruction is
+	// Note: immediate will already be adjusted - don't need to mult by 2 before adding to address
 
 	rc = decodeInstruction(inst,inst_size,inst_type,rs1,rd,immediate,isBranch);
 	if (rc != 0) {
@@ -523,29 +526,35 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		return status;
 	}
 
+	printf("nextAddr(): addr:%08x inst:%08x size:%d type:%d\n",addr,inst,inst_size,inst_type);
+
 	switch (inst_type) {
 	case TraceDqr::INST_UNKNOWN:
+		printf("nextAddr(): INST_UNKNOWN\n");
+
 		pc = addr + inst_size/8;
 		break;
 	case TraceDqr::INST_JAL:
+		printf("nextAddr(): INST_JAL\n");
+
 		// rd = pc+4 (rd can be r0)
-		// pc = pc + (sign extended immediate offset) * 2
+		// pc = pc + (sign extended immediate offset)
 		// plan unconditional jumps use rd -> r0
-		// inferrable
-		// unconditional
+		// inferrable unconditional
 
 		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) {
 			counts->push(core,addr + inst_size/8);
 		}
 
-		pc = addr + immediate * 2;
+		pc = addr + immediate;
 		break;
 	case TraceDqr::INST_JALR:
+		printf("nextAddr(): INST_JALR\n");
+
 		// rd = pc+4 (rd can be r0)
 		// pc = pc + ((sign extended immediate offset) + rs) & 0xffe
 		// plain unconditional jumps use rd -> r0
-		// not inferrable
-		// unconditional
+		// not inferrable unconditional
 
 		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) {
 			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) {
@@ -576,7 +585,9 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	case TraceDqr::INST_BGEU:
 	case TraceDqr::INST_C_BEQZ:
 	case TraceDqr::INST_C_BNEZ:
-		// pc = pc + (sign extend immediate offset) * 2 (BLTU and BGEU are not sign extended)
+		printf("nextAddr(): INST_BRANCH or INST_C_BRANCH\n");
+
+		// pc = pc + (sign extend immediate offset) (BLTU and BGEU are not sign extended)
 		// inferrable conditional
 
 		ct = counts->getCurrentCountType(core);
@@ -602,7 +613,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			}
 
 			if (isTaken) {
-				pc = addr + immediate * 2;
+				pc = addr + immediate;
 			}
 			else {
 				pc = addr + inst_size / 8;
@@ -618,7 +629,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 				return status;
 			}
 
-			pc = addr + immediate * 2;
+			pc = addr + immediate;
 			break;
 		case TraceDqr::COUNTTYPE_notTaken:
 			rc = counts->consumeNotTakenCount(core);
@@ -630,25 +641,31 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 				return status;
 			}
 
-			pc = addr + immediate * 2;
+			pc = addr + inst_size / 8;
 			break;
 		}
 		break;
 	case TraceDqr::INST_C_J:
-		// pc = pc + (signed extended immediate offset) * 2
+		printf("nextAddr(): INST_BRANCH or INST_C_J\n");
+
+		// pc = pc + (signed extended immediate offset)
 		// inferrable unconditional
 
-		pc = addr + immediate * 2;
+		pc = addr + immediate;
 		break;
 	case TraceDqr::INST_C_JAL:
+		printf("nextAddr(): INST_BRANCH or INST_C_JAL\n");
+
 		// x1 = pc + 2
-		// pc = pc + (signed extended immediate offset) * 2
+		// pc = pc + (signed extended immediate offset)
 		// inferrable unconditional
 
 		counts->push(core,addr + inst_size/8);
-		pc = addr + immediate * 2;
+		pc = addr + immediate;
 		break;
 	case TraceDqr::INST_C_JR:
+		printf("nextAddr(): INST_BRANCH or INST_C_JR\n");
+
 		// pc = pc + rs1
 		// not inferrable unconditional
 
@@ -660,6 +677,8 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		}
 		break;
 	case TraceDqr::INST_C_JALR:
+		printf("nextAddr(): INST_BRANCH or INST_C_JALR\n");
+
 		// x1 = pc + 2
 		// pc = pc + rs1
 		// not inferrble unconditional
@@ -680,7 +699,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 	// Always consume i-cnt
 
-	rc = counts->consumeICnt(core,inst_size/8);
+	rc = counts->consumeICnt(core,inst_size/16);
 	if ( rc != 0) {
 		printf("Error: nextAddr(): consumeICnt() failed\n");
 
@@ -688,6 +707,8 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 		return status;
 	}
+
+	printf("nextAddr() -> %08x\n",pc);
 
 	return TraceDqr::DQERR_OK;
 }
@@ -1007,7 +1028,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_COMPUTESTARTINGADDRESS:
-//			printf("state TRACE_STATE_COMPUTSTARTINGADDRESS\n");
+			printf("state TRACE_STATE_COMPUTESTARTINGADDRESS\n");
 
 			// compute address from trace message queued up in messageSync->msgs
 
@@ -1119,7 +1140,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_GETFIRSTSYNCMSG:
-//			printf("state TRACE_STATE_GETFIRSTSYNCMSG\n");
+			printf("state TRACE_STATE_GETFIRSTSYNCMSG\n");
 
 			// read trace messages until a sync is found. Should be the first message normally
 
@@ -1198,7 +1219,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			status = TraceDqr::DQERR_OK;
 			return status;
 		case TRACE_STATE_GETSECONDMSG:
-//			printf("state TRACE_STATE_GETSECONDMSG\n");
+			printf("state TRACE_STATE_GETSECONDMSG\n");
 
 			// only message with i-cnt/hist/taken/notTaken will release from this state
 
@@ -1271,7 +1292,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_RETIREMESSAGE:
-//			printf("state TRACE_STATE_RETIREMESSAGE\n");
+			printf("state TRACE_STATE_RETIREMESSAGE\n");
 
 			// Process message being retired (currently in nm) i_cnt/taken/not taken/history has gone to 0
 			// compute next address
@@ -1362,7 +1383,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			status = TraceDqr::DQERR_OK;
 			return status;
 		case TRACE_STATE_GETNEXTMSG:
-//			printf("state TRACE_STATE_GETNEXTMSG\n");
+			printf("state TRACE_STATE_GETNEXTMSG\n");
 
 			// exit this state when message with i-cnt, history, taken, or not-taken is read
 
@@ -1386,7 +1407,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_RESOURCEFULL:
 				rc = counts->setCounts(&nm);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: nextInstruction: state TRACE_STATE_COMPUTESTARTINGADDRESS: Count::seteCounts()\n");
+					printf("Error: nextInstruction: state TRACE_STATE_GETNEXTMESSAGE Count::seteCounts()\n");
 
 					state[currentCore] = TRACE_STATE_ERROR;
 
@@ -1429,7 +1450,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_GETNEXTINSTRUCTION:
-//			printf("Trace::NextInstruction():TRACE_STATE_GETNEXTINSTRUCTION\n");
+			printf("Trace::NextInstruction():TRACE_STATE_GETNEXTINSTRUCTION\n");
 
 			// NOte! should first process addr, and then compute next addr!!! If can't compute next addr,
 			// retire the message!!
@@ -1491,8 +1512,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			rc = nextAddr(currentCore,currentAddress[currentCore],addr);
 			if (addr == (TraceDqr::ADDRESS)-1) {
-				if (counts->getCurrentCountType(currentCore != TraceDqr::COUNTTYPE_none)) {
-					// counts have expired. Read next trace message and update
+				if (counts->getCurrentCountType(currentCore) == TraceDqr::COUNTTYPE_none) {
+					// counts have expired. Retire this message and read next trace message and update
 
 					state[currentCore] = TRACE_STATE_RETIREMESSAGE;
 				}
@@ -1506,9 +1527,15 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 			}
+			else if (counts->getCurrentCountType(currentCore) == TraceDqr::COUNTTYPE_none) {
+				// counts have expired. Retire this message and read next trace message and update
+
+				state[currentCore] = TRACE_STATE_RETIREMESSAGE;
+			}
 			else {
 				currentAddress[currentCore] = addr;
 			}
+
 
 			status = TraceDqr::DQERR_OK;
 			return status;

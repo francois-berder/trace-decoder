@@ -3950,29 +3950,39 @@ TraceDqr::CountType Count::getCurrentCountType(int core)
 {
 	// types are prioritized! Order is important
 
+	printf("Count::getCurrentCountType(core=%d): i_cnt:%d, hist:%08x, histBit:%d, taken:%d, notTaken: %d\n",core,i_cnt[core],history[core],histBit[core],takenCount[core],notTakenCount[core]);
+
 	if (histBit[core] >= 0) {
+		printf("Count::getCurrentCountType(%d) -> history\n",core);
 		return TraceDqr::COUNTTYPE_history;
 	}
 
 	if (takenCount[core] > 0) {
+		printf("Count::getCurrentCountType(%d) -> takenCount\n",core);
 		return TraceDqr::COUNTTYPE_taken;
 	}
 
 	if (notTakenCount[core] > 0) {
+		printf("Count::getCurrentCountType(%d) -> notTakenCount\n",core);
 		return TraceDqr::COUNTTYPE_notTaken;
 	}
 
 	// i-cnt is the lowest priority
 
 	if (i_cnt[core] > 0) {
+		printf("Count::getCurrentCountType(%d) -> i_cnt\n",core);
 		return TraceDqr::COUNTTYPE_i_cnt;
 	}
+
+	printf("Count::getCurrentCountType(%d) -> none\n",core);
 
 	return TraceDqr::COUNTTYPE_none;
 }
 
 TraceDqr::DQErr Count::setICnt(int core,int count)
 {
+	printf("Count::setICnt(core=%d,count=%d)\n",core,count);
+
 	if (i_cnt[core] > 0) { // i_cnt might be <= 0, and that is okay! We "borrow" against it with hisotry and taken/not taken if we don't have an i_cnt
 		printf("Error: setCount(): i_cnt not exhausted\n");
 		return TraceDqr::DQERR_ERR;
@@ -3985,6 +3995,8 @@ TraceDqr::DQErr Count::setICnt(int core,int count)
 
 TraceDqr::DQErr Count::setHistory(int core,uint64_t hist)
 {
+	printf("Count::setHistory(core=%d,hist=%08x)\n",core,hist);
+
 	TraceDqr::DQErr rc;
 
 	if (histBit[core] >= 0) {
@@ -4029,6 +4041,8 @@ TraceDqr::DQErr Count::setHistory(int core,uint64_t hist)
 
 TraceDqr::DQErr Count::setHistory(int core,uint64_t hist,int count)
 {
+	printf("Count::setHistory(core=%d,hist=%08x,count=%d)\n",core,hist,count);
+
 	TraceDqr::DQErr rc;
 
 	if (histBit[core] >= 0) {
@@ -4075,6 +4089,8 @@ TraceDqr::DQErr Count::setHistory(int core,uint64_t hist,int count)
 
 TraceDqr::DQErr Count::setTakenCount(int core,int takenCnt)
 {
+	printf("Count::setTakenCount(core=%d,taken=%d)\n",core,takenCnt);
+
 	TraceDqr::DQErr rc;
 
 	if (histBit[core] >= 0) {
@@ -4099,6 +4115,8 @@ TraceDqr::DQErr Count::setTakenCount(int core,int takenCnt)
 
 TraceDqr::DQErr Count::setNotTakenCount(int core,int notTakenCnt)
 {
+	printf("Count::setNotTakenCount(core=%d,taken=%d)\n",core,notTakenCnt);
+
 	TraceDqr::DQErr rc;
 
 	if (histBit[core] >= 0) {
@@ -4127,6 +4145,8 @@ TraceDqr::DQErr Count::setCounts(NexusMessage *nm)
 	uint64_t tmp_history = 0;
 	int tmp_taken = 0;
 	int tmp_notTaken = 0;
+
+	printf("setCounts() core %d\n",nm->coreId);
 
 	switch (nm->tcode) {
 	case TraceDqr::TCODE_DEBUG_STATUS:
@@ -4217,7 +4237,7 @@ TraceDqr::DQErr Count::setCounts(NexusMessage *nm)
 	}
 
 	if (i_cnt[nm->coreId] > 0) {
-		printf("Error: Count::setCount(): i-cnt not consumed\n");
+		printf("Error: Count::setCount(): i-cnt not consumed; current %d, new %d\n",i_cnt[nm->coreId],tmp_i_cnt);
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -4230,6 +4250,8 @@ TraceDqr::DQErr Count::setCounts(NexusMessage *nm)
 		printf("Error: Count::setCount(): not-taken count not consumed\n");
 		return TraceDqr::DQERR_ERR;
 	}
+
+	printf("setCounts(): i_cnt: %d, history: %d, taken: %d, not taken: %d\n",tmp_i_cnt,tmp_history,tmp_taken,tmp_notTaken);
 
 	i_cnt[nm->coreId] += tmp_i_cnt;
 
@@ -4258,14 +4280,22 @@ TraceDqr::DQErr Count::setCounts(NexusMessage *nm)
 
 int Count::consumeICnt(int core,int numToConsume)
 {
+	printf("Count::consumeICnt(core=%d,numToConsume=%d)\n",core,numToConsume);
+
 	i_cnt[core] -= numToConsume;
+
+	printf("Count::consumeICnt(): remaining:%d\n",i_cnt[core]);
 
 	return 0;
 }
 
 int Count::consumeHistory(int core,bool &taken)
 {
+	printf("Count::consumeHistory(core=%d)",core);
+
 	if (histBit[core] < 0) {
+		printf("Consumed: Count::consumeHistory(core=%d) -> histBit[%d] = %d\n",core,core,histBit[core]);
+
 		return 1;
 	}
 
@@ -4273,32 +4303,44 @@ int Count::consumeHistory(int core,bool &taken)
 
 	histBit[core] -= 1;
 
+	printf("Not Consumed: Count::consumHistory(core=%d): taken = %d\n",core,taken);
+
 	return 0;
 }
 
 int Count::consumeTakenCount(int core)
 {
+	printf("Count::consumeTakenCount(core=%d)",core);
+
 	if (takenCount[core] <= 0) {
+		printf("Consumed: Count::consumeTakenCount(core=%d) -> takenCount[%d] = %d\n",core,core,takenCount[core]);
+
 		return 1;
 	}
 
 	takenCount[core] =- 1;
+
+	printf("Not Consumed: Count::consumTakenCount(core=%d): taken[%d] = %d\n",core,core,takenCount[core]);
 
 	return 0;
 }
 
 int Count::consumeNotTakenCount(int core)
 {
+	printf("Count::consumeNotTakenCount(core=%d)",core);
+
 	if (notTakenCount[core] <= 0) {
+		printf("Consumed: Count::consumeNotTakenCount(core=%d) -> notTakenCount[%d] = %d\n",core,core,notTakenCount[core]);
+
 		return 1;
 	}
 
 	notTakenCount[core] =- 1;
 
+	printf("Not Consumed: Count::consumNotTakenCount(core=%d): notTaken[%d] = %d\n",core,core,notTakenCount[core]);
+
 	return 0;
 }
-
-int Count::consumeNotTakenCount(int core);
 
 SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 {
@@ -6642,6 +6684,8 @@ int Disassembler::decodeInstructionSize(uint32_t inst, int &inst_size)
 
 int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
+	printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+
 	// no branch or jump instruction in quadrant 0
 
 	inst_size = 16;
@@ -6671,6 +6715,8 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 
 	switch (instruction >> 13) {
 	case 0x1:
+		printf("decodeRV32Instruction(): INST_C_JAL\n");
+
 		inst_type = TraceDqr::INST_C_JAL;
 		is_branch = true;
 
@@ -6696,6 +6742,8 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		rd = TraceDqr::REG_1;
 		break;
 	case 0x5:
+		printf("decodeRV32Instruction(): INST_C_J\n");
+
 		inst_type = TraceDqr::INST_C_J;
 		is_branch = true;
 
@@ -6721,6 +6769,8 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	case 0x6:
+		printf("decodeRV32Instruction(): INST_C_BEQZ\n");
+
 		inst_type = TraceDqr::INST_C_BEQZ;
 		is_branch = true;
 
@@ -6743,6 +6793,8 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	case 0x7:
+		printf("decodeRV32Instruction(): INST_C_BNEZ\n");
+
 		inst_type = TraceDqr::INST_C_BNEZ;
 		is_branch = true;
 
@@ -6765,6 +6817,8 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	default:
+		printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+
 		rs1 = TraceDqr::REG_unknown;
 		rd = TraceDqr::REG_unknown;
 		inst_type = TraceDqr::INST_UNKNOWN;
@@ -6792,6 +6846,8 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 		if (instruction & (1<<12)) {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
+					printf("decodeRV32Instruction(): INST_C_JALR\n");
+
 					inst_type = TraceDqr::INST_C_JALR;
 					is_branch = true;
 
@@ -6804,6 +6860,8 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 		else {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
+					printf("decodeRV32Instruction(): INST_C_JR\n");
+
 					inst_type = TraceDqr::INST_C_JR;
 					is_branch = true;
 
@@ -6817,6 +6875,11 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 	default:
 		break;
 	}
+
+	if (inst_type == TraceDqr::INST_UNKNOWN) {
+		printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+	}
+
 
 	return 0;
 }
@@ -6835,6 +6898,8 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 
 	switch (instruction & 0x7f) {
 	case 0x6f:
+		printf("decodeRV32Instruction(): INST_JAL\n");
+
 		inst_type = TraceDqr::INST_JAL;
 		is_branch = true;
 
@@ -6869,6 +6934,8 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 		break;
 	case 0x67:
 		if ((instruction & 0x7000) == 0x000) {
+			printf("decodeRV32Instruction(): INST_JALR\n");
+
 			inst_type = TraceDqr::INST_JALR;
 			is_branch = true;
 
@@ -6883,6 +6950,8 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 			rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
 		}
 		else {
+			printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+
 			inst_type = TraceDqr::INST_UNKNOWN;
 			immediate = 0;
 			rd = TraceDqr::REG_unknown;
@@ -6893,26 +6962,40 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 	case 0x63:
 		switch ((instruction >> 12) & 0x7) {
 		case 0x0:
+			printf("decodeRV32Instruction(): INST_BEQ\n");
+
 			inst_type = TraceDqr::INST_BEQ;
 			break;
 		case 0x1:
+			printf("decodeRV32Instruction(): INST_BNE\n");
+
 			inst_type = TraceDqr::INST_BNE;
 			break;
 		case 0x4:
+			printf("decodeRV32Instruction(): INST_BLT\n");
+
 			inst_type = TraceDqr::INST_BLT;
 			break;
 		case 0x5:
+			printf("decodeRV32Instruction(): INST_BGE\n");
+
 			inst_type = TraceDqr::INST_BGE;
 			break;
 		case 0x6:
+			printf("decodeRV32Instruction(): INST_BLTU\n");
+
 			inst_type = TraceDqr::INST_BLTU;
 			unsignedOffset = true;
 			break;
 		case 0x7:
+			printf("decodeRV32Instruction(): INST_BGEU\n");
+
 			inst_type = TraceDqr::INST_BGEU;
 			unsignedOffset = true;
 			break;
 		default:
+			printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+
 			inst_type = TraceDqr::INST_UNKNOWN;
 			immediate = 0;
 			rd = TraceDqr::REG_unknown;
@@ -6946,6 +7029,12 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 		rd = TraceDqr::REG_unknown;
 		rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
 		break;
+	default:
+		inst_type = TraceDqr::INST_UNKNOWN;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
 	}
 
 	return 0;
