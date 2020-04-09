@@ -918,7 +918,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 		switch (state[currentCore]) {
 		case TRACE_STATE_GETSTARTTRACEMSG:
-//			printf("state TRACE_STATE_GETSTARTTRACEMSG\n");
+			printf("state TRACE_STATE_GETSTARTTRACEMSG\n");
 
 			// home new nexus message to process
 
@@ -945,7 +945,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageSync[currentCore]->lastMsgNum = nm.msgNum;
 
 				if (nm.msgNum >= startMessageNum) {
+					// do not need to set read next message - compute starting address handles everything!
+
 					state[currentCore] = TRACE_STATE_COMPUTESTARTINGADDRESS;
+				}
+				else {
+					readNewTraceMessage = true;
 				}
 				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH:
@@ -988,6 +993,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					if (nm.msgNum >= startMessageNum) {
 						state[currentCore] = TRACE_STATE_COMPUTESTARTINGADDRESS;
 					}
+					else {
+						readNewTraceMessage = true;
+					}
 				}
 				break;
 			case TraceDqr::TCODE_CORRELATION:
@@ -995,11 +1003,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// we see a sync message, so set index to 0 to start over
 
 				messageSync[currentCore]->index = 0;
+				readNewTraceMessage = true;
 				break;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 			case TraceDqr::TCODE_ERROR:
-				// these message types we just stuff in the list incase we are interested in the
+				// these message types we just stuff in the list in case we are interested in the
 				// information later
 
 				messageSync[currentCore]->msgs[messageSync[currentCore]->index] = nm;
@@ -1018,6 +1027,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				if (nm.msgNum >= startMessageNum) {
 					state[currentCore] = TRACE_STATE_COMPUTESTARTINGADDRESS;
+				}
+				else {
+					readNewTraceMessage = true;
 				}
 				break;
 			default:
