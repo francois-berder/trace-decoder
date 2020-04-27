@@ -35,7 +35,7 @@
 
 //#define DQR_MAXCORES	8
 
-const char * const DQR_VERSION = "0.7";
+const char * const DQR_VERSION = "0.8";
 
 // static C type helper functions
 
@@ -853,6 +853,8 @@ TraceDqr::DQErr ElfReader::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceD
 
 	//don't forget base!!'
 
+	// hmmm.. probably should cache section pointer, and not address/instruction! Or maybe not cache anything?
+
 	section *sp;
 	if (codeSectionLst == nullptr) {
 		status = TraceDqr::DQERR_ERR;
@@ -1430,7 +1432,10 @@ Analytics::Analytics()
 		core[i].num_trace_ihistory_nottaken_branches = 0;
 		core[i].num_trace_resourcefull_i_cnt = 0;
 		core[i].num_trace_resourcefull_hist = 0;
-		core[i].num_trace_resourcefull_count = 0;
+		core[i].num_trace_resourcefull_takenCount = 0;
+		core[i].num_trace_resourcefull_notTakenCount = 0;
+		core[i].num_trace_resourcefull_taken_branches = 0;
+		core[i].num_trace_resourcefull_nottaken_branches = 0;
 
 		core[i].trace_bits = 0;
 		core[i].trace_bits_max = 0;
@@ -1583,7 +1588,7 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 		taken = -1;	// start at -1 to account for stop bit, which isn't a branch
 		nottaken = 0;
 
-		while (mask) {
+		while (mask > 1) { // use > 1 because the most significant 1 is a stop bit which we don't want to count!
 			msb += 1;
 			if (mask & 1) {
 				taken += 1;
@@ -1614,7 +1619,7 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 		taken = -1;	// start at -1 to account for stop bit, which isn't a branch
 		nottaken = 0;
 
-		while (mask) {
+		while (mask > 1) {
 			msb += 1;
 			if (mask & 1) {
 				taken += 1;
@@ -1652,7 +1657,7 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 			taken = -1;	// start at -1 to account for stop bit, which isn't a branch
 			nottaken = 0;
 
-			while (mask) {
+			while (mask > 1) {
 				msb += 1;
 				if (mask & 1) {
 					taken += 1;
@@ -1671,8 +1676,12 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 			num_branches_all_cores += taken + nottaken;
 			break;
 		case 8:
+			core[nm.coreId].num_trace_resourcefull_notTakenCount += 1;
+			core[nm.coreId].num_trace_resourcefull_nottaken_branches += nm.resourceFull.notTakenCount;
+			break;
 		case 9:
-			core[nm.coreId].num_trace_resourcefull_count += 1;
+			core[nm.coreId].num_trace_resourcefull_takenCount += 1;
+			core[nm.coreId].num_trace_resourcefull_taken_branches += nm.resourceFull.takenCount;
 			break;
 		default:
 			printf("Error: Analytics::updateTraceInfo(): ResoureFull: unknown RDode: %d\n",nm.resourceFull.rCode);
@@ -3950,43 +3959,43 @@ TraceDqr::CountType Count::getCurrentCountType(int core)
 {
 	// types are prioritized! Order is important
 
-	printf("Count::getCurrentCountType(core=%d): i_cnt:%d, hist:%08x, histBit:%d, taken:%d, notTaken: %d\n",core,i_cnt[core],history[core],histBit[core],takenCount[core],notTakenCount[core]);
+	// boink printf("Count::getCurrentCountType(core=%d): i_cnt:%d, hist:%08x, histBit:%d, taken:%d, notTaken: %d\n",core,i_cnt[core],history[core],histBit[core],takenCount[core],notTakenCount[core]);
 
 	if (histBit[core] >= 0) {
-		printf("Count::getCurrentCountType(%d) -> history\n",core);
+		// boink printf("Count::getCurrentCountType(%d) -> history\n",core);
 		return TraceDqr::COUNTTYPE_history;
 	}
 
 	if (takenCount[core] > 0) {
-		printf("Count::getCurrentCountType(%d) -> takenCount\n",core);
+		// boink printf("Count::getCurrentCountType(%d) -> takenCount\n",core);
 		return TraceDqr::COUNTTYPE_taken;
 	}
 
 	if (notTakenCount[core] > 0) {
-		printf("Count::getCurrentCountType(%d) -> notTakenCount\n",core);
+		// boink printf("Count::getCurrentCountType(%d) -> notTakenCount\n",core);
 		return TraceDqr::COUNTTYPE_notTaken;
 	}
 
 	// i-cnt is the lowest priority
 
 	if (i_cnt[core] > 0) {
-		printf("Count::getCurrentCountType(%d) -> i_cnt\n",core);
+		// boink printf("Count::getCurrentCountType(%d) -> i_cnt\n",core);
 		return TraceDqr::COUNTTYPE_i_cnt;
 	}
 
-	printf("Count::getCurrentCountType(%d) -> none\n",core);
+	// boink printf("Count::getCurrentCountType(%d) -> none\n",core);
 
 	return TraceDqr::COUNTTYPE_none;
 }
 
 TraceDqr::DQErr Count::setICnt(int core,int count)
 {
-	printf("Count::setICnt(core=%d,count=%d)\n",core,count);
+	// boink printf("Count::setICnt(core=%d,count=%d)\n",core,count);
 
-	if (i_cnt[core] > 0) { // i_cnt might be <= 0, and that is okay! We "borrow" against it with hisotry and taken/not taken if we don't have an i_cnt
-		printf("Error: setCount(): i_cnt not exhausted\n");
-		return TraceDqr::DQERR_ERR;
-	}
+//	if (i_cnt[core] > 0) { // i_cnt might be <= 0, and that is okay! We "borrow" against it with hisotry and taken/not taken if we don't have an i_cnt
+//		printf("Error: setICount(): i_cnt not exhausted\n");
+//		return TraceDqr::DQERR_ERR;
+//	}
 
 	i_cnt[core] += count;
 
@@ -3995,14 +4004,11 @@ TraceDqr::DQErr Count::setICnt(int core,int count)
 
 TraceDqr::DQErr Count::setHistory(int core,uint64_t hist)
 {
-	printf("Count::setHistory(core=%d,hist=%08x)\n",core,hist);
+	// boink printf("Count::setHistory(core=%d,hist=%08x)\n",core,hist);
 
-	TraceDqr::DQErr rc;
+	TraceDqr::DQErr rc = TraceDqr::DQERR_OK;
 
 	if (histBit[core] >= 0) {
-		rc = TraceDqr::DQERR_ERR;
-	}
-	else if (i_cnt[core] > 0) {
 		rc = TraceDqr::DQERR_ERR;
 	}
 	else if (takenCount[core] != 0) {
@@ -4014,16 +4020,14 @@ TraceDqr::DQErr Count::setHistory(int core,uint64_t hist)
 	else if (hist == 0) {
 		history[core] = 0;
 		histBit[core] = -1;
-
-		rc = TraceDqr::DQERR_OK;
 	}
 	else {
 		history[core] = hist;
 
 		int i;
 
-		for (i = sizeof hist * 8; i >= 0; i -= 1) {
-			if (hist & (1 << i)) {
+		for (i = sizeof hist * 8 - 1; i >= 0; i -= 1) {
+			if (hist & (((uint64_t)1) << i)) {
 				histBit[core] = i-1;
 				break;
 			}
@@ -4032,8 +4036,6 @@ TraceDqr::DQErr Count::setHistory(int core,uint64_t hist)
 		if (i < 0) {
 			histBit[core] = -1;
 		}
-
-		rc = TraceDqr::DQERR_OK;
 	}
 
 	return rc;
@@ -4041,62 +4043,30 @@ TraceDqr::DQErr Count::setHistory(int core,uint64_t hist)
 
 TraceDqr::DQErr Count::setHistory(int core,uint64_t hist,int count)
 {
-	printf("Count::setHistory(core=%d,hist=%08x,count=%d)\n",core,hist,count);
+	// blink printf("Count::setHistory(core=%d,hist=%08x,count=%d)\n",core,hist,count);
 
 	TraceDqr::DQErr rc;
 
-	if (histBit[core] >= 0) {
-		rc = TraceDqr::DQERR_ERR;
-	}
-	else if (i_cnt[core] > 0) {
-		rc = TraceDqr::DQERR_ERR;
-	}
-	else if (takenCount[core] != 0) {
-		rc = TraceDqr::DQERR_ERR;
-	}
-	else if (notTakenCount[core] != 0) {
-		rc = TraceDqr::DQERR_ERR;
-	}
-	else if (hist == 0) {
-		history[core] = 0;
-		histBit[core] = -1;
-		i_cnt[core] += count;
-
-		rc = TraceDqr::DQERR_OK;
-	}
-	else {
-		history[core] = hist;
-
-		int i;
-
-		for (i = sizeof hist * 8; i >= 0; i -= 1) {
-			if (hist & (1 << i)) {
-				histBit[core] = i-1;
-				break;
-			}
-		}
-
-		if (i < 0) {
-			histBit[core] = -1;
-		}
-
-		i_cnt[core] += count;
-		rc = TraceDqr::DQERR_OK;
+	rc = setICnt(core,count);
+	if (rc != TraceDqr::DQERR_OK) {
+		return rc;
 	}
 
-	return rc;
+	rc = setHistory(core,hist);
+	if (rc != TraceDqr::DQERR_OK) {
+		return rc;
+	}
+
+	return TraceDqr::DQERR_OK;
 }
 
 TraceDqr::DQErr Count::setTakenCount(int core,int takenCnt)
 {
-	printf("Count::setTakenCount(core=%d,taken=%d)\n",core,takenCnt);
+	// boink printf("Count::setTakenCount(core=%d,taken=%d)\n",core,takenCnt);
 
 	TraceDqr::DQErr rc;
 
 	if (histBit[core] >= 0) {
-		rc = TraceDqr::DQERR_ERR;
-	}
-	else if (i_cnt[core] > 0) {
 		rc = TraceDqr::DQERR_ERR;
 	}
 	else if (takenCount[core] != 0) {
@@ -4115,14 +4085,11 @@ TraceDqr::DQErr Count::setTakenCount(int core,int takenCnt)
 
 TraceDqr::DQErr Count::setNotTakenCount(int core,int notTakenCnt)
 {
-	printf("Count::setNotTakenCount(core=%d,taken=%d)\n",core,notTakenCnt);
+	// boink printf("Count::setNotTakenCount(core=%d,taken=%d)\n",core,notTakenCnt);
 
 	TraceDqr::DQErr rc;
 
 	if (histBit[core] >= 0) {
-		rc = TraceDqr::DQERR_ERR;
-	}
-	else if (i_cnt[core] > 0) {
 		rc = TraceDqr::DQERR_ERR;
 	}
 	else if (takenCount[core] != 0) {
@@ -4141,12 +4108,13 @@ TraceDqr::DQErr Count::setNotTakenCount(int core,int notTakenCnt)
 
 TraceDqr::DQErr Count::setCounts(NexusMessage *nm)
 {
+	TraceDqr::DQErr rc;
 	int tmp_i_cnt = 0;
 	uint64_t tmp_history = 0;
 	int tmp_taken = 0;
 	int tmp_notTaken = 0;
 
-	printf("setCounts() core %d\n",nm->coreId);
+	// boink printf("setCounts() core %d\n",nm->coreId);
 
 	switch (nm->tcode) {
 	case TraceDqr::TCODE_DEBUG_STATUS:
@@ -4229,72 +4197,56 @@ TraceDqr::DQErr Count::setCounts(NexusMessage *nm)
 		return TraceDqr::DQERR_ERR;
 	}
 
-	// all count fields should be zero, except i-cnt which can be neg or 0
+	// boink printf("setCounts(core=%d): i_cnt: %d, history: %08llx, histBits: %d, taken: %d, not taken: %d\n",nm->coreId,tmp_i_cnt,tmp_history,histBit[nm->coreId],tmp_taken,tmp_notTaken);
 
-	if (histBit[nm->coreId] >= 0) {
-		printf("Error: Count::setCount(): history not consumed\n");
-		return TraceDqr::DQERR_ERR;
+	if (tmp_i_cnt != 0) {
+		rc = setICnt(nm->coreId,tmp_i_cnt);
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
+		}
 	}
-
-	if (i_cnt[nm->coreId] > 0) {
-		printf("Error: Count::setCount(): i-cnt not consumed; current %d, new %d\n",i_cnt[nm->coreId],tmp_i_cnt);
-		return TraceDqr::DQERR_ERR;
-	}
-
-	if (takenCount[nm->coreId] != 0) {
-		printf("Error: Count::setCount(): taken count not consumed\n");
-		return TraceDqr::DQERR_ERR;
-	}
-
-	if (notTakenCount[nm->coreId] != 0) {
-		printf("Error: Count::setCount(): not-taken count not consumed\n");
-		return TraceDqr::DQERR_ERR;
-	}
-
-	printf("setCounts(): i_cnt: %d, history: %d, taken: %d, not taken: %d\n",tmp_i_cnt,tmp_history,tmp_taken,tmp_notTaken);
-
-	i_cnt[nm->coreId] += tmp_i_cnt;
 
 	if (tmp_history != 0) {
-		history[nm->coreId] = tmp_history;
-
-		int i;
-
-		for (i = sizeof tmp_history * 8; i >= 0; i -= 1) {
-			if (tmp_history & (1 << i)) {
-				histBit[nm->coreId] = i-1;
-				break;
-			}
-		}
-
-		if (i < 0) {
-			histBit[nm->coreId] = -1;
+		rc = setHistory(nm->coreId,tmp_history);
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
 		}
 	}
 
-	takenCount[nm->coreId] = tmp_taken;
-	notTakenCount[nm->coreId] = tmp_notTaken;
+	if (tmp_taken != 0) {
+		rc = setTakenCount(nm->coreId,tmp_taken);
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
+		}
+	}
+
+	if (tmp_notTaken != 0) {
+		rc = setNotTakenCount(nm->coreId,tmp_notTaken);
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
+		}
+	}
 
 	return TraceDqr::DQERR_OK;
 }
 
 int Count::consumeICnt(int core,int numToConsume)
 {
-	printf("Count::consumeICnt(core=%d,numToConsume=%d)\n",core,numToConsume);
+	// boink printf("Count::consumeICnt(core=%d,numToConsume=%d)\n",core,numToConsume);
 
 	i_cnt[core] -= numToConsume;
 
-	printf("Count::consumeICnt(): remaining:%d\n",i_cnt[core]);
+	// boink printf("Count::consumeICnt(): remaining:%d\n",i_cnt[core]);
 
-	return 0;
+	return i_cnt[core];
 }
 
 int Count::consumeHistory(int core,bool &taken)
 {
-	printf("Count::consumeHistory(core=%d)",core);
+	// boink printf("Count::consumeHistory(core=%d)",core);
 
 	if (histBit[core] < 0) {
-		printf("Consumed: Count::consumeHistory(core=%d) -> histBit[%d] = %d\n",core,core,histBit[core]);
+		// boink printf("Consumed: Count::consumeHistory(core=%d) -> histBit[%d] = %d\n",core,core,histBit[core]);
 
 		return 1;
 	}
@@ -4303,41 +4255,41 @@ int Count::consumeHistory(int core,bool &taken)
 
 	histBit[core] -= 1;
 
-	printf("Not Consumed: Count::consumHistory(core=%d): taken = %d\n",core,taken);
+	// boink printf("Not Consumed: Count::consumHistory(core=%d): taken = %d\n",core,taken);
 
 	return 0;
 }
 
 int Count::consumeTakenCount(int core)
 {
-	printf("Count::consumeTakenCount(core=%d)",core);
+	// boink printf("Count::consumeTakenCount(core=%d)",core);
 
 	if (takenCount[core] <= 0) {
-		printf("Consumed: Count::consumeTakenCount(core=%d) -> takenCount[%d] = %d\n",core,core,takenCount[core]);
+		// boink printf("Consumed: Count::consumeTakenCount(core=%d) -> takenCount[%d] = %d\n",core,core,takenCount[core]);
 
 		return 1;
 	}
 
-	takenCount[core] =- 1;
+	takenCount[core] -= 1;
 
-	printf("Not Consumed: Count::consumTakenCount(core=%d): taken[%d] = %d\n",core,core,takenCount[core]);
+	// boink printf("Not Consumed: Count::consumTakenCount(core=%d): taken[%d] = %d\n",core,core,takenCount[core]);
 
 	return 0;
 }
 
 int Count::consumeNotTakenCount(int core)
 {
-	printf("Count::consumeNotTakenCount(core=%d)",core);
+	// boink printf("Count::consumeNotTakenCount(core=%d)",core);
 
 	if (notTakenCount[core] <= 0) {
-		printf("Consumed: Count::consumeNotTakenCount(core=%d) -> notTakenCount[%d] = %d\n",core,core,notTakenCount[core]);
+		// boink printf("Consumed: Count::consumeNotTakenCount(core=%d) -> notTakenCount[%d] = %d\n",core,core,notTakenCount[core]);
 
 		return 1;
 	}
 
-	notTakenCount[core] =- 1;
+	notTakenCount[core] -= 1;
 
-	printf("Not Consumed: Count::consumNotTakenCount(core=%d): notTaken[%d] = %d\n",core,core,notTakenCount[core]);
+	// boink printf("Not Consumed: Count::consumNotTakenCount(core=%d): notTaken[%d] = %d\n",core,core,notTakenCount[core]);
 
 	return 0;
 }
@@ -4412,6 +4364,13 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
 
 	nm.tcode = TraceDqr::TCODE_INDIRECTBRANCHHISTORY;
 
+	// boink printf("parseIndirectHistory()\n");
+	// boink printf("tcode: %d\n",nm.tcode);
+
+	// boink for (int i = 0; i < msgSlices; i++) {
+	// boink 	printf("slice %d: %02x | %d %d\n",i,msg[i] >> 2,(msg[i]&2)!=0,(msg[i]&1)!=0);
+	// boink }
+
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
@@ -4430,7 +4389,22 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
 		nm.coreId = 0;
 	}
 
+	// parse the two bit b-type
+
+	rc = parseFixedField(2,&tmp);
+	if (rc  != TraceDqr::DQERR_OK) {
+		status = rc;
+
+		return status;
+	}
+
+	bits += 2;
+
+	nm.indirectHistory.b_type = (TraceDqr::BType)tmp;
+
 	// parse the variable length the i-cnt
+
+	// boink printf("coreId: %d\n",nm.coreId);
 
 	rc = parseVarField(&tmp,&width);
 	if (rc != TraceDqr::DQERR_OK) {
@@ -4443,6 +4417,8 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
 
     nm.indirectHistory.i_cnt = (int)tmp;
 
+    // boink printf("i_cnt: %d\n",nm.indirectHistory.i_cnt);
+
     // parse the u-addr field
 
     rc = parseVarField(&tmp,&width);
@@ -4452,7 +4428,11 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
     	return status;
     }
 
+    bits += width;
+
     nm.indirectHistory.u_addr = (TraceDqr::ADDRESS)tmp;
+
+    // boink printf("u_addr: %08x\n",nm.indirectHistory.u_addr);
 
     // parse the variable lenght history field
 
@@ -4463,7 +4443,11 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
     	return status;
     }
 
+    bits += width;
+
     nm.indirectHistory.history = tmp;
+
+    // boink printf("history: %016llx\n",nm.indirectHistory.history);
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -4540,6 +4524,19 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistoryWS(NexusMessage &nm,Analyti
 
 	nm.indirectHistoryWS.sync   = (TraceDqr::SyncReason)tmp;
 
+	// parse the two bit b-type
+
+	rc = parseFixedField(2,&tmp);
+	if (rc  != TraceDqr::DQERR_OK) {
+		status = rc;
+
+		return status;
+	}
+
+	bits += 2;
+
+	nm.indirectHistoryWS.b_type = (TraceDqr::BType)tmp;
+
 	// parse the variable length the i-cnt
 
 	rc = parseVarField(&tmp,&width);
@@ -4553,7 +4550,7 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistoryWS(NexusMessage &nm,Analyti
 
     nm.indirectHistoryWS.i_cnt = (int)tmp;
 
-    // parse the u-addr field
+    // parse the f-addr field
 
     rc = parseVarField(&tmp,&width);
     if (rc != TraceDqr::DQERR_OK) {
@@ -4561,10 +4558,12 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistoryWS(NexusMessage &nm,Analyti
 
     	return status;
     }
+
+    bits += width;
 
     nm.indirectHistoryWS.f_addr = (TraceDqr::ADDRESS)tmp;
 
-    // parse the variable lenght history field
+    // parse the variable length history field
 
     rc = parseVarField(&tmp,&width);
     if (rc != TraceDqr::DQERR_OK) {
@@ -4572,6 +4571,8 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistoryWS(NexusMessage &nm,Analyti
 
     	return status;
     }
+
+    bits += width;
 
     nm.indirectHistoryWS.history = tmp;
 
@@ -4619,6 +4620,13 @@ TraceDqr::DQErr SliceFileParser::parseResourceFull(NexusMessage &nm,Analytics &a
 
 	nm.tcode = TraceDqr::TCODE_RESOURCEFULL;
 
+	// boink printf("parseResourceFull()\n");
+	// boink printf("tcode: %d\n",nm.tcode);
+
+	// boink for (int i = 0; i < msgSlices; i++) {
+	// boink 	printf("slice %d: %02x | %d %d\n",i,msg[i] >> 2,(msg[i]&2)!=0,(msg[i]&1)!=0);
+	// boink }
+
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
@@ -4650,7 +4658,9 @@ TraceDqr::DQErr SliceFileParser::parseResourceFull(NexusMessage &nm,Analytics &a
 
     nm.resourceFull.rCode = (int)tmp;
 
-    // parse the vairable lenght rdata field
+    // boink printf("parse resource full: rcode: %d\n",nm.resourceFull.rCode);
+
+    // parse the vairable length rdata field
 
     rc = parseVarField(&tmp,&width);
     if (rc != TraceDqr::DQERR_OK) {
@@ -4659,18 +4669,24 @@ TraceDqr::DQErr SliceFileParser::parseResourceFull(NexusMessage &nm,Analytics &a
     	return status;
     }
 
+    bits += width;
+
     switch (nm.resourceFull.rCode) {
     case 0:
     	nm.resourceFull.i_cnt = (int)tmp;
+    	// boink printf("parse resource full: i_cnt: %d\n",nm.resourceFull.i_cnt);
     	break;
     case 1:
-    	nm.resourceFull.history= tmp;
+    	nm.resourceFull.history = tmp;
+    	// boink printf("resource full: history: %08llx, %08llx, width: %d\n",nm.resourceFull.history,tmp,width);
     	break;
     case 8:
     	nm.resourceFull.notTakenCount = (int)tmp;
+    	// boink printf("parse resource full: notTakenCount: %d\n",nm.resourceFull.notTakenCount);
     	break;
     case 9:
     	nm.resourceFull.takenCount = (int)tmp;
+    	// boink printf("parse resource full: takenCount: %d\n",nm.resourceFull.takenCount);
     	break;
     default:
     	printf("Error: parseResourceFull(): unknown rCode: %d\n",nm.resourceFull.rCode);
@@ -5287,7 +5303,7 @@ TraceDqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &an
 
 		break;
 	default:
-		printf("parseCorrelation(): invalid CDF field: %d\n",nm.correlation.cdf);
+		printf("Error: parseCorrelation(): invalid CDF field: %d\n",nm.correlation.cdf);
 
 		status = TraceDqr::DQERR_ERR;
 		return status;
@@ -5768,7 +5784,7 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 //	printf("parseVarField(): bitIndex:%d, i:%d, b:%d, width: %d\n",bitIndex,i,b,width);
 
-	v = msg[i] >> (b+2);
+	v = (uint8_t)(msg[i] >> (b+2));
 
 	while ((msg[i] & 0x03) == TraceDqr::MSEO_NORMAL) {
 		i += 1;
@@ -5780,7 +5796,7 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 			return TraceDqr::DQERR_ERR;
 		}
 
-		v = v | ((msg[i] >> 2) << w);
+		v = v | (((uint64_t)(msg[i] >> 2)) << w);
 		w += 6;
 	}
 
@@ -5801,7 +5817,7 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 	*width = w;
 	*val = v;
 
-//	printf("-> bitIndex: %d, value: %llx\n",bitIndex,v);
+	// boink printf("-> bitIndex: %d, value: %llx, width: %d\n",bitIndex,v,w);
 
 	return TraceDqr::DQERR_OK;
 }
@@ -6080,14 +6096,15 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = TraceDqr::DQERR_ERR;
 				break;
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
+				// boink printf("->parsing ownership trace\n");
 				rc = parseOwnershipTrace(nm,analytics);
 				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH:
-//		cout << " | direct branch";
+				// boink printf("->parsing direct branch\n");
 				rc = parseDirectBranch(nm,analytics);
 				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
-//		cout << "| indirect branch";
+				// boink printf("->parsing indirect branch\n");
 				rc = parseIndirectBranch(nm,analytics);
 				break;
 			case TraceDqr::TCODE_DATA_WRITE:
@@ -6099,13 +6116,15 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = TraceDqr::DQERR_ERR;
 				break;
 			case TraceDqr::TCODE_DATA_ACQUISITION:
+				// boink printf("->parsing data acquisition\n");
 				rc = parseDataAcquisition(nm,analytics);
 				break;
 			case TraceDqr::TCODE_ERROR:
+				// boink printf("->parsing error (not an error)\n");
 				rc = parseError(nm,analytics);
 				break;
 			case TraceDqr::TCODE_SYNC:
-//		cout << "| sync";
+				// boink printf("->parsing sync\n");
 				rc = parseSync(nm,analytics);
 				break;
 			case TraceDqr::TCODE_CORRECTION:
@@ -6113,11 +6132,11 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = TraceDqr::DQERR_ERR;
 				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-//		cout << "| direct branch with sync\n";
+				// boink printf("->parsing direct branch WS\n");
 				rc = parseDirectBranchWS(nm,analytics);
 				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-//		cout << "| indirect branch with sync";
+				// boink printf("->parsing indirect branch WS\n");
 				rc = parseIndirectBranchWS(nm,analytics);
 				break;
 			case TraceDqr::TCODE_DATA_WRITE_WS:
@@ -6133,10 +6152,24 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = TraceDqr::DQERR_ERR;
 				break;
 			case TraceDqr::TCODE_CORRELATION:
+				// boink printf("->parsing correlation\n");
 				rc = parseCorrelation(nm,analytics);
 				break;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
+				// boink printf("->parsing aux access write\n");
 				rc = parseAuxAccessWrite(nm,analytics);
+				break;
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+				// boink printf("->parsing indirect history\n");
+				rc = parseIndirectHistory(nm,analytics);
+				break;
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+				// boink printf("->parsing indirect history WS\n");
+				rc = parseIndirectHistoryWS(nm,analytics);
+				break;
+			case TraceDqr::TCODE_RESOURCEFULL:
+				// boink printf("->parsing resource full\n");
+				rc = parseResourceFull(nm,analytics);
 				break;
 			default:
 				std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << tcode << std::dec << std::endl;
@@ -6680,11 +6713,11 @@ int Disassembler::decodeInstructionSize(uint32_t inst, int &inst_size)
 	return 1;
 }
 
-#define MOVE_BIT(bits,s,d)	((bits&(1<<s))?(1<<d):0)
+#define MOVE_BIT(bits,s,d)	(((bits)&(1<<(s)))?(1<<(d)):0)
 
 int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
-	printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+	// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
 
 	// no branch or jump instruction in quadrant 0
 
@@ -6715,7 +6748,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 
 	switch (instruction >> 13) {
 	case 0x1:
-		printf("decodeRV32Instruction(): INST_C_JAL\n");
+		// boink printf("decodeRV32Instruction(): INST_C_JAL\n");
 
 		inst_type = TraceDqr::INST_C_JAL;
 		is_branch = true;
@@ -6742,7 +6775,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		rd = TraceDqr::REG_1;
 		break;
 	case 0x5:
-		printf("decodeRV32Instruction(): INST_C_J\n");
+		// boink printf("decodeRV32Instruction(): INST_C_J\n");
 
 		inst_type = TraceDqr::INST_C_J;
 		is_branch = true;
@@ -6769,7 +6802,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	case 0x6:
-		printf("decodeRV32Instruction(): INST_C_BEQZ\n");
+		// boink printf("decodeRV32Instruction(): INST_C_BEQZ\n");
 
 		inst_type = TraceDqr::INST_C_BEQZ;
 		is_branch = true;
@@ -6793,7 +6826,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	case 0x7:
-		printf("decodeRV32Instruction(): INST_C_BNEZ\n");
+		// boink printf("decodeRV32Instruction(): INST_C_BNEZ\n");
 
 		inst_type = TraceDqr::INST_C_BNEZ;
 		is_branch = true;
@@ -6817,7 +6850,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	default:
-		printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+		// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
 
 		rs1 = TraceDqr::REG_unknown;
 		rd = TraceDqr::REG_unknown;
@@ -6846,7 +6879,7 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 		if (instruction & (1<<12)) {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
-					printf("decodeRV32Instruction(): INST_C_JALR\n");
+					// boink printf("decodeRV32Instruction(): INST_C_JALR\n");
 
 					inst_type = TraceDqr::INST_C_JALR;
 					is_branch = true;
@@ -6860,7 +6893,7 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 		else {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
-					printf("decodeRV32Instruction(): INST_C_JR\n");
+					// boink printf("decodeRV32Instruction(): INST_C_JR\n");
 
 					inst_type = TraceDqr::INST_C_JR;
 					is_branch = true;
@@ -6892,13 +6925,12 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 	}
 
 	uint32_t t;
-	bool unsignedOffset = false;
 
 	inst_size = 32;
 
 	switch (instruction & 0x7f) {
 	case 0x6f:
-		printf("decodeRV32Instruction(): INST_JAL\n");
+		// boink printf("decodeRV32Instruction(): INST_JAL\n");
 
 		inst_type = TraceDqr::INST_JAL;
 		is_branch = true;
@@ -6934,7 +6966,7 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 		break;
 	case 0x67:
 		if ((instruction & 0x7000) == 0x000) {
-			printf("decodeRV32Instruction(): INST_JALR\n");
+			// boink printf("decodeRV32Instruction(): INST_JALR\n");
 
 			inst_type = TraceDqr::INST_JALR;
 			is_branch = true;
@@ -6950,7 +6982,7 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 			rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
 		}
 		else {
-			printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+			// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
 
 			inst_type = TraceDqr::INST_UNKNOWN;
 			immediate = 0;
@@ -6962,39 +6994,37 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 	case 0x63:
 		switch ((instruction >> 12) & 0x7) {
 		case 0x0:
-			printf("decodeRV32Instruction(): INST_BEQ\n");
+// boink			printf("decodeRV32Instruction(): INST_BEQ\n");
 
 			inst_type = TraceDqr::INST_BEQ;
 			break;
 		case 0x1:
-			printf("decodeRV32Instruction(): INST_BNE\n");
+			// boink printf("decodeRV32Instruction(): INST_BNE\n");
 
 			inst_type = TraceDqr::INST_BNE;
 			break;
 		case 0x4:
-			printf("decodeRV32Instruction(): INST_BLT\n");
+			// boink printf("decodeRV32Instruction(): INST_BLT\n");
 
 			inst_type = TraceDqr::INST_BLT;
 			break;
 		case 0x5:
-			printf("decodeRV32Instruction(): INST_BGE\n");
+			// boink printf("decodeRV32Instruction(): INST_BGE\n");
 
 			inst_type = TraceDqr::INST_BGE;
 			break;
 		case 0x6:
-			printf("decodeRV32Instruction(): INST_BLTU\n");
+			// boink printf("decodeRV32Instruction(): INST_BLTU\n");
 
 			inst_type = TraceDqr::INST_BLTU;
-			unsignedOffset = true;
 			break;
 		case 0x7:
-			printf("decodeRV32Instruction(): INST_BGEU\n");
+			// boink printf("decodeRV32Instruction(): INST_BGEU\n");
 
 			inst_type = TraceDqr::INST_BGEU;
-			unsignedOffset = true;
 			break;
 		default:
-			printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+			// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
 
 			inst_type = TraceDqr::INST_UNKNOWN;
 			immediate = 0;
@@ -7019,10 +7049,8 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 		t |= MOVE_BIT(instruction,7,11);
 		t |= MOVE_BIT(instruction,31,12);
 
-		if (unsignedOffset == false) {
-			if (t & (1<<12)) { // sign extend offset
-				t |= 0xffffe000;
-			}
+		if (t & (1<<12)) { // sign extend offset
+			t |= 0xffffe000;
 		}
 
 		immediate = t;
@@ -7210,6 +7238,11 @@ AddrStack::~AddrStack()
 	sp = 0;
 }
 
+void AddrStack::reset()
+{
+	sp = stackSize;
+}
+
 int AddrStack::push(TraceDqr::ADDRESS addr)
 {
 	if (sp <= 0) {
@@ -7218,9 +7251,12 @@ int AddrStack::push(TraceDqr::ADDRESS addr)
 		return 1;
 	}
 
+	// boink printf("AddrStack::push(0x%08llx)\n",addr);
+
 	sp -= 1;
 	stack[sp] = addr;
 
+	// boink printf("AddrStack::push(): %d item now on stack\n",stackSize-sp);
 	return 0;
 }
 
@@ -7235,6 +7271,7 @@ TraceDqr::ADDRESS AddrStack::pop()
 	TraceDqr::ADDRESS t = stack[sp];
 	sp += 1;
 
+	// boink printf("AddrStack::pop(): addr:0x%08llx %d items left on stack\n",t,stackSize-sp);
 	return t;
 }
 

@@ -206,6 +206,12 @@ public:
 		REG_31 = 31,
 		REG_unknown,
 	};
+
+	enum TraceType {
+		TRACETYPE_unknown = 0,
+		TRACETYPE_BTM,
+		TRACETYPE_HTM,
+	};
 };
 
 // class Instruction: work with an instruction
@@ -459,7 +465,10 @@ private:
 		uint32_t num_trace_ihistory_nottaken_branches;
 		uint32_t num_trace_resourcefull_i_cnt;
 		uint32_t num_trace_resourcefull_hist;
-		uint32_t num_trace_resourcefull_count;
+		uint32_t num_trace_resourcefull_takenCount;
+		uint32_t num_trace_resourcefull_notTakenCount;
+		uint32_t num_trace_resourcefull_taken_branches;
+		uint32_t num_trace_resourcefull_nottaken_branches;
 
 		uint32_t trace_bits_ts;
 		uint32_t trace_bits_ts_max;
@@ -537,6 +546,7 @@ private:
 	};
 
 	TraceDqr::DQErr        status;
+	TraceDqr::TraceType	   traceType;
 	class SliceFileParser *sfp;
 	class ElfReader       *elfReader;
 	class Symtab          *symtab;

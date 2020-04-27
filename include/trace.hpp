@@ -307,6 +307,7 @@ class AddrStack {
 public:
 	AddrStack(int size = 1024);
 	~AddrStack();
+	void reset();
 	int push(TraceDqr::ADDRESS addr);
 	TraceDqr::ADDRESS pop();
 
@@ -346,6 +347,7 @@ public:
 
 	int push(int core,TraceDqr::ADDRESS addr) { return stack[core].push(addr); }
 	TraceDqr::ADDRESS pop(int core) { return stack[core].pop(); }
+	void resetStack(int core) { stack[core].reset(); }
 
 //	int getICnt(int core);
 //	int adjustICnt(int core,int delta);
