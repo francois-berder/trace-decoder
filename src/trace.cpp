@@ -43,7 +43,7 @@ int Trace::decodeInstructionSize(uint32_t inst, int &inst_size)
 
 int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
-	return disassembler->decodeInstruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+	return disassembler->decodeInstruction(instruction,getArchSize(),inst_size,inst_type,rs1,rd,immediate,is_branch);
 }
 
 Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
@@ -506,7 +506,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	bool isTaken;
 	bool willRetry = false;
 
-// boink	printf("Trace::nextAddr(core=%d,current addr=%08x,pc=%08x)\n",core,addr,pc);
+	// boink printf("Trace::nextAddr(core=%d,current addr=%08x,pc=%08x)\n",core,addr,pc);
 
 	status = elfReader->getInstructionByAddress(addr,inst);
 	if (status != TraceDqr::DQERR_OK) {
@@ -529,18 +529,18 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		return status;
 	}
 
-	// boink	printf("nextAddr(): addr:%08x inst:%08x size:%d type:%d rs1:%d rd:%d\n",addr,inst,inst_size,inst_type,rs1,rd);
+	// blink printf("nextAddr(): addr:%08x inst:%08x size:%d type:%d rs1:%d rd:%d\n",addr,inst,inst_size,inst_type,rs1,rd);
 
 	switch (inst_type) {
 	case TraceDqr::INST_UNKNOWN:
-		// boink	printf("nextAddr(): INST_UNKNOWN\n");
+			// boink printf("nextAddr(): INST_UNKNOWN\n");
 
 		// btm and htm same
 
 		pc = addr + inst_size/8;
 		break;
 	case TraceDqr::INST_JAL:
-		// boink	printf("nextAddr(): INST_JAL\n");
+		// boink printf("nextAddr(): INST_JAL\n");
 
 		// btm and htm same
 
@@ -556,7 +556,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		pc = addr + immediate;
 		break;
 	case TraceDqr::INST_JALR:
-		// boink	printf("nextAddr(): INST_JALR\n");
+		// boink printf("nextAddr(): INST_JALR\n");
 
 		// btm: indirect branch; return pc = -1
 		// htm: indirect branch with history; return pc = pop'd addr if possible, else -1
@@ -599,7 +599,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	case TraceDqr::INST_BGEU:
 	case TraceDqr::INST_C_BEQZ:
 	case TraceDqr::INST_C_BNEZ:
-		// boink	printf("nextAddr(): INST_BRANCH or INST_C_BRANCH\n");
+		// boink printf("nextAddr(): INST_BRANCH or INST_C_BRANCH\n");
 
 		// htm: follow history bits
 		// btm: there will only be a trace record following this for taken branch. not taken branches are not
@@ -687,7 +687,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		}
 		break;
 	case TraceDqr::INST_C_J:
-		// boink	printf("nextAddr(): INST_BRANCH or INST_C_J\n");
+		// boink printf("nextAddr(): INST_BRANCH or INST_C_J\n");
 
 		// btm, htm same
 
@@ -697,7 +697,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		pc = addr + immediate;
 		break;
 	case TraceDqr::INST_C_JAL:
-		// boink	printf("nextAddr(): INST_BRANCH or INST_C_JAL\n");
+		// boink printf("nextAddr(): INST_BRANCH or INST_C_JAL\n");
 
 		// btm, htm same
 
@@ -709,7 +709,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		pc = addr + immediate;
 		break;
 	case TraceDqr::INST_C_JR:
-		// boink	printf("nextAddr(): INST_BRANCH or INST_C_JR\n");
+		// boink printf("nextAddr(): INST_BRANCH or INST_C_JR\n");
 
 		// pc = pc + rs1
 		// not inferrable unconditional
@@ -726,7 +726,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		}
 		break;
 	case TraceDqr::INST_C_JALR:
-		// boink	printf("nextAddr(): INST_BRANCH or INST_C_JALR\n");
+		// boink printf("nextAddr(): INST_BRANCH or INST_C_JALR\n");
 
 		// x1 = pc + 2
 		// pc = pc + rs1
@@ -756,7 +756,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		counts->consumeICnt(core,inst_size/16);
 	}
 
-	// boink	printf("nextAddr() -> %08x\n",pc);
+	// boink printf("nextAddr() -> %08x\n",pc);
 
 	return TraceDqr::DQERR_OK;
 }
@@ -1573,11 +1573,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			break;
 		case TRACE_STATE_GETNEXTINSTRUCTION:
 			// boink	printf("Trace::NextInstruction():TRACE_STATE_GETNEXTINSTRUCTION\n");
-
-//			note: this state assumes there are valid counts (i-cnt,hist, etc), but there may not be? What if a sync with 0
-//					i-cnt was read (or a coorelation with i-cnt=0)? Need to verify we have a valid count at the beginning of this
-//					state??
-// foodog
 
 			if (counts->getCurrentCountType(currentCore) == TraceDqr::COUNTTYPE_none) {
 				state[currentCore] = TRACE_STATE_RETIREMESSAGE;

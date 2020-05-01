@@ -1607,6 +1607,7 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 		num_branches_all_cores += 1 + taken + nottaken;
 
 		have_uaddr = true;
+		// compute avg/min/max hist bits
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 		core[nm.coreId].num_trace_ihistoryws += 1;
@@ -1674,14 +1675,17 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 			core[nm.coreId].trace_bits_hist += msb;
 
 			num_branches_all_cores += taken + nottaken;
+			// compute avg/min/max hits bits count
 			break;
 		case 8:
 			core[nm.coreId].num_trace_resourcefull_notTakenCount += 1;
 			core[nm.coreId].num_trace_resourcefull_nottaken_branches += nm.resourceFull.notTakenCount;
+			// compute avg/max/min not taken count
 			break;
 		case 9:
 			core[nm.coreId].num_trace_resourcefull_takenCount += 1;
 			core[nm.coreId].num_trace_resourcefull_taken_branches += nm.resourceFull.takenCount;
+			// compute avg/max/min taken count
 			break;
 		default:
 			printf("Error: Analytics::updateTraceInfo(): ResoureFull: unknown RDode: %d\n",nm.resourceFull.rCode);
@@ -4741,6 +4745,13 @@ TraceDqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &a
 
 	// if multicore, parse src field
 
+	// boink printf("parse direct branch\n");
+	// boink printf("tcode: %d\n",nm.tcode);
+	// boink
+	// boink for (int i = 0; i < msgSlices; i++) {
+	// boink  printf("slice %d: %02x | %d %d\n",i,msg[i] >> 2,(msg[i]&2)!=0,(msg[i]&1)!=0);
+	// boink }
+
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
         if (rc != TraceDqr::DQERR_OK) {
@@ -4769,6 +4780,8 @@ TraceDqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &a
 	bits += width;
 
     nm.directBranch.i_cnt = (int)tmp;
+
+    // boink printf("i-cnt: %d\n",nm.directBranch.i_cnt);
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -5133,6 +5146,13 @@ TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics
 
 	// if multicore, parse src field
 
+	// boink printf("parse sync\n");
+	// boink printf("tcode: %d\n",nm.tcode);
+	// boink
+	// boink for (int i = 0; i < msgSlices; i++) {
+	// boink   printf("slice %d: %02x | %d %d\n",i,msg[i] >> 2,(msg[i]&2)!=0,(msg[i]&1)!=0);
+	// boink }
+
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
         if (rc != TraceDqr::DQERR_OK) {
@@ -5228,6 +5248,8 @@ TraceDqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &an
 	int        ts_bits = 0;
 
 	nm.tcode = TraceDqr::TCODE_CORRELATION;
+
+//	printf("parse correlation\n");
 
 	// if multicore, parse src field
 
@@ -5784,7 +5806,7 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 //	printf("parseVarField(): bitIndex:%d, i:%d, b:%d, width: %d\n",bitIndex,i,b,width);
 
-	v = (uint8_t)(msg[i] >> (b+2));
+	v = ((uint64_t)msg[i]) >> (b+2);
 
 	while ((msg[i] & 0x03) == TraceDqr::MSEO_NORMAL) {
 		i += 1;
@@ -5796,7 +5818,7 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 			return TraceDqr::DQERR_ERR;
 		}
 
-		v = v | (((uint64_t)(msg[i] >> 2)) << w);
+		v = v | ((((uint64_t)msg[i]) >> 2) << w);
 		w += 6;
 	}
 
@@ -6909,9 +6931,9 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 		break;
 	}
 
-	if (inst_type == TraceDqr::INST_UNKNOWN) {
-		printf("decodeRV32Instruction(): INST_UNKNOWN\n");
-	}
+	// boink if (inst_type == TraceDqr::INST_UNKNOWN) {
+	// boink 	printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+	// boink }
 
 
 	return 0;
@@ -7068,23 +7090,373 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 	return 0;
 }
 
-int Disassembler::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1, TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
+int Disassembler::decodeRV64Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
+{
+	// boink printf("decodeRV64Instruction(): INST_UNKNOWN\n");
+
+	// no branch or jump instruction in quadrant 0
+
+	inst_size = 16;
+	is_branch = false;
+	immediate = 0;
+
+	if ((instruction & 0x0003) != 0x0000) {
+		return 1;
+	}
+
+	// we only crare about rs1 and rd for branch instructions, so just set them to unknown for now
+	rs1 = TraceDqr::REG_unknown;
+	rd = TraceDqr::REG_unknown;
+
+	inst_type = TraceDqr::INST_UNKNOWN;
+
+	return 0;
+}
+
+int Disassembler::decodeRV64Q1Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
+{
+	// Q1 compressed instruction
+
+	uint32_t t;
+
+	inst_size = 16;
+
+	switch (instruction >> 13) {
+	case 0x5:
+		// boink printf("decodeRV64Q1Instruction(): INST_C_J\n");
+
+		inst_type = TraceDqr::INST_C_J;
+		is_branch = true;
+
+		t = MOVE_BIT(instruction,3,1);
+		t |= MOVE_BIT(instruction,4,2);
+		t |= MOVE_BIT(instruction,5,3);
+		t |= MOVE_BIT(instruction,11,4);
+		t |= MOVE_BIT(instruction,2,5);
+		t |= MOVE_BIT(instruction,7,6);
+		t |= MOVE_BIT(instruction,6,7);
+		t |= MOVE_BIT(instruction,9,8);
+		t |= MOVE_BIT(instruction,10,9);
+		t |= MOVE_BIT(instruction,8,10);
+		t |= MOVE_BIT(instruction,12,11);
+
+		if (t & (1<<11)) { // sign extend offset
+			t |= 0xfffff000;
+		}
+
+		rs1 = TraceDqr::REG_unknown;
+		rd = TraceDqr::REG_0;
+
+		immediate = t;
+		break;
+	case 0x6:
+		// boink printf("decodeRV64Q1Instruction(): INST_C_BEQZ\n");
+
+		inst_type = TraceDqr::INST_C_BEQZ;
+		is_branch = true;
+
+		t = MOVE_BIT(instruction,3,1);
+		t |= MOVE_BIT(instruction,4,2);
+		t |= MOVE_BIT(instruction,10,3);
+		t |= MOVE_BIT(instruction,11,4);
+		t |= MOVE_BIT(instruction,2,5);
+		t |= MOVE_BIT(instruction,5,6);
+		t |= MOVE_BIT(instruction,6,7);
+		t |= MOVE_BIT(instruction,12,8);
+
+		if (t & (1<<8)) { // sign extend offset
+			t |= 0xfffffe00;
+		}
+
+		rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x03);
+		rd = TraceDqr::REG_unknown;
+
+		immediate = t;
+		break;
+	case 0x7:
+		// boink printf("decodeRV64Q1Instruction(): INST_C_BNEZ\n");
+
+		inst_type = TraceDqr::INST_C_BNEZ;
+		is_branch = true;
+
+		t = MOVE_BIT(instruction,3,1);
+		t |= MOVE_BIT(instruction,4,2);
+		t |= MOVE_BIT(instruction,10,3);
+		t |= MOVE_BIT(instruction,11,4);
+		t |= MOVE_BIT(instruction,2,5);
+		t |= MOVE_BIT(instruction,5,6);
+		t |= MOVE_BIT(instruction,6,7);
+		t |= MOVE_BIT(instruction,12,8);
+
+		if (t & (1<<8)) { // sign extend offset
+			t |= 0xfffffe00;
+		}
+
+		rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x03);
+		rd = TraceDqr::REG_unknown;
+
+		immediate = t;
+		break;
+	default:
+		// boink printf("decodeRV64Q1Instruction(): INST_UNKNOWN\n");
+
+		rs1 = TraceDqr::REG_unknown;
+		rd = TraceDqr::REG_unknown;
+		inst_type = TraceDqr::INST_UNKNOWN;
+		immediate = 0;
+		is_branch = 0;
+		break;
+	}
+
+	return 0;
+}
+
+int Disassembler::decodeRV64Q2Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
+{
+	// Q2 compressed instruction
+
+	inst_size = 16;
+
+	inst_type = TraceDqr::INST_UNKNOWN;
+	is_branch = false;
+	rs1 = TraceDqr::REG_unknown;
+	rd = TraceDqr::REG_unknown;
+
+	switch (instruction >> 13) {
+	case 0x4:
+		if (instruction & (1<<12)) {
+			if ((instruction & 0x007c) == 0x0000) {
+				if ((instruction & 0x0f80) != 0x0000) {
+					// boink printf("decodeRV64Instruction(): INST_C_JALR\n");
+
+					inst_type = TraceDqr::INST_C_JALR;
+					is_branch = true;
+
+					rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+					rd = TraceDqr::REG_1;
+					immediate = 0;
+				}
+			}
+		}
+		else {
+			if ((instruction & 0x007c) == 0x0000) {
+				if ((instruction & 0x0f80) != 0x0000) {
+					// boink printf("decodeRV64Instruction(): INST_C_JR\n");
+
+					inst_type = TraceDqr::INST_C_JR;
+					is_branch = true;
+
+					rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+					rd = TraceDqr::REG_0;
+					immediate = 0;
+				}
+			}
+		}
+		break;
+	default:
+		break;
+	}
+
+	// boink if (inst_type == TraceDqr::INST_UNKNOWN) {
+	// boink 	printf("decodeRV64Q2Instruction(): INST_UNKNOWN\n");
+	// boink }
+
+
+	return 0;
+}
+
+int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
+{
+	if ((instruction & 0x1f) == 0x1f) {
+		fprintf(stderr,"Error: decodeRV64Instruction(): cann't decode instructions longer than 32 bits\n");
+		return 1;
+	}
+
+	uint32_t t;
+
+	inst_size = 32;
+
+	switch (instruction & 0x7f) {
+	case 0x6f:
+		// boink printf("decodeRV32Instruction(): INST_JAL\n");
+
+		inst_type = TraceDqr::INST_JAL;
+		is_branch = true;
+
+		t = MOVE_BIT(instruction,21,1);
+		t |= MOVE_BIT(instruction,22,2);
+		t |= MOVE_BIT(instruction,23,3);
+		t |= MOVE_BIT(instruction,24,4);
+		t |= MOVE_BIT(instruction,25,5);
+		t |= MOVE_BIT(instruction,26,6);
+		t |= MOVE_BIT(instruction,27,7);
+		t |= MOVE_BIT(instruction,28,8);
+		t |= MOVE_BIT(instruction,29,9);
+		t |= MOVE_BIT(instruction,30,10);
+		t |= MOVE_BIT(instruction,20,11);
+		t |= MOVE_BIT(instruction,12,12);
+		t |= MOVE_BIT(instruction,13,13);
+		t |= MOVE_BIT(instruction,14,14);
+		t |= MOVE_BIT(instruction,15,15);
+		t |= MOVE_BIT(instruction,16,16);
+		t |= MOVE_BIT(instruction,17,17);
+		t |= MOVE_BIT(instruction,18,18);
+		t |= MOVE_BIT(instruction,19,19);
+		t |= MOVE_BIT(instruction,31,20);
+
+		if (t & (1<<20)) { // sign extend offset
+			t |= 0xffe00000;
+		}
+
+		immediate = t;
+		rd = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x67:
+		if ((instruction & 0x7000) == 0x000) {
+			// boink printf("decodeRV32Instruction(): INST_JALR\n");
+
+			inst_type = TraceDqr::INST_JALR;
+			is_branch = true;
+
+			t = instruction >> 20;
+
+			if (t & (1<<11)) { // sign extend offset
+				t |= 0xfffff000;
+			}
+
+			immediate = t;
+			rd = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+			rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
+		}
+		else {
+			// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+
+			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
+			is_branch = false;
+		}
+		break;
+	case 0x63:
+		switch ((instruction >> 12) & 0x7) {
+		case 0x0:
+// boink			printf("decodeRV32Instruction(): INST_BEQ\n");
+
+			inst_type = TraceDqr::INST_BEQ;
+			break;
+		case 0x1:
+			// boink printf("decodeRV32Instruction(): INST_BNE\n");
+
+			inst_type = TraceDqr::INST_BNE;
+			break;
+		case 0x4:
+			// boink printf("decodeRV32Instruction(): INST_BLT\n");
+
+			inst_type = TraceDqr::INST_BLT;
+			break;
+		case 0x5:
+			// boink printf("decodeRV32Instruction(): INST_BGE\n");
+
+			inst_type = TraceDqr::INST_BGE;
+			break;
+		case 0x6:
+			// boink printf("decodeRV32Instruction(): INST_BLTU\n");
+
+			inst_type = TraceDqr::INST_BLTU;
+			break;
+		case 0x7:
+			// boink printf("decodeRV32Instruction(): INST_BGEU\n");
+
+			inst_type = TraceDqr::INST_BGEU;
+			break;
+		default:
+			// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
+
+			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
+			is_branch = false;
+			return 0;
+		}
+
+		is_branch = true;
+
+		t = MOVE_BIT(instruction,8,1);
+		t |= MOVE_BIT(instruction,9,2);
+		t |= MOVE_BIT(instruction,10,3);
+		t |= MOVE_BIT(instruction,11,4);
+		t |= MOVE_BIT(instruction,25,5);
+		t |= MOVE_BIT(instruction,26,6);
+		t |= MOVE_BIT(instruction,27,7);
+		t |= MOVE_BIT(instruction,28,8);
+		t |= MOVE_BIT(instruction,29,9);
+		t |= MOVE_BIT(instruction,30,10);
+		t |= MOVE_BIT(instruction,7,11);
+		t |= MOVE_BIT(instruction,31,12);
+
+		if (t & (1<<12)) { // sign extend offset
+			t |= 0xffffe000;
+		}
+
+		immediate = t;
+		rd = TraceDqr::REG_unknown;
+		rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
+		break;
+	default:
+		inst_type = TraceDqr::INST_UNKNOWN;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
+	}
+
+	return 0;
+}
+
+int Disassembler::decodeInstruction(uint32_t instruction,int archSize,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1, TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
 	int rc;
 
-	switch (instruction & 0x0003) {
-	case 0x0000:	// quadrant 0, compressed
-		rc = decodeRV32Q0Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+	switch (archSize) {
+	case 32:
+		switch (instruction & 0x0003) {
+		case 0x0000:	// quadrant 0, compressed
+			rc = decodeRV32Q0Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0001:	// quadrant 1, compressed
+			rc = decodeRV32Q1Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0002:	// quadrant 2, compressed
+			rc = decodeRV32Q2Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0003:	// not compressed. Assume RV32 for now
+			rc = decodeRV32Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		}
 		break;
-	case 0x0001:	// quadrant 1, compressed
-		rc = decodeRV32Q1Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+	case 64:
+		switch (instruction & 0x0003) {
+		case 0x0000:	// quadrant 0, compressed
+			rc = decodeRV64Q0Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0001:	// quadrant 1, compressed
+			rc = decodeRV64Q1Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0002:	// quadrant 2, compressed
+			rc = decodeRV64Q2Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0003:	// not compressed. Assume RV32 for now
+			rc = decodeRV64Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		}
 		break;
-	case 0x0002:	// quadrant 2, compressed
-		rc = decodeRV32Q2Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
-		break;
-	case 0x0003:	// not compressed. Assume RV32 for now
-		rc = decodeRV32Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
-		break;
+	default:
+		printf("Error: decodeInstruction(): Unknown arch size %d\n",archSize);
+
+		rc = 1;
 	}
 
 	return rc;
@@ -7246,7 +7618,7 @@ void AddrStack::reset()
 int AddrStack::push(TraceDqr::ADDRESS addr)
 {
 	if (sp <= 0) {
-		printf("Error: AddrStack::push(): stack overflow\n");
+		// boink printf("Error: AddrStack::push(): stack overflow\n");
 
 		return 1;
 	}
@@ -7263,7 +7635,7 @@ int AddrStack::push(TraceDqr::ADDRESS addr)
 TraceDqr::ADDRESS AddrStack::pop()
 {
 	if (sp >= stackSize) {
-		printf("Error: AddrStack::pop(): stack underflow\n");
+		// boink printf("Error: AddrStack::pop(): stack underflow\n");
 
 		return -1;
 	}

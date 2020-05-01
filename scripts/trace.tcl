@@ -181,7 +181,6 @@ proc havehtm {} {
 
     echo "does not support htm"
     return 0
-    foodog
 }
 
 # ite = [i]s [t]race [e]nabled
@@ -632,8 +631,15 @@ proc setTraceMode {core mode} {
   switch $mode {
   "none"  { set tm 0 }
   "sync"  { set tm 1 }
-  "all"   { set tm 7 }
+  "all"   { set htm [hashtm]
+	    if {htm == 1} {
+              set tm 7
+	    } else {
+              set tm 3
+	    }
+          }
   "btm"   { set tm 3 }
+  "htmc"   { set tm 6 }
   "htm"   { set tm 7 }
   default { set tm 0 }
   }
@@ -655,6 +661,7 @@ proc getTraceMode {core} {
   0       { return "none" }
   1       { return "sync" }
   3       { return "btm+sync"  }
+  6       { return "htmc+sync" }
   7       { return "htm+sync"  }
   default { return "reserved" }
   }
@@ -1340,6 +1347,9 @@ proc tracemode {{cores "all"} {opt ""}} {
     echo {Usage: tracemode [corelist] [sync | all | none | help]}
     echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
     echo "  sync:     Generate only sync trace messages"
+    echo "  btm:      Generate both sync and btm trace messages"
+    echo "  htm:      Generate sync and htm trace messages (with return stack optimization or repeat branch optimization)"
+    echo "  htmc     Generate sync and conservitive htm trace messages (without return stack optimization or repeat branch optimization)"
     echo "  all:      Generate both sync and btm or htm trace messages (whichever is supported by hardware)"
     echo "  none:     Do not generate sync or btm trace messages"
     echo "  help:     Display this message"
@@ -1347,7 +1357,7 @@ proc tracemode {{cores "all"} {opt ""}} {
     echo "tracemode with no arguments will display the current setting for the type"
     echo "of messages to generate (none, sync, or all)"
     echo ""
-  } elseif {($opt == "sync") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm")} {
+  } elseif {($opt == "sync") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc")} {
     foreach core $coreList {
       setTraceMode $core $opt
     }
