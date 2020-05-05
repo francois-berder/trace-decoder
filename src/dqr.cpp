@@ -1417,6 +1417,7 @@ Analytics::Analytics()
 		core[i].num_trace_ihistory = 0;
 		core[i].num_trace_ihistoryws = 0;
 		core[i].num_trace_resourcefull = 0;
+
 		core[i].num_trace_dataacq = 0;
 		core[i].num_trace_dbranchws = 0;
 		core[i].num_trace_ibranchws = 0;
@@ -1441,6 +1442,13 @@ Analytics::Analytics()
 		core[i].trace_bits_max = 0;
 		core[i].trace_bits_min = 0;
 		core[i].trace_bits_mseo = 0;
+
+		core[i].max_hist_bits = 0;
+		core[i].min_hist_bits = 0;
+		core[i].max_notTakenCount = 0;
+		core[i].min_notTakenCount = 0;
+		core[i].max_takenCount = 0;
+		core[i].min_takenCount = 0;
 
 		core[i].trace_bits_sync = 0;
 		core[i].trace_bits_dbranch = 0;
@@ -1602,12 +1610,21 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 		core[nm.coreId].num_trace_ihistory_taken_branches += taken;
 		core[nm.coreId].num_trace_ihistory_nottaken_branches += nottaken;
 
-		core[nm.coreId].trace_bits_hist += msb;
+		if (msb >= 0) {
+			core[nm.coreId].trace_bits_hist += msb+1;
+
+			if (msb >= (int32_t)core[nm.coreId].max_hist_bits) {
+				core[nm.coreId].max_hist_bits = msb+1;
+			}
+		}
+
+		if ((msb+1) < (int32_t)core[nm.coreId].min_hist_bits) {
+			core[nm.coreId].min_hist_bits = msb+1;
+		}
 
 		num_branches_all_cores += 1 + taken + nottaken;
 
 		have_uaddr = true;
-		// compute avg/min/max hist bits
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 		core[nm.coreId].num_trace_ihistoryws += 1;
@@ -1634,7 +1651,17 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 		core[nm.coreId].num_trace_ihistory_taken_branches += taken;
 		core[nm.coreId].num_trace_ihistory_nottaken_branches += nottaken;
 
-		core[nm.coreId].trace_bits_hist += msb;
+		if (msb >= 0) {
+			core[nm.coreId].trace_bits_hist += msb+1;
+
+			if (msb >= (int32_t)core[nm.coreId].max_hist_bits) {
+				core[nm.coreId].max_hist_bits = msb+1;
+			}
+		}
+
+		if ((msb+1) < (int32_t)core[nm.coreId].min_hist_bits) {
+			core[nm.coreId].min_hist_bits = msb+1;
+		}
 
 		num_branches_all_cores += 1 + taken + nottaken;
 
@@ -1646,6 +1673,7 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 
 		switch (nm.resourceFull.rCode) {
 		case 0:
+			core[nm.coreId].num_trace_resourcefull += 1;
 			core[nm.coreId].num_trace_resourcefull_i_cnt += 1;
 			break;
 		case 1:
@@ -1672,20 +1700,47 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 			core[nm.coreId].num_trace_ihistory_taken_branches += taken;
 			core[nm.coreId].num_trace_ihistory_nottaken_branches += nottaken;
 
-			core[nm.coreId].trace_bits_hist += msb;
+			if (msb >= 0) {
+				core[nm.coreId].trace_bits_hist += msb+1;
+
+				if (msb >= (int32_t)core[nm.coreId].max_hist_bits) {
+					core[nm.coreId].max_hist_bits = msb+1;
+				}
+			}
+
+			if ((msb+1) < (int32_t)core[nm.coreId].min_hist_bits) {
+				core[nm.coreId].min_hist_bits = msb+1;
+			}
 
 			num_branches_all_cores += taken + nottaken;
-			// compute avg/min/max hits bits count
 			break;
 		case 8:
 			core[nm.coreId].num_trace_resourcefull_notTakenCount += 1;
 			core[nm.coreId].num_trace_resourcefull_nottaken_branches += nm.resourceFull.notTakenCount;
+
 			// compute avg/max/min not taken count
+
+			if (nm.resourceFull.notTakenCount > (int32_t)core[nm.coreId].max_notTakenCount) {
+				core[nm.coreId].max_notTakenCount = nm.resourceFull.notTakenCount;
+			}
+
+			if ((core[nm.coreId].min_notTakenCount == 0) || (nm.resourceFull.notTakenCount < (int32_t)core[nm.coreId].min_notTakenCount)) {
+				core[nm.coreId].min_notTakenCount = nm.resourceFull.notTakenCount;
+			}
 			break;
 		case 9:
 			core[nm.coreId].num_trace_resourcefull_takenCount += 1;
 			core[nm.coreId].num_trace_resourcefull_taken_branches += nm.resourceFull.takenCount;
+
 			// compute avg/max/min taken count
+
+			if (nm.resourceFull.takenCount > (int32_t)core[nm.coreId].max_takenCount) {
+				core[nm.coreId].max_takenCount = nm.resourceFull.takenCount;
+			}
+
+			if ((core[nm.coreId].min_takenCount == 0) || (nm.resourceFull.takenCount < (int32_t)core[nm.coreId].min_takenCount)) {
+				core[nm.coreId].min_takenCount = nm.resourceFull.takenCount;
+			}
 			break;
 		default:
 			printf("Error: Analytics::updateTraceInfo(): ResoureFull: unknown RDode: %d\n",nm.resourceFull.rCode);
@@ -2202,6 +2257,138 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
 		updateDst(n,dst,dst_len);
 
+		position = sprintf(tmp_dst,"  IHistory");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ihistory,((float)core[i].num_trace_ihistory)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_ihistory;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  IHistory WS");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ihistoryws,((float)core[i].num_trace_ihistoryws)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_ihistoryws;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  RFull ICNT");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_i_cnt,((float)core[i].num_trace_resourcefull_i_cnt)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_resourcefull_i_cnt;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  RFull HIST");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_hist,((float)core[i].num_trace_resourcefull_hist)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_resourcefull_hist;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  RFull Taken");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_takenCount,((float)core[i].num_trace_resourcefull_takenCount)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_resourcefull_takenCount;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  RFull NTaken");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_notTakenCount,((float)core[i].num_trace_resourcefull_notTakenCount)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_resourcefull_notTakenCount;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
 		position = sprintf(tmp_dst,"Trace Bits Total");
 
 		ts = 0;
@@ -2298,7 +2485,7 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws));
+				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws+core[i].num_trace_ihistory_taken_branches+core[i].num_trace_resourcefull_taken_branches));
 				t1 += core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws;
 				ts += 1;
 			}
@@ -3963,44 +4150,29 @@ TraceDqr::CountType Count::getCurrentCountType(int core)
 {
 	// types are prioritized! Order is important
 
-	// boink printf("Count::getCurrentCountType(core=%d): i_cnt:%d, hist:%08x, histBit:%d, taken:%d, notTaken: %d\n",core,i_cnt[core],history[core],histBit[core],takenCount[core],notTakenCount[core]);
-
 	if (histBit[core] >= 0) {
-		// boink printf("Count::getCurrentCountType(%d) -> history\n",core);
 		return TraceDqr::COUNTTYPE_history;
 	}
 
 	if (takenCount[core] > 0) {
-		// boink printf("Count::getCurrentCountType(%d) -> takenCount\n",core);
 		return TraceDqr::COUNTTYPE_taken;
 	}
 
 	if (notTakenCount[core] > 0) {
-		// boink printf("Count::getCurrentCountType(%d) -> notTakenCount\n",core);
 		return TraceDqr::COUNTTYPE_notTaken;
 	}
 
 	// i-cnt is the lowest priority
 
 	if (i_cnt[core] > 0) {
-		// boink printf("Count::getCurrentCountType(%d) -> i_cnt\n",core);
 		return TraceDqr::COUNTTYPE_i_cnt;
 	}
-
-	// boink printf("Count::getCurrentCountType(%d) -> none\n",core);
 
 	return TraceDqr::COUNTTYPE_none;
 }
 
 TraceDqr::DQErr Count::setICnt(int core,int count)
 {
-	// boink printf("Count::setICnt(core=%d,count=%d)\n",core,count);
-
-//	if (i_cnt[core] > 0) { // i_cnt might be <= 0, and that is okay! We "borrow" against it with hisotry and taken/not taken if we don't have an i_cnt
-//		printf("Error: setICount(): i_cnt not exhausted\n");
-//		return TraceDqr::DQERR_ERR;
-//	}
-
 	i_cnt[core] += count;
 
 	return TraceDqr::DQERR_OK;
@@ -4008,8 +4180,6 @@ TraceDqr::DQErr Count::setICnt(int core,int count)
 
 TraceDqr::DQErr Count::setHistory(int core,uint64_t hist)
 {
-	// boink printf("Count::setHistory(core=%d,hist=%08x)\n",core,hist);
-
 	TraceDqr::DQErr rc = TraceDqr::DQERR_OK;
 
 	if (histBit[core] >= 0) {
@@ -4047,8 +4217,6 @@ TraceDqr::DQErr Count::setHistory(int core,uint64_t hist)
 
 TraceDqr::DQErr Count::setHistory(int core,uint64_t hist,int count)
 {
-	// blink printf("Count::setHistory(core=%d,hist=%08x,count=%d)\n",core,hist,count);
-
 	TraceDqr::DQErr rc;
 
 	rc = setICnt(core,count);
@@ -4066,8 +4234,6 @@ TraceDqr::DQErr Count::setHistory(int core,uint64_t hist,int count)
 
 TraceDqr::DQErr Count::setTakenCount(int core,int takenCnt)
 {
-	// boink printf("Count::setTakenCount(core=%d,taken=%d)\n",core,takenCnt);
-
 	TraceDqr::DQErr rc;
 
 	if (histBit[core] >= 0) {
@@ -4089,8 +4255,6 @@ TraceDqr::DQErr Count::setTakenCount(int core,int takenCnt)
 
 TraceDqr::DQErr Count::setNotTakenCount(int core,int notTakenCnt)
 {
-	// boink printf("Count::setNotTakenCount(core=%d,taken=%d)\n",core,notTakenCnt);
-
 	TraceDqr::DQErr rc;
 
 	if (histBit[core] >= 0) {
@@ -4117,8 +4281,6 @@ TraceDqr::DQErr Count::setCounts(NexusMessage *nm)
 	uint64_t tmp_history = 0;
 	int tmp_taken = 0;
 	int tmp_notTaken = 0;
-
-	// boink printf("setCounts() core %d\n",nm->coreId);
 
 	switch (nm->tcode) {
 	case TraceDqr::TCODE_DEBUG_STATUS:
@@ -4201,8 +4363,6 @@ TraceDqr::DQErr Count::setCounts(NexusMessage *nm)
 		return TraceDqr::DQERR_ERR;
 	}
 
-	// boink printf("setCounts(core=%d): i_cnt: %d, history: %08llx, histBits: %d, taken: %d, not taken: %d\n",nm->coreId,tmp_i_cnt,tmp_history,histBit[nm->coreId],tmp_taken,tmp_notTaken);
-
 	if (tmp_i_cnt != 0) {
 		rc = setICnt(nm->coreId,tmp_i_cnt);
 		if (rc != TraceDqr::DQERR_OK) {
@@ -4236,22 +4396,14 @@ TraceDqr::DQErr Count::setCounts(NexusMessage *nm)
 
 int Count::consumeICnt(int core,int numToConsume)
 {
-	// boink printf("Count::consumeICnt(core=%d,numToConsume=%d)\n",core,numToConsume);
-
 	i_cnt[core] -= numToConsume;
-
-	// boink printf("Count::consumeICnt(): remaining:%d\n",i_cnt[core]);
 
 	return i_cnt[core];
 }
 
 int Count::consumeHistory(int core,bool &taken)
 {
-	// boink printf("Count::consumeHistory(core=%d)",core);
-
 	if (histBit[core] < 0) {
-		// boink printf("Consumed: Count::consumeHistory(core=%d) -> histBit[%d] = %d\n",core,core,histBit[core]);
-
 		return 1;
 	}
 
@@ -4259,41 +4411,27 @@ int Count::consumeHistory(int core,bool &taken)
 
 	histBit[core] -= 1;
 
-	// boink printf("Not Consumed: Count::consumHistory(core=%d): taken = %d\n",core,taken);
-
 	return 0;
 }
 
 int Count::consumeTakenCount(int core)
 {
-	// boink printf("Count::consumeTakenCount(core=%d)",core);
-
 	if (takenCount[core] <= 0) {
-		// boink printf("Consumed: Count::consumeTakenCount(core=%d) -> takenCount[%d] = %d\n",core,core,takenCount[core]);
-
 		return 1;
 	}
 
 	takenCount[core] -= 1;
-
-	// boink printf("Not Consumed: Count::consumTakenCount(core=%d): taken[%d] = %d\n",core,core,takenCount[core]);
 
 	return 0;
 }
 
 int Count::consumeNotTakenCount(int core)
 {
-	// boink printf("Count::consumeNotTakenCount(core=%d)",core);
-
 	if (notTakenCount[core] <= 0) {
-		// boink printf("Consumed: Count::consumeNotTakenCount(core=%d) -> notTakenCount[%d] = %d\n",core,core,notTakenCount[core]);
-
 		return 1;
 	}
 
 	notTakenCount[core] -= 1;
-
-	// boink printf("Not Consumed: Count::consumNotTakenCount(core=%d): notTaken[%d] = %d\n",core,core,notTakenCount[core]);
 
 	return 0;
 }
@@ -4365,17 +4503,9 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
 	int        width;
 	int        bits = 6;	// start bits at 6 to account for tcode
 	int        ts_bits = 0;
+	int        addr_bits;
 
 	nm.tcode = TraceDqr::TCODE_INDIRECTBRANCHHISTORY;
-
-	// boink printf("parseIndirectHistory()\n");
-	// boink printf("tcode: %d\n",nm.tcode);
-
-	// boink for (int i = 0; i < msgSlices; i++) {
-	// boink 	printf("slice %d: %02x | %d %d\n",i,msg[i] >> 2,(msg[i]&2)!=0,(msg[i]&1)!=0);
-	// boink }
-
-	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
@@ -4408,8 +4538,6 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
 
 	// parse the variable length the i-cnt
 
-	// boink printf("coreId: %d\n",nm.coreId);
-
 	rc = parseVarField(&tmp,&width);
 	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
@@ -4421,8 +4549,6 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
 
     nm.indirectHistory.i_cnt = (int)tmp;
 
-    // boink printf("i_cnt: %d\n",nm.indirectHistory.i_cnt);
-
     // parse the u-addr field
 
     rc = parseVarField(&tmp,&width);
@@ -4433,10 +4559,9 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
     }
 
     bits += width;
+	addr_bits = width;
 
     nm.indirectHistory.u_addr = (TraceDqr::ADDRESS)tmp;
-
-    // boink printf("u_addr: %08x\n",nm.indirectHistory.u_addr);
 
     // parse the variable lenght history field
 
@@ -4450,8 +4575,6 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
     bits += width;
 
     nm.indirectHistory.history = tmp;
-
-    // boink printf("history: %016llx\n",nm.indirectHistory.history);
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -4480,7 +4603,7 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4494,6 +4617,7 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistoryWS(NexusMessage &nm,Analyti
 	int        width;
 	int        bits = 6;	// start bits at 6 to account for tcode
 	int        ts_bits = 0;
+	int        addr_bits;
 
 	nm.tcode = TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS;
 
@@ -4564,6 +4688,7 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistoryWS(NexusMessage &nm,Analyti
     }
 
     bits += width;
+	addr_bits = width;
 
     nm.indirectHistoryWS.f_addr = (TraceDqr::ADDRESS)tmp;
 
@@ -4607,7 +4732,7 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistoryWS(NexusMessage &nm,Analyti
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4623,13 +4748,6 @@ TraceDqr::DQErr SliceFileParser::parseResourceFull(NexusMessage &nm,Analytics &a
 	int        ts_bits = 0;
 
 	nm.tcode = TraceDqr::TCODE_RESOURCEFULL;
-
-	// boink printf("parseResourceFull()\n");
-	// boink printf("tcode: %d\n",nm.tcode);
-
-	// boink for (int i = 0; i < msgSlices; i++) {
-	// boink 	printf("slice %d: %02x | %d %d\n",i,msg[i] >> 2,(msg[i]&2)!=0,(msg[i]&1)!=0);
-	// boink }
 
 	// if multicore, parse src field
 
@@ -4662,8 +4780,6 @@ TraceDqr::DQErr SliceFileParser::parseResourceFull(NexusMessage &nm,Analytics &a
 
     nm.resourceFull.rCode = (int)tmp;
 
-    // boink printf("parse resource full: rcode: %d\n",nm.resourceFull.rCode);
-
     // parse the vairable length rdata field
 
     rc = parseVarField(&tmp,&width);
@@ -4678,19 +4794,15 @@ TraceDqr::DQErr SliceFileParser::parseResourceFull(NexusMessage &nm,Analytics &a
     switch (nm.resourceFull.rCode) {
     case 0:
     	nm.resourceFull.i_cnt = (int)tmp;
-    	// boink printf("parse resource full: i_cnt: %d\n",nm.resourceFull.i_cnt);
     	break;
     case 1:
     	nm.resourceFull.history = tmp;
-    	// boink printf("resource full: history: %08llx, %08llx, width: %d\n",nm.resourceFull.history,tmp,width);
     	break;
     case 8:
     	nm.resourceFull.notTakenCount = (int)tmp;
-    	// boink printf("parse resource full: notTakenCount: %d\n",nm.resourceFull.notTakenCount);
     	break;
     case 9:
     	nm.resourceFull.takenCount = (int)tmp;
-    	// boink printf("parse resource full: takenCount: %d\n",nm.resourceFull.takenCount);
     	break;
     default:
     	printf("Error: parseResourceFull(): unknown rCode: %d\n",nm.resourceFull.rCode);
@@ -4745,13 +4857,6 @@ TraceDqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &a
 
 	// if multicore, parse src field
 
-	// boink printf("parse direct branch\n");
-	// boink printf("tcode: %d\n",nm.tcode);
-	// boink
-	// boink for (int i = 0; i < msgSlices; i++) {
-	// boink  printf("slice %d: %02x | %d %d\n",i,msg[i] >> 2,(msg[i]&2)!=0,(msg[i]&1)!=0);
-	// boink }
-
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
         if (rc != TraceDqr::DQERR_OK) {
@@ -4780,8 +4885,6 @@ TraceDqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &a
 	bits += width;
 
     nm.directBranch.i_cnt = (int)tmp;
-
-    // boink printf("i-cnt: %d\n",nm.directBranch.i_cnt);
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -5145,13 +5248,6 @@ TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics
 	nm.tcode         = TraceDqr::TCODE_SYNC;
 
 	// if multicore, parse src field
-
-	// boink printf("parse sync\n");
-	// boink printf("tcode: %d\n",nm.tcode);
-	// boink
-	// boink for (int i = 0; i < msgSlices; i++) {
-	// boink   printf("slice %d: %02x | %d %d\n",i,msg[i] >> 2,(msg[i]&2)!=0,(msg[i]&1)!=0);
-	// boink }
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
@@ -5839,8 +5935,6 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 	*width = w;
 	*val = v;
 
-	// boink printf("-> bitIndex: %d, value: %llx, width: %d\n",bitIndex,v,w);
-
 	return TraceDqr::DQERR_OK;
 }
 
@@ -6118,15 +6212,12 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = TraceDqr::DQERR_ERR;
 				break;
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
-				// boink printf("->parsing ownership trace\n");
 				rc = parseOwnershipTrace(nm,analytics);
 				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH:
-				// boink printf("->parsing direct branch\n");
 				rc = parseDirectBranch(nm,analytics);
 				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
-				// boink printf("->parsing indirect branch\n");
 				rc = parseIndirectBranch(nm,analytics);
 				break;
 			case TraceDqr::TCODE_DATA_WRITE:
@@ -6138,15 +6229,12 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = TraceDqr::DQERR_ERR;
 				break;
 			case TraceDqr::TCODE_DATA_ACQUISITION:
-				// boink printf("->parsing data acquisition\n");
 				rc = parseDataAcquisition(nm,analytics);
 				break;
 			case TraceDqr::TCODE_ERROR:
-				// boink printf("->parsing error (not an error)\n");
 				rc = parseError(nm,analytics);
 				break;
 			case TraceDqr::TCODE_SYNC:
-				// boink printf("->parsing sync\n");
 				rc = parseSync(nm,analytics);
 				break;
 			case TraceDqr::TCODE_CORRECTION:
@@ -6154,11 +6242,9 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = TraceDqr::DQERR_ERR;
 				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-				// boink printf("->parsing direct branch WS\n");
 				rc = parseDirectBranchWS(nm,analytics);
 				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-				// boink printf("->parsing indirect branch WS\n");
 				rc = parseIndirectBranchWS(nm,analytics);
 				break;
 			case TraceDqr::TCODE_DATA_WRITE_WS:
@@ -6174,23 +6260,18 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = TraceDqr::DQERR_ERR;
 				break;
 			case TraceDqr::TCODE_CORRELATION:
-				// boink printf("->parsing correlation\n");
 				rc = parseCorrelation(nm,analytics);
 				break;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
-				// boink printf("->parsing aux access write\n");
 				rc = parseAuxAccessWrite(nm,analytics);
 				break;
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
-				// boink printf("->parsing indirect history\n");
 				rc = parseIndirectHistory(nm,analytics);
 				break;
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
-				// boink printf("->parsing indirect history WS\n");
 				rc = parseIndirectHistoryWS(nm,analytics);
 				break;
 			case TraceDqr::TCODE_RESOURCEFULL:
-				// boink printf("->parsing resource full\n");
 				rc = parseResourceFull(nm,analytics);
 				break;
 			default:
@@ -6739,8 +6820,6 @@ int Disassembler::decodeInstructionSize(uint32_t inst, int &inst_size)
 
 int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
-	// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
-
 	// no branch or jump instruction in quadrant 0
 
 	inst_size = 16;
@@ -6770,8 +6849,6 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 
 	switch (instruction >> 13) {
 	case 0x1:
-		// boink printf("decodeRV32Instruction(): INST_C_JAL\n");
-
 		inst_type = TraceDqr::INST_C_JAL;
 		is_branch = true;
 
@@ -6797,8 +6874,6 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		rd = TraceDqr::REG_1;
 		break;
 	case 0x5:
-		// boink printf("decodeRV32Instruction(): INST_C_J\n");
-
 		inst_type = TraceDqr::INST_C_J;
 		is_branch = true;
 
@@ -6824,8 +6899,6 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	case 0x6:
-		// boink printf("decodeRV32Instruction(): INST_C_BEQZ\n");
-
 		inst_type = TraceDqr::INST_C_BEQZ;
 		is_branch = true;
 
@@ -6848,8 +6921,6 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	case 0x7:
-		// boink printf("decodeRV32Instruction(): INST_C_BNEZ\n");
-
 		inst_type = TraceDqr::INST_C_BNEZ;
 		is_branch = true;
 
@@ -6872,8 +6943,6 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	default:
-		// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
-
 		rs1 = TraceDqr::REG_unknown;
 		rd = TraceDqr::REG_unknown;
 		inst_type = TraceDqr::INST_UNKNOWN;
@@ -6901,8 +6970,6 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 		if (instruction & (1<<12)) {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
-					// boink printf("decodeRV32Instruction(): INST_C_JALR\n");
-
 					inst_type = TraceDqr::INST_C_JALR;
 					is_branch = true;
 
@@ -6915,8 +6982,6 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 		else {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
-					// boink printf("decodeRV32Instruction(): INST_C_JR\n");
-
 					inst_type = TraceDqr::INST_C_JR;
 					is_branch = true;
 
@@ -6930,11 +6995,6 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 	default:
 		break;
 	}
-
-	// boink if (inst_type == TraceDqr::INST_UNKNOWN) {
-	// boink 	printf("decodeRV32Instruction(): INST_UNKNOWN\n");
-	// boink }
-
 
 	return 0;
 }
@@ -6952,8 +7012,6 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 
 	switch (instruction & 0x7f) {
 	case 0x6f:
-		// boink printf("decodeRV32Instruction(): INST_JAL\n");
-
 		inst_type = TraceDqr::INST_JAL;
 		is_branch = true;
 
@@ -6988,8 +7046,6 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 		break;
 	case 0x67:
 		if ((instruction & 0x7000) == 0x000) {
-			// boink printf("decodeRV32Instruction(): INST_JALR\n");
-
 			inst_type = TraceDqr::INST_JALR;
 			is_branch = true;
 
@@ -7004,8 +7060,6 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 			rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
 		}
 		else {
-			// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
-
 			inst_type = TraceDqr::INST_UNKNOWN;
 			immediate = 0;
 			rd = TraceDqr::REG_unknown;
@@ -7016,38 +7070,24 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 	case 0x63:
 		switch ((instruction >> 12) & 0x7) {
 		case 0x0:
-// boink			printf("decodeRV32Instruction(): INST_BEQ\n");
-
 			inst_type = TraceDqr::INST_BEQ;
 			break;
 		case 0x1:
-			// boink printf("decodeRV32Instruction(): INST_BNE\n");
-
 			inst_type = TraceDqr::INST_BNE;
 			break;
 		case 0x4:
-			// boink printf("decodeRV32Instruction(): INST_BLT\n");
-
 			inst_type = TraceDqr::INST_BLT;
 			break;
 		case 0x5:
-			// boink printf("decodeRV32Instruction(): INST_BGE\n");
-
 			inst_type = TraceDqr::INST_BGE;
 			break;
 		case 0x6:
-			// boink printf("decodeRV32Instruction(): INST_BLTU\n");
-
 			inst_type = TraceDqr::INST_BLTU;
 			break;
 		case 0x7:
-			// boink printf("decodeRV32Instruction(): INST_BGEU\n");
-
 			inst_type = TraceDqr::INST_BGEU;
 			break;
 		default:
-			// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
-
 			inst_type = TraceDqr::INST_UNKNOWN;
 			immediate = 0;
 			rd = TraceDqr::REG_unknown;
@@ -7092,8 +7132,6 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 
 int Disassembler::decodeRV64Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
-	// boink printf("decodeRV64Instruction(): INST_UNKNOWN\n");
-
 	// no branch or jump instruction in quadrant 0
 
 	inst_size = 16;
@@ -7123,8 +7161,6 @@ int Disassembler::decodeRV64Q1Instruction(uint32_t instruction,int &inst_size,Tr
 
 	switch (instruction >> 13) {
 	case 0x5:
-		// boink printf("decodeRV64Q1Instruction(): INST_C_J\n");
-
 		inst_type = TraceDqr::INST_C_J;
 		is_branch = true;
 
@@ -7150,8 +7186,6 @@ int Disassembler::decodeRV64Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	case 0x6:
-		// boink printf("decodeRV64Q1Instruction(): INST_C_BEQZ\n");
-
 		inst_type = TraceDqr::INST_C_BEQZ;
 		is_branch = true;
 
@@ -7174,8 +7208,6 @@ int Disassembler::decodeRV64Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	case 0x7:
-		// boink printf("decodeRV64Q1Instruction(): INST_C_BNEZ\n");
-
 		inst_type = TraceDqr::INST_C_BNEZ;
 		is_branch = true;
 
@@ -7198,8 +7230,6 @@ int Disassembler::decodeRV64Q1Instruction(uint32_t instruction,int &inst_size,Tr
 		immediate = t;
 		break;
 	default:
-		// boink printf("decodeRV64Q1Instruction(): INST_UNKNOWN\n");
-
 		rs1 = TraceDqr::REG_unknown;
 		rd = TraceDqr::REG_unknown;
 		inst_type = TraceDqr::INST_UNKNOWN;
@@ -7227,8 +7257,6 @@ int Disassembler::decodeRV64Q2Instruction(uint32_t instruction,int &inst_size,Tr
 		if (instruction & (1<<12)) {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
-					// boink printf("decodeRV64Instruction(): INST_C_JALR\n");
-
 					inst_type = TraceDqr::INST_C_JALR;
 					is_branch = true;
 
@@ -7241,8 +7269,6 @@ int Disassembler::decodeRV64Q2Instruction(uint32_t instruction,int &inst_size,Tr
 		else {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
-					// boink printf("decodeRV64Instruction(): INST_C_JR\n");
-
 					inst_type = TraceDqr::INST_C_JR;
 					is_branch = true;
 
@@ -7256,11 +7282,6 @@ int Disassembler::decodeRV64Q2Instruction(uint32_t instruction,int &inst_size,Tr
 	default:
 		break;
 	}
-
-	// boink if (inst_type == TraceDqr::INST_UNKNOWN) {
-	// boink 	printf("decodeRV64Q2Instruction(): INST_UNKNOWN\n");
-	// boink }
-
 
 	return 0;
 }
@@ -7278,8 +7299,6 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 
 	switch (instruction & 0x7f) {
 	case 0x6f:
-		// boink printf("decodeRV32Instruction(): INST_JAL\n");
-
 		inst_type = TraceDqr::INST_JAL;
 		is_branch = true;
 
@@ -7314,8 +7333,6 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 		break;
 	case 0x67:
 		if ((instruction & 0x7000) == 0x000) {
-			// boink printf("decodeRV32Instruction(): INST_JALR\n");
-
 			inst_type = TraceDqr::INST_JALR;
 			is_branch = true;
 
@@ -7330,8 +7347,6 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 			rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
 		}
 		else {
-			// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
-
 			inst_type = TraceDqr::INST_UNKNOWN;
 			immediate = 0;
 			rd = TraceDqr::REG_unknown;
@@ -7342,38 +7357,24 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 	case 0x63:
 		switch ((instruction >> 12) & 0x7) {
 		case 0x0:
-// boink			printf("decodeRV32Instruction(): INST_BEQ\n");
-
 			inst_type = TraceDqr::INST_BEQ;
 			break;
 		case 0x1:
-			// boink printf("decodeRV32Instruction(): INST_BNE\n");
-
 			inst_type = TraceDqr::INST_BNE;
 			break;
 		case 0x4:
-			// boink printf("decodeRV32Instruction(): INST_BLT\n");
-
 			inst_type = TraceDqr::INST_BLT;
 			break;
 		case 0x5:
-			// boink printf("decodeRV32Instruction(): INST_BGE\n");
-
 			inst_type = TraceDqr::INST_BGE;
 			break;
 		case 0x6:
-			// boink printf("decodeRV32Instruction(): INST_BLTU\n");
-
 			inst_type = TraceDqr::INST_BLTU;
 			break;
 		case 0x7:
-			// boink printf("decodeRV32Instruction(): INST_BGEU\n");
-
 			inst_type = TraceDqr::INST_BGEU;
 			break;
 		default:
-			// boink printf("decodeRV32Instruction(): INST_UNKNOWN\n");
-
 			inst_type = TraceDqr::INST_UNKNOWN;
 			immediate = 0;
 			rd = TraceDqr::REG_unknown;
@@ -7618,32 +7619,24 @@ void AddrStack::reset()
 int AddrStack::push(TraceDqr::ADDRESS addr)
 {
 	if (sp <= 0) {
-		// boink printf("Error: AddrStack::push(): stack overflow\n");
-
 		return 1;
 	}
-
-	// boink printf("AddrStack::push(0x%08llx)\n",addr);
 
 	sp -= 1;
 	stack[sp] = addr;
 
-	// boink printf("AddrStack::push(): %d item now on stack\n",stackSize-sp);
 	return 0;
 }
 
 TraceDqr::ADDRESS AddrStack::pop()
 {
 	if (sp >= stackSize) {
-		// boink printf("Error: AddrStack::pop(): stack underflow\n");
-
 		return -1;
 	}
 
 	TraceDqr::ADDRESS t = stack[sp];
 	sp += 1;
 
-	// boink printf("AddrStack::pop(): addr:0x%08llx %d items left on stack\n",t,stackSize-sp);
 	return t;
 }
 

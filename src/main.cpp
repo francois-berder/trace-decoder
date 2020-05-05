@@ -474,7 +474,7 @@ int main(int argc, char *argv[])
 	Instruction *instInfo;
 	NexusMessage *msgInfo;
 	Source *srcInfo;
-	char dst[1024];
+	char dst[10000];
 	int instlevel = 1;
 	int msgLevel = 2;
 	const char *lastSrcFile = nullptr;

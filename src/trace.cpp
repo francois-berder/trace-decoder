@@ -506,13 +506,9 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	bool isTaken;
 	bool willRetry = false;
 
-	// boink printf("Trace::nextAddr(core=%d,current addr=%08x,pc=%08x)\n",core,addr,pc);
-
 	status = elfReader->getInstructionByAddress(addr,inst);
 	if (status != TraceDqr::DQERR_OK) {
 		printf("Error: nextAddr(): getInstructionByAddress() failed\n");
-
-// boink		printf("Addr: %08x\n",addr);
 
 		return status;
 	}
@@ -529,19 +525,13 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		return status;
 	}
 
-	// blink printf("nextAddr(): addr:%08x inst:%08x size:%d type:%d rs1:%d rd:%d\n",addr,inst,inst_size,inst_type,rs1,rd);
-
 	switch (inst_type) {
 	case TraceDqr::INST_UNKNOWN:
-			// boink printf("nextAddr(): INST_UNKNOWN\n");
-
 		// btm and htm same
 
 		pc = addr + inst_size/8;
 		break;
 	case TraceDqr::INST_JAL:
-		// boink printf("nextAddr(): INST_JAL\n");
-
 		// btm and htm same
 
 		// rd = pc+4 (rd can be r0)
@@ -556,8 +546,6 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		pc = addr + immediate;
 		break;
 	case TraceDqr::INST_JALR:
-		// boink printf("nextAddr(): INST_JALR\n");
-
 		// btm: indirect branch; return pc = -1
 		// htm: indirect branch with history; return pc = pop'd addr if possible, else -1
 
@@ -599,8 +587,6 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	case TraceDqr::INST_BGEU:
 	case TraceDqr::INST_C_BEQZ:
 	case TraceDqr::INST_C_BNEZ:
-		// boink printf("nextAddr(): INST_BRANCH or INST_C_BRANCH\n");
-
 		// htm: follow history bits
 		// btm: there will only be a trace record following this for taken branch. not taken branches are not
 		// reported. If btm mode, we can look at i-count. If it is going to go to 0, branch was taken (direct branch message
@@ -687,8 +673,6 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		}
 		break;
 	case TraceDqr::INST_C_J:
-		// boink printf("nextAddr(): INST_BRANCH or INST_C_J\n");
-
 		// btm, htm same
 
 		// pc = pc + (signed extended immediate offset)
@@ -697,8 +681,6 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		pc = addr + immediate;
 		break;
 	case TraceDqr::INST_C_JAL:
-		// boink printf("nextAddr(): INST_BRANCH or INST_C_JAL\n");
-
 		// btm, htm same
 
 		// x1 = pc + 2
@@ -709,8 +691,6 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		pc = addr + immediate;
 		break;
 	case TraceDqr::INST_C_JR:
-		// boink printf("nextAddr(): INST_BRANCH or INST_C_JR\n");
-
 		// pc = pc + rs1
 		// not inferrable unconditional
 
@@ -726,8 +706,6 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		}
 		break;
 	case TraceDqr::INST_C_JALR:
-		// boink printf("nextAddr(): INST_BRANCH or INST_C_JALR\n");
-
 		// x1 = pc + 2
 		// pc = pc + rs1
 		// not inferrble unconditional
@@ -755,8 +733,6 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	if (willRetry == false) {
 		counts->consumeICnt(core,inst_size/16);
 	}
-
-	// boink printf("nextAddr() -> %08x\n",pc);
 
 	return TraceDqr::DQERR_OK;
 }
@@ -1026,8 +1002,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 		switch (state[currentCore]) {
 		case TRACE_STATE_GETSTARTTRACEMSG:
-			// boink	printf("state TRACE_STATE_GETSTARTTRACEMSG\n");
-
 			// home new nexus message to process
 
 			if (startMessageNum <= 1) {
@@ -1148,8 +1122,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_COMPUTESTARTINGADDRESS:
-			// boink	printf("state TRACE_STATE_COMPUTESTARTINGADDRESS\n");
-
 			// compute address from trace message queued up in messageSync->msgs
 
 			// first message should be a sync type. If not, error!
@@ -1262,8 +1234,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_GETFIRSTSYNCMSG:
-			// boink	printf("state TRACE_STATE_GETFIRSTSYNCMSG\n");
-
 			// read trace messages until a sync is found. Should be the first message normally
 
 			// only exit this state when sync type message is found
@@ -1341,8 +1311,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			status = TraceDqr::DQERR_OK;
 			return status;
 		case TRACE_STATE_GETSECONDMSG:
-			// boink	printf("state TRACE_STATE_GETSECONDMSG\n");
-
 			// only message with i-cnt/hist/taken/notTaken will release from this state
 
 			// return any message without an i-cnt (or hist, taken/not taken)
@@ -1414,8 +1382,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_RETIREMESSAGE:
-			// boink	printf("state TRACE_STATE_RETIREMESSAGE\n");
-
 			// Process message being retired (currently in nm) i_cnt/taken/not taken/history has gone to 0
 			// compute next address
 
@@ -1505,8 +1471,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			status = TraceDqr::DQERR_OK;
 			return status;
 		case TRACE_STATE_GETNEXTMSG:
-			// boink	printf("state TRACE_STATE_GETNEXTMSG\n");
-
 			// exit this state when message with i-cnt, history, taken, or not-taken is read
 
 			if ((endMessageNum != 0) && (nm.msgNum > endMessageNum)) {
@@ -1572,8 +1536,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_GETNEXTINSTRUCTION:
-			// boink	printf("Trace::NextInstruction():TRACE_STATE_GETNEXTINSTRUCTION\n");
-
 			if (counts->getCurrentCountType(currentCore) == TraceDqr::COUNTTYPE_none) {
 				state[currentCore] = TRACE_STATE_RETIREMESSAGE;
 				break;
@@ -1594,8 +1556,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			status = elfReader->getInstructionByAddress(addr,inst);
 			if (status != TraceDqr::DQERR_OK) {
 				printf("Error: getInstructionByAddress failed\n");
-
-				// boink	printf("Addr2: %08x\n",addr);
 
 				state[currentCore] = TRACE_STATE_ERROR;
 
@@ -1686,12 +1646,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			state[currentCore] = TRACE_STATE_RETIREMESSAGE;
 			break;
 		case TRACE_STATE_DONE:
-// boink			printf("Trace::NextInstruction():TRACE_STATE_DONE\n");
 			status = TraceDqr::DQERR_DONE;
 			return status;
 		case TRACE_STATE_ERROR:
-// boink			printf("Trace::NextInstruction():TRACE_STATE_ERROR\n");
-
 			status = TraceDqr::DQERR_ERR;
 			return status;
 		default:

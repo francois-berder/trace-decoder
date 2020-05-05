@@ -632,7 +632,7 @@ proc setTraceMode {core mode} {
   switch $mode {
   "none"  { set tm 0 }
   "sync"  { set tm 1 }
-  "all"   { set htm [hashtm]
+  "all"   { set htm [havehtm]
 	    if {htm == 1} {
               set tm 7
 	    } else {

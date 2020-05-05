@@ -433,6 +433,7 @@ private:
 		uint32_t num_trace_ibranchws;
 		uint32_t num_trace_ihistory;
 		uint32_t num_trace_ihistoryws;
+		uint32_t num_trace_takenhistory;
 		uint32_t num_trace_resourcefull;
 		uint32_t num_trace_correlation;
 		uint32_t num_trace_auxaccesswrite;
@@ -443,6 +444,13 @@ private:
 		uint32_t trace_bits_max;
 		uint32_t trace_bits_min;
 		uint32_t trace_bits_mseo;
+
+		uint32_t max_hist_bits;
+		uint32_t min_hist_bits;
+		uint32_t max_notTakenCount;
+		uint32_t min_notTakenCount;
+		uint32_t max_takenCount;
+		uint32_t min_takenCount;
 
 		uint32_t trace_bits_sync;
 		uint32_t trace_bits_dbranch;
