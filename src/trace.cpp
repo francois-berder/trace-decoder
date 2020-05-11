@@ -34,6 +34,41 @@
 #include "dqr.hpp"
 #include "trace.hpp"
 
+Timer::Timer()
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_REALTIME,&ts);
+
+	startTime = ts.tv_sec + (ts.tv_nsec/1000000000.0);
+}
+
+Timer::~Timer()
+{
+}
+
+double Timer::start()
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_REALTIME,&ts);
+
+	startTime = ts.tv_sec + (ts.tv_nsec/1000000000.0);
+
+	return startTime;
+}
+
+double Timer::etime()
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_REALTIME,&ts);
+
+	double t = ts.tv_sec + (ts.tv_nsec/1000000000.0);
+
+	return t-startTime;
+}
+
 // class trace methods
 
 int Trace::decodeInstructionSize(uint32_t inst, int &inst_size)

@@ -1479,7 +1479,17 @@ Analytics::Analytics()
 		core[i].trace_bits_hist = 0;
 	}
 
+	etimer = new Timer();
+
 	status = TraceDqr::DQERR_OK;
+}
+
+Analytics::~Analytics()
+{
+	if (etimer != nullptr) {
+		delete etimer;
+		etimer = nullptr;
+	}
 }
 
 TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32_t mseo_bits,uint32_t ts_bits,uint32_t addr_bits)
@@ -1836,6 +1846,7 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 {
 	char tmp_dst[512];
 	int n;
+	double etime = etimer->etime();
 
 	assert(dst != nullptr);
 
@@ -2899,6 +2910,13 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
 		updateDst(n,dst,dst_len);
 	}
+
+	n = snprintf(dst,dst_len,"\nTime %f seconds\n",etime);
+	updateDst(n,dst,dst_len);
+	n = snprintf(dst,dst_len,"Instructions decoded per second: %0.2f\n",num_inst_all_cores/etime);
+	updateDst(n,dst,dst_len);
+	n = snprintf(dst,dst_len,"Trace messages decoded per second: %0.2f\n",num_trace_msgs_all_cores/etime);
+	updateDst(n,dst,dst_len);
 }
 
 std::string Analytics::toString(int detailLevel)
@@ -3982,28 +4000,111 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 
 			switch (resourceFull.rCode) {
 			case 0:
-				snprintf(dst+n,dst_len-n," i-cnt: %d",resourceFull.i_cnt);
+				snprintf(dst+n,dst_len-n," I-CNT: %d",resourceFull.i_cnt);
 				break;
 			case 1:
-				snprintf(dst+n,dst_len-n," history: 0x%016llx",resourceFull.history);
+				snprintf(dst+n,dst_len-n," History: 0x%08llx",resourceFull.history);
 				break;
 			case 8:
-				snprintf(dst+n,dst_len-n," not taken count: %d",resourceFull.notTakenCount);
+				snprintf(dst+n,dst_len-n," Not Taken Count: %d",resourceFull.notTakenCount);
 				break;
 			case 9:
-				snprintf(dst+n,dst_len-n," taken count: %d",resourceFull.takenCount);
+				snprintf(dst+n,dst_len-n," Taken Count: %d",resourceFull.takenCount);
 				break;
 			default:
-				snprintf(dst+n,dst_len-n," invalid rCode");
+				snprintf(dst+n,dst_len-n," Invalid rCode");
 				break;
 			}
 		}
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
-		snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY (%d)",tcode);
+
+		if (level >= 2) {
+			switch (indirectHistory.b_type) {
+			case TraceDqr::BTYPE_INDIRECT:
+				bt = "Indirect";
+				break;
+			case TraceDqr::BTYPE_EXCEPTION:
+				bt = "Exception";
+				break;
+			case TraceDqr::BTYPE_HARDWARE:
+				bt = "Hardware";
+				break;
+			case TraceDqr::BTYPE_UNDEFINED:
+				bt = "Undefined";
+				break;
+			default:
+				bt = "Bad Branch Type";
+				break;
+			}
+
+			snprintf(dst+n,dst_len-n," Branch Type: %s (%d) I-CNT: %d U-ADDR: 0x%08llx History: 0x%08llx",bt,indirectHistory.b_type,indirectHistory.i_cnt,indirectHistory.u_addr,indirectHistory.history);
+		}
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 		snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY WS (%d)",tcode);
+
+		if (level >= 2) {
+			switch (indirectHistoryWS.sync) {
+			case TraceDqr::SYNC_EVTI:
+				sr = "EVTI";
+				break;
+			case TraceDqr::SYNC_EXIT_RESET:
+				sr = "Exit Reset";
+				break;
+			case TraceDqr::SYNC_T_CNT:
+				sr = "T Count";
+				break;
+			case TraceDqr::SYNC_EXIT_DEBUG:
+				sr = "Exit Debug";
+				break;
+			case TraceDqr::SYNC_I_CNT_OVERFLOW:
+				sr = "I-Count Overflow";
+				break;
+			case TraceDqr::SYNC_TRACE_ENABLE:
+				sr = "Trace Enable";
+				break;
+			case TraceDqr::SYNC_WATCHPINT:
+				sr = "Watchpoint";
+				break;
+			case TraceDqr::SYNC_FIFO_OVERRUN:
+				sr = "FIFO Overrun";
+				break;
+			case TraceDqr::SYNC_EXIT_POWERDOWN:
+				sr = "Exit Powerdown";
+				break;
+			case TraceDqr::SYNC_MESSAGE_CONTENTION:
+				sr = "Message Contention";
+				break;
+			case TraceDqr::SYNC_NONE:
+				sr = "None";
+				break;
+			default:
+				sr = "Bad Sync Reason";
+				break;
+			}
+
+			switch (indirectHistoryWS.b_type) {
+			case TraceDqr::BTYPE_INDIRECT:
+				bt = "Indirect";
+				break;
+			case TraceDqr::BTYPE_EXCEPTION:
+				bt = "Exception";
+				break;
+			case TraceDqr::BTYPE_HARDWARE:
+				bt = "Hardware";
+				break;
+			case TraceDqr::BTYPE_UNDEFINED:
+				bt = "Undefined";
+				break;
+			default:
+				bt = "Bad Branch Type";
+				break;
+			}
+
+			snprintf(dst+n,dst_len-n," Reason: (%d) %s Branch Type %s (%d) I-CNT: %d F-Addr: 0x%08llx History: 0x%08llx",indirectHistoryWS.sync,sr,bt,indirectHistoryWS.b_type,indirectHistoryWS.i_cnt,indirectHistoryWS.f_addr,indirectHistoryWS.history);
+		}
 		break;
 	case TraceDqr::TCODE_REPEATBRANCH:
 		snprintf(dst+n,dst_len-n,"REPEAT BRANCH (%d)",tcode);
@@ -4018,7 +4119,10 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		n += snprintf(dst+n,dst_len-n,"CORRELATION (%d)",tcode);
 
 		if (level >= 2) {
-			snprintf(dst+n,dst_len-n," EVCODE: %d I-CNT: %d",correlation.evcode,correlation.i_cnt);
+			n += snprintf(dst+n,dst_len-n," EVCODE: %d CDF: %d I-CNT: %d",correlation.evcode,correlation.cdf,correlation.i_cnt);
+			if (correlation.cdf > 0) {
+				snprintf(dst+n,dst_len-n," History: 0x%08llx",correlation.history);
+			}
 		}
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE:

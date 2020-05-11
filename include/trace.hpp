@@ -42,6 +42,18 @@
 #include <cstdint>
 #include <cassert>
 
+class Timer {
+public:
+	Timer();
+	~Timer();
+
+	double start();
+	double etime();
+
+private:
+	double startTime;
+};
+
 // class section: work with elf file sections using libbfd
 
 class section {

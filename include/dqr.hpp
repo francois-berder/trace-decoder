@@ -394,6 +394,8 @@ public:
 class Analytics {
 public:
 	Analytics();
+	~Analytics();
+
 	TraceDqr::DQErr updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32_t meso_bits,uint32_t ts_bits,uint32_t addr_bits);
 	TraceDqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize);
 	int currentTraceMsgNum() { return num_trace_msgs_all_cores; }
@@ -403,6 +405,8 @@ public:
 
 private:
 	TraceDqr::DQErr status;
+	class Timer *etimer;
+
 	uint32_t cores;
 
 	int srcBits;
