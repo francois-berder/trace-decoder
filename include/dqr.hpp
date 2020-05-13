@@ -161,6 +161,12 @@ public:
 		INST_C_JALR,
 		INST_C_BEQZ,
 		INST_C_BNEZ,
+		INST_EBREAK,
+		INST_C_EBREAK,
+		INST_ECALL,
+		INST_MRET,
+		INST_SRET,
+		INST_URET,
 	};
 
 	enum CountType{
@@ -212,6 +218,15 @@ public:
 		TRACETYPE_BTM,
 		TRACETYPE_HTM,
 	};
+
+	enum CallReturnFlag {
+		isOther,
+		isCall,
+		isReturn,
+		isSwap,
+		isException,
+		isExceptionReturn,
+	 };
 };
 
 // class Instruction: work with an instruction
@@ -228,6 +243,8 @@ public:
 //	void opcodeToText();
 	void instructionToText(char *dst,size_t len,int labelLevel);
 	std::string instructionToString(int labelLevel);
+
+	TraceDqr::CallReturnFlag CRFlag;
 
 	uint8_t           coreId;
 	TraceDqr::ADDRESS      address;
@@ -601,7 +618,7 @@ private:
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
-	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc);
+	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::CallReturnFlag &crFlag);
 
 	TraceDqr::ADDRESS computeAddress();
 	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts);

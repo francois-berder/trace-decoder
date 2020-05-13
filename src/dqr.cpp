@@ -7081,6 +7081,11 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 					rd = TraceDqr::REG_1;
 					immediate = 0;
 				}
+				else {
+					inst_type = TraceDqr::INST_C_EBREAK;
+					immediate = 0;
+					is_branch = true;
+				}
 			}
 		}
 		else {
@@ -7223,12 +7228,45 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 		rd = TraceDqr::REG_unknown;
 		rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
 		break;
+	case 0x73:
+		if ((instruction & 0x000fff80) == 0x0000) { // bits 7 - 19
+			if ((instruction & 0xFFF00000) == 0x00100000) {
+				inst_type = TraceDqr::INST_EBREAK;
+				immediate = 0;
+				is_branch = true;
+			}
+			else if ((instruction & 0xFFF00000) == 0x00000000) {
+				inst_type = TraceDqr::INST_ECALL;
+				immediate = 0;
+				is_branch = true;
+			}
+		}
+		break;
 	default:
-		inst_type = TraceDqr::INST_UNKNOWN;
-		immediate = 0;
-		rd = TraceDqr::REG_unknown;
-		rs1 = TraceDqr::REG_unknown;
-		is_branch = false;
+		switch (instruction) {
+		case 0x00200073:
+			inst_type = TraceDqr::INST_URET;
+			is_branch = true;
+			immediate = 0;
+			break;
+		case 0x10200073:
+			inst_type = TraceDqr::INST_SRET;
+			is_branch = true;
+			immediate = 0;
+			break;
+		case 0x30200073:
+			inst_type = TraceDqr::INST_MRET;
+			is_branch = true;
+			immediate = 0;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
+			is_branch = false;
+		}
+		break;
 	}
 
 	return 0;
@@ -7367,6 +7405,11 @@ int Disassembler::decodeRV64Q2Instruction(uint32_t instruction,int &inst_size,Tr
 					rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
 					rd = TraceDqr::REG_1;
 					immediate = 0;
+				}
+				else {
+					inst_type = TraceDqr::INST_EBREAK;
+					immediate = 0;
+					is_branch = true;
 				}
 			}
 		}
@@ -7510,12 +7553,45 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 		rd = TraceDqr::REG_unknown;
 		rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
 		break;
+	case 0x73:
+		if ((instruction & 0x000fff80) == 0x0000) { // bits 7 - 19
+			if ((instruction & 0xFFF00000) == 0x00100000) {
+				inst_type = TraceDqr::INST_EBREAK;
+				immediate = 0;
+				is_branch = true;
+			}
+			else if ((instruction & 0xFFF00000) == 0x00000000) {
+				inst_type = TraceDqr::INST_ECALL;
+				immediate = 0;
+				is_branch = true;
+			}
+		}
+		break;
 	default:
-		inst_type = TraceDqr::INST_UNKNOWN;
-		immediate = 0;
-		rd = TraceDqr::REG_unknown;
-		rs1 = TraceDqr::REG_unknown;
-		is_branch = false;
+		switch (instruction) {
+		case 0x00200073:
+			inst_type = TraceDqr::INST_URET;
+			is_branch = true;
+			immediate = 0;
+			break;
+		case 0x10200073:
+			inst_type = TraceDqr::INST_SRET;
+			is_branch = true;
+			immediate = 0;
+			break;
+		case 0x30200073:
+			inst_type = TraceDqr::INST_MRET;
+			is_branch = true;
+			immediate = 0;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
+			is_branch = false;
+		}
+		break;
 	}
 
 	return 0;

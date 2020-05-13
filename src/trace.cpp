@@ -207,6 +207,8 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 	  messageSync[i] = nullptr;
   }
 
+  instructionInfo.CRFlag = TraceDqr::isOther;
+
   instructionInfo.address = 0;
   instructionInfo.instruction = 0;
   instructionInfo.instSize = 0;
@@ -527,7 +529,7 @@ std::string Trace::flushITCPrintStr(int core, bool &haveData,double &startTime,d
 // The result is the address it stops at. It also consumes the counts (i-cnt,
 // history, taken, not-taken) when appropriate!
 
-TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc)
+TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::CallReturnFlag &crFlag)
 {
 	TraceDqr::CountType ct;
 	uint32_t inst;
@@ -547,6 +549,8 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 		return status;
 	}
+
+	crFlag = TraceDqr::isOther;
 
 	// figure out how big the instruction is
 	// Note: immediate will already be adjusted - don't need to mult by 2 before adding to address
@@ -574,8 +578,9 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// plan unconditional jumps use rd -> r0
 		// inferrable unconditional
 
-		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) {
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
 			counts->push(core,addr + inst_size/8);
+			crFlag = TraceDqr::isCall;
 		}
 
 		pc = addr + immediate;
@@ -589,22 +594,26 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// plain unconditional jumps use rd -> r0
 		// not inferrable unconditional
 
-		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) {
-			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) {
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
 				counts->push(core,addr+inst_size/8);
 				pc = -1;
+				crFlag = TraceDqr::isCall;
 			}
-			else if (rd != rs1) {
+			else if (rd != rs1) { // rd == link; rs1 == link; rd != rs1
 				pc = counts->pop(core);
 				counts->push(core,addr+inst_size/8);
+				crFlag = TraceDqr::isSwap;
 			}
-			else {
+			else { // rd == link; rs1 == link; rd == rs1
 				counts->push(core,addr+inst_size/8);
 				pc = -1;
+				crFlag = TraceDqr::isCall;
 			}
 		}
-		else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+		else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) { // rd != link; rs1 == link
 			pc = counts->pop(core);
+			crFlag = TraceDqr::isReturn;
 		}
 		else {
 			pc = -1;
@@ -724,6 +733,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 		counts->push(core,addr + inst_size/8);
 		pc = addr + immediate;
+		crFlag = TraceDqr::isCall;
 		break;
 	case TraceDqr::INST_C_JR:
 		// pc = pc + rs1
@@ -731,6 +741,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
 			pc = counts->pop(core);
+			crFlag = TraceDqr::isReturn;
 		}
 		else {
 			pc = -1;
@@ -748,15 +759,26 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		if (rs1 == TraceDqr::REG_5) {
 			pc = counts->pop(core);
 			counts->push(core,addr+inst_size/8);
+			crFlag = TraceDqr::isSwap;
 		}
 		else {
 			counts->push(core,addr+inst_size/8);
 			pc = -1;
+			crFlag = TraceDqr::isCall;
 		}
 
 		if (traceType == TraceDqr::TRACETYPE_BTM) {
 			pc = -1;
 		}
+		break;
+	case TraceDqr::INST_EBREAK:
+	case TraceDqr::INST_ECALL:
+		crFlag = TraceDqr::isException;
+		break;
+	case TraceDqr::INST_MRET:
+	case TraceDqr::INST_SRET:
+	case TraceDqr::INST_URET:
+		crFlag = TraceDqr::isExceptionReturn;
 		break;
 	default:
 		pc = addr + inst_size / 8;
@@ -934,6 +956,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 	TraceDqr::DQErr rc;
 	TraceDqr::ADDRESS addr;
+	TraceDqr::CallReturnFlag crFlag;
 
 //	printf("Instinfo: %08llx, MsgInfo: %08x, srcInfo: %08x\n",instInfo,msgInfo,srcInfo);
 
@@ -1223,7 +1246,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						return status;
 					}
 
-					rc = nextAddr(currentCore,currentPc,newPc);
+					rc = nextAddr(currentCore,currentPc,newPc,crFlag);
 					if (newPc == (TraceDqr::ADDRESS)-1) {
 						if (counts->getCurrentCountType(currentCore != TraceDqr::COUNTTYPE_none)) {
 							printf("Error: NextInstruction(): state TRACE_STATE_COMPUTESTARTINGADDRESS: counts not consumed\n");
@@ -1632,7 +1655,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// we should always have a valid count whenever we enter this state. So nextAddr should always return
 			// a valid next addr. If it doesn't we have an error
 
-			status = nextAddr(currentCore,currentAddress[currentCore],addr);
+			status = nextAddr(currentCore,currentAddress[currentCore],addr,crFlag);
 			if (status != TraceDqr::DQERR_OK) {
 				state[currentCore] = TRACE_STATE_ERROR;
 				return status;
@@ -1662,6 +1685,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			if (instInfo != nullptr) {
 				instructionInfo.coreId = currentCore;
 				*instInfo = &instructionInfo;
+				(*instInfo)->CRFlag = crFlag;
 			}
 
 			if (srcInfo != nullptr) {

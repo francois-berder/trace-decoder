@@ -89,6 +89,7 @@ static void usage(char *name)
 	printf("-noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.\n");
 	printf("-freq nn      Specify the frequency in Hz for the timestamp tics clock. If specified, time instead\n");
 	printf("              of tics will be displayed.\n");
+	printf("-callreturn   Annotate calls, returns, and exceptions\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -161,6 +162,7 @@ int main(int argc, char *argv[])
 	int analytics_detail = 0;
 	bool itcprint_flag = false;
 	int itcprint_channel = 0;
+	bool showCallsReturns = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -387,6 +389,9 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
+		else if (strcmp("-callreturn",argv[i]) == 0 ) {
+			showCallsReturns = true;
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -570,6 +575,29 @@ int main(int argc, char *argv[])
 
 				instInfo->instructionToText(dst,sizeof dst,instlevel);
 				printf("  %s",dst);
+
+				if (showCallsReturns == true) {
+					switch (instInfo->CRFlag) {
+					case TraceDqr::isCall:
+						printf(" [call]");
+						break;
+					case TraceDqr::isReturn:
+						printf(" [return]");
+						break;
+					case TraceDqr::isSwap:
+						printf(" [coroutine swap]");
+						break;
+					case TraceDqr::isException:
+						printf(" [exception]");
+						break;
+					case TraceDqr::isExceptionReturn:
+						printf(" [exception return]");
+						break;
+					case TraceDqr::isOther:
+					default:
+						break;
+					}
+				}
 
 				printf("\n");
 
