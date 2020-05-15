@@ -150,6 +150,22 @@ public class jdqr {
           dst = instInfo.instructionToString(instLevel);
           System.out.printf("  %s",dst);
 
+	  if (instInfo.getCRFlag().swigValue() == TraceDqr.CallReturnFlag.isCall.swigValue()) {
+          	System.out.printf(" [call]");
+	  }
+	  else if (instInfo.getCRFlag().swigValue() == TraceDqr.CallReturnFlag.isReturn.swigValue()) {
+          	System.out.printf(" [return]");
+	  }
+	  else if (instInfo.getCRFlag().swigValue() == TraceDqr.CallReturnFlag.isSwap.swigValue()) {
+          	System.out.printf(" [swap]");
+	  }
+	  else if (instInfo.getCRFlag().swigValue() == TraceDqr.CallReturnFlag.isException.swigValue()) {
+          	System.out.printf(" [execption]");
+	  }
+	  else if (instInfo.getCRFlag().swigValue() == TraceDqr.CallReturnFlag.isExceptionReturn.swigValue()) {
+          	System.out.printf(" [exception return]");
+	  }
+
           System.out.printf("%n");
 
           firstPrint = false;
