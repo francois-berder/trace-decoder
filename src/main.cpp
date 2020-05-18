@@ -54,6 +54,8 @@ static void usage(char *name)
 	printf("-nofile:      Do not display source file information.\n");
 	printf("-dasm:        Display disassembled code in output (on by default).\n");
 	printf("-nodasm:      Do not display disassembled code in output.\n");
+	printf("-func:        Display function name with srouce information (off by default).\n");
+	printf("-nofunc:      Do not display function information with source information.\n");
 	printf("-trace:       Display trace information in output (off by default).\n");
 	printf("-notrace:     Do not display trace information in output.\n");
 	printf("--strip=path: Strip of the specified path when displaying source file name/path. Strips off all that matches.\n");

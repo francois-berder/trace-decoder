@@ -234,12 +234,16 @@ public:
 #ifdef SWIG
 	%ignore Instruction::addressToText(char *dst,size_t len,int labelLevel);
 	%ignore Instruction::instructionToText(char *dst,size_t len,int labelLevel);
+	%ignore Instruction::addressLabel;
+	%ignore Instruction::operandLabel;
 #endif // SWIG
 
 class Instruction {
 public:
 	void addressToText(char *dst,size_t len,int labelLevel);
 	std::string addressToString(int labelLevel);
+	std::string addressLabelToString();
+	std::string operandLabelToString();
 //	void opcodeToText();
 	void instructionToText(char *dst,size_t len,int labelLevel);
 	std::string instructionToString(int labelLevel);
@@ -269,6 +273,12 @@ public:
 };
 
 // class Source: Helper class for source code information for an address
+
+#ifdef SWIG
+	%ignore Source::sourceFile;
+	%ignore Source::sourceFunction;
+	%ignore Source::sourceLine;
+#endif // SWIG
 
 class Source {
 public:

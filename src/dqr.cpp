@@ -373,6 +373,28 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 	}
 }
 
+std::string Instruction::addressLabelToString()
+{
+	std::string s = "";
+
+	for (int i = 0; addressLabel[i] != 0; i++) {
+		s += addressLabel[i];
+	}
+
+	return s;
+}
+
+std::string Instruction::operandLabelToString()
+{
+	std::string s = "";
+
+	for (int i = 0; operandLabel[i] != 0; i++) {
+		s += operandLabel[i];
+	}
+
+	return s;
+}
+
 const char *Source::stripPath(const char *path)
 {
 	if (path == nullptr) {
@@ -7686,6 +7708,9 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 
 	*filename = fl->name;
 
+	// save function name and line src in function list struct so it will be saved for reuse, or later use throughout the
+	// life of the object. Won't be overwritten.
+
 	if (function != nullptr) {
 		// find the function name in fncList
 
@@ -7708,9 +7733,9 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 			fl->funcs = funcLst;
 		}
 
-		// at this point fl->funcs should point to this function (if it was just added or not)
+		// at this point funcLst should point to this function (if it was just added or not)
 
-		*functionname = fl->funcs->func;
+		*functionname = funcLst->func;
 	}
 
 	// line numbers start at 1
