@@ -220,12 +220,13 @@ public:
 	};
 
 	enum CallReturnFlag {
-		isOther,
-		isCall,
-		isReturn,
-		isSwap,
-		isException,
-		isExceptionReturn,
+		isNone            = 0,
+		isCall            = (1<<0),
+		isReturn          = (1<<1),
+		isSwap            = (1<<2),
+		isInterrupt       = (1<<3),
+		isException       = (1<<4),
+		isExceptionReturn = (1<<5),
 	 };
 };
 
@@ -248,7 +249,7 @@ public:
 	void instructionToText(char *dst,size_t len,int labelLevel);
 	std::string instructionToString(int labelLevel);
 
-	TraceDqr::CallReturnFlag CRFlag;
+	int CRFlag;
 
 	uint8_t           coreId;
 	TraceDqr::ADDRESS      address;
@@ -600,6 +601,7 @@ private:
 	int              currentCore;
 	int              srcbits;
 	bool             bufferItc;
+	int              enterISR;
 
 	int              startMessageNum;
 	int              endMessageNum;
@@ -628,7 +630,7 @@ private:
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
-	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::CallReturnFlag &crFlag);
+	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,int &crFlag);
 
 	TraceDqr::ADDRESS computeAddress();
 	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts);

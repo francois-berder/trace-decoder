@@ -207,7 +207,7 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 	  messageSync[i] = nullptr;
   }
 
-  instructionInfo.CRFlag = TraceDqr::isOther;
+  instructionInfo.CRFlag = TraceDqr::isNone;
 
   instructionInfo.address = 0;
   instructionInfo.instruction = 0;
@@ -237,6 +237,8 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
   sourceInfo.sourceLine = nullptr;
 
   NexusMessage::targetFrequency = freq;
+
+  enterISR = TraceDqr::isNone;
 
   status = TraceDqr::DQERR_OK;
 }
@@ -529,7 +531,7 @@ std::string Trace::flushITCPrintStr(int core, bool &haveData,double &startTime,d
 // The result is the address it stops at. It also consumes the counts (i-cnt,
 // history, taken, not-taken) when appropriate!
 
-TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::CallReturnFlag &crFlag)
+TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,int &crFlag)
 {
 	TraceDqr::CountType ct;
 	uint32_t inst;
@@ -550,7 +552,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		return status;
 	}
 
-	crFlag = TraceDqr::isOther;
+	crFlag = TraceDqr::isNone;
 
 	// figure out how big the instruction is
 	// Note: immediate will already be adjusted - don't need to mult by 2 before adding to address
@@ -580,7 +582,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
 			counts->push(core,addr + inst_size/8);
-			crFlag = TraceDqr::isCall;
+			crFlag |= TraceDqr::isCall;
 		}
 
 		pc = addr + immediate;
@@ -598,22 +600,22 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
 				counts->push(core,addr+inst_size/8);
 				pc = -1;
-				crFlag = TraceDqr::isCall;
+				crFlag |= TraceDqr::isCall;
 			}
 			else if (rd != rs1) { // rd == link; rs1 == link; rd != rs1
 				pc = counts->pop(core);
 				counts->push(core,addr+inst_size/8);
-				crFlag = TraceDqr::isSwap;
+				crFlag |= TraceDqr::isSwap;
 			}
 			else { // rd == link; rs1 == link; rd == rs1
 				counts->push(core,addr+inst_size/8);
 				pc = -1;
-				crFlag = TraceDqr::isCall;
+				crFlag |= TraceDqr::isCall;
 			}
 		}
 		else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) { // rd != link; rs1 == link
 			pc = counts->pop(core);
-			crFlag = TraceDqr::isReturn;
+			crFlag |= TraceDqr::isReturn;
 		}
 		else {
 			pc = -1;
@@ -733,7 +735,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 		counts->push(core,addr + inst_size/8);
 		pc = addr + immediate;
-		crFlag = TraceDqr::isCall;
+		crFlag |= TraceDqr::isCall;
 		break;
 	case TraceDqr::INST_C_JR:
 		// pc = pc + rs1
@@ -741,7 +743,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
 			pc = counts->pop(core);
-			crFlag = TraceDqr::isReturn;
+			crFlag |= TraceDqr::isReturn;
 		}
 		else {
 			pc = -1;
@@ -759,12 +761,12 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		if (rs1 == TraceDqr::REG_5) {
 			pc = counts->pop(core);
 			counts->push(core,addr+inst_size/8);
-			crFlag = TraceDqr::isSwap;
+			crFlag |= TraceDqr::isSwap;
 		}
 		else {
 			counts->push(core,addr+inst_size/8);
 			pc = -1;
-			crFlag = TraceDqr::isCall;
+			crFlag |= TraceDqr::isCall;
 		}
 
 		if (traceType == TraceDqr::TRACETYPE_BTM) {
@@ -773,12 +775,12 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		break;
 	case TraceDqr::INST_EBREAK:
 	case TraceDqr::INST_ECALL:
-		crFlag = TraceDqr::isException;
+		crFlag |= TraceDqr::isException;
 		break;
 	case TraceDqr::INST_MRET:
 	case TraceDqr::INST_SRET:
 	case TraceDqr::INST_URET:
-		crFlag = TraceDqr::isExceptionReturn;
+		crFlag |= TraceDqr::isExceptionReturn;
 		break;
 	default:
 		pc = addr + inst_size / 8;
@@ -956,7 +958,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 	TraceDqr::DQErr rc;
 	TraceDqr::ADDRESS addr;
-	TraceDqr::CallReturnFlag crFlag;
+	int crFlag;
 
 //	printf("Instinfo: %08llx, MsgInfo: %08x, srcInfo: %08x\n",instInfo,msgInfo,srcInfo);
 
@@ -1479,6 +1481,30 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 				}
 
+				TraceDqr::BType b_type;
+
+				switch (nm.tcode) {
+				case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+					b_type = nm.indirectBranchWS.b_type;
+					break;
+				case TraceDqr::TCODE_INDIRECT_BRANCH:
+					b_type = nm.indirectBranch.b_type;
+					break;
+				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+					b_type = nm.indirectHistory.b_type;
+					break;
+				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+					b_type = nm.indirectHistoryWS.b_type;
+					break;
+				default:
+					b_type = TraceDqr::BTYPE_UNDEFINED;
+					break;
+				}
+
+				if (b_type == TraceDqr::BTYPE_EXCEPTION) {
+					enterISR = TraceDqr::isInterrupt;
+				}
+
 				readNewTraceMessage = true;
 				state[currentCore] = TRACE_STATE_GETNEXTMSG;
 				break;
@@ -1685,7 +1711,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			if (instInfo != nullptr) {
 				instructionInfo.coreId = currentCore;
 				*instInfo = &instructionInfo;
-				(*instInfo)->CRFlag = crFlag;
+				(*instInfo)->CRFlag = (crFlag | enterISR);
+				enterISR = TraceDqr::isNone;
 			}
 
 			if (srcInfo != nullptr) {

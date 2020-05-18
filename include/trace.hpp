@@ -281,6 +281,8 @@ private:
 	disassembler_ftype disassemble_func;
 	TraceDqr::DQErr         status;
 
+	int               archSize;
+
 	bfd_vma           start_address;
 	long              number_of_syms;
 	asymbol         **symbol_table;

@@ -6656,6 +6656,30 @@ Disassembler::Disassembler(bfd *abfd)
    	lastFileName = nullptr;
    	lastLineNumber = -1;
 
+    const bfd_arch_info_type *aitp;
+
+    aitp = bfd_get_arch_info(abfd);
+    if (aitp == nullptr) {
+  	  printf("Error: Disassembler::Disassembler(): Cannot get arch type for elf file\n");
+
+  	  status = TraceDqr::TraceDqr::DQERR_ERR;
+  	  return;
+    }
+
+    switch (aitp->mach) {
+    case bfd_mach_riscv32:
+  	  archSize = 32;
+  	  break;
+    case bfd_mach_riscv64:
+  	  archSize = 64;
+  	  break;
+    default:
+  	  printf("Error: Disassembler::Disassembler(): Unknown machine type\n");
+
+  	  status = TraceDqr::TraceDqr::DQERR_ERR;
+  	  return;
+    }
+
     status = TraceDqr::DQERR_OK;
 }
 
@@ -6851,22 +6875,49 @@ void Disassembler::print_address(bfd_vma vma)
 
 //	    	printf("\n");
 
-	    	if (offset == 0) {
-	    		printf("%08lx <%s>:\n",vma,sorted_syms[index]->name);
-	    	}
-	    	else {
-	    		printf("%08lx <%s+%x>:\n",vma,sorted_syms[index]->name,offset);
-	    	}
-	    }
+	    	// need to know if this is 64 or 32 bit
 
-	    printf("%8lx: ",vma);
+			switch (archSize) {
+			case 32:
+				if (offset == 0) {
+					printf("%08x <%s>:\n",(uint32_t)vma,sorted_syms[index]->name);
+				}
+				else {
+					printf("%08x <%s+%x>:\n",(uint32_t)vma,sorted_syms[index]->name,offset);
+				}
+				printf("%8x: ",(uint32_t)vma);
+				break;
+			case 64:
+				if (offset == 0) {
+					printf("%08llx <%s>:\n",vma,sorted_syms[index]->name);
+				}
+				else {
+					printf("%08llx <%s+%x>:\n",vma,sorted_syms[index]->name,offset);
+				}
+				printf("%8llx: ",vma);
+				break;
+			default:
+				printf("Error: Disassembler::print_address(): Bad arch size: %d\n",archSize);
+				break;
+			}
+	    }
 	}
 	else {
 		// didn't find symbol
 
 		prev_index = -1;
 
-		printf("%8lx:",vma);
+		switch (archSize) {
+		case 32:
+			printf("%8lx:",(uint32_t)vma);
+			break;
+		case 64:
+			printf("%8llx:",vma);
+			break;
+		default:
+			printf("Error: Disassembler::print_address(): Bad arch size: %d\n",archSize);
+			break;
+		}
 	}
 }
 
@@ -7251,7 +7302,22 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 		rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
 		break;
 	case 0x73:
-		if ((instruction & 0x000fff80) == 0x0000) { // bits 7 - 19
+		if (instruction == 0x00200073) {
+			inst_type = TraceDqr::INST_URET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if (instruction == 0x10200073) {
+			inst_type = TraceDqr::INST_SRET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if (instruction == 0x30200073) {
+			inst_type = TraceDqr::INST_MRET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if ((instruction & 0x000fff80) == 0x0000) { // bits 7 - 19
 			if ((instruction & 0xFFF00000) == 0x00100000) {
 				inst_type = TraceDqr::INST_EBREAK;
 				immediate = 0;
@@ -7265,29 +7331,11 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 		}
 		break;
 	default:
-		switch (instruction) {
-		case 0x00200073:
-			inst_type = TraceDqr::INST_URET;
-			is_branch = true;
-			immediate = 0;
-			break;
-		case 0x10200073:
-			inst_type = TraceDqr::INST_SRET;
-			is_branch = true;
-			immediate = 0;
-			break;
-		case 0x30200073:
-			inst_type = TraceDqr::INST_MRET;
-			is_branch = true;
-			immediate = 0;
-			break;
-		default:
-			inst_type = TraceDqr::INST_UNKNOWN;
-			immediate = 0;
-			rd = TraceDqr::REG_unknown;
-			rs1 = TraceDqr::REG_unknown;
-			is_branch = false;
-		}
+		inst_type = TraceDqr::INST_UNKNOWN;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
 		break;
 	}
 
@@ -7576,7 +7624,22 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 		rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
 		break;
 	case 0x73:
-		if ((instruction & 0x000fff80) == 0x0000) { // bits 7 - 19
+		if (instruction == 0x00200073) {
+			inst_type = TraceDqr::INST_URET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if (instruction == 0x10200073) {
+			inst_type = TraceDqr::INST_SRET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if (instruction == 0x30200073) {
+			inst_type = TraceDqr::INST_MRET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if ((instruction & 0x000fff80) == 0x0000) { // bits 7 - 19
 			if ((instruction & 0xFFF00000) == 0x00100000) {
 				inst_type = TraceDqr::INST_EBREAK;
 				immediate = 0;
@@ -7590,29 +7653,11 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 		}
 		break;
 	default:
-		switch (instruction) {
-		case 0x00200073:
-			inst_type = TraceDqr::INST_URET;
-			is_branch = true;
-			immediate = 0;
-			break;
-		case 0x10200073:
-			inst_type = TraceDqr::INST_SRET;
-			is_branch = true;
-			immediate = 0;
-			break;
-		case 0x30200073:
-			inst_type = TraceDqr::INST_MRET;
-			is_branch = true;
-			immediate = 0;
-			break;
-		default:
-			inst_type = TraceDqr::INST_UNKNOWN;
-			immediate = 0;
-			rd = TraceDqr::REG_unknown;
-			rs1 = TraceDqr::REG_unknown;
-			is_branch = false;
-		}
+		inst_type = TraceDqr::INST_UNKNOWN;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
 		break;
 	}
 

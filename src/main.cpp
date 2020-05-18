@@ -579,25 +579,42 @@ int main(int argc, char *argv[])
 				printf("  %s",dst);
 
 				if (showCallsReturns == true) {
-					switch (instInfo->CRFlag) {
-					case TraceDqr::isCall:
-						printf(" [call]");
-						break;
-					case TraceDqr::isReturn:
-						printf(" [return]");
-						break;
-					case TraceDqr::isSwap:
-						printf(" [coroutine swap]");
-						break;
-					case TraceDqr::isException:
-						printf(" [exception]");
-						break;
-					case TraceDqr::isExceptionReturn:
-						printf(" [exception return]");
-						break;
-					case TraceDqr::isOther:
-					default:
-						break;
+					if (instInfo->CRFlag != TraceDqr::isNone) {
+						const char *format = "%s";
+
+						printf(" [");
+
+						if (instInfo->CRFlag & TraceDqr::isCall) {
+							printf(format,"Call");
+							format = ",%s";
+						}
+
+						if (instInfo->CRFlag & TraceDqr::isReturn) {
+							printf(format,"Return");
+							format = ",%s";
+						}
+
+						if (instInfo->CRFlag & TraceDqr::isSwap) {
+							printf(format,"Swap");
+							format = ",%s";
+						}
+
+						if (instInfo->CRFlag & TraceDqr::isInterrupt) {
+							printf(format,"Interrupt");
+							format = ",%s";
+						}
+
+						if (instInfo->CRFlag & TraceDqr::isException) {
+							printf(format,"Exception");
+							format = ",%s";
+						}
+
+						if (instInfo->CRFlag & TraceDqr::isExceptionReturn) {
+							printf(format,"Exception Return");
+							format = ",%s";
+						}
+
+						printf("]");
 					}
 				}
 
