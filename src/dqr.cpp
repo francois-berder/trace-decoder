@@ -4065,7 +4065,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		}
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
-		snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY WS (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY WS (%d)",tcode);
 
 		if (level >= 2) {
 			switch (indirectHistoryWS.sync) {
