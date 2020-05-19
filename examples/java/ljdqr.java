@@ -21,7 +21,8 @@ public class ljdqr {
         System.exit(1);
     }
 
-    for (int lc = 0; lc < 10; lc++) {
+//    for (int lc = 0; lc < 10; lc++) {
+    for (int lc = 0; lc < 1; lc++) {
         Trace t = new Trace(argv[0],true,argv[1],32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
         if (t == null) {
             System.out.println("t is null");
@@ -59,10 +60,10 @@ public class ljdqr {
         String stripPath = "foo";
         int coreMask = 0;
 
-        Instruction [] instInfoArray = new Instruction[500];
-        Source[] srcInfoArray = new Source[500];
-        NexusMessage[] msgInfoArray = new NexusMessage[500];
-        SWIGTYPE_p_int[] flagsArray = new SWIGTYPE_p_int[500];
+        Instruction [] instInfoArray = new Instruction[20*1024];
+        Source[] srcInfoArray = new Source[20*1024];
+        NexusMessage[] msgInfoArray = new NexusMessage[20*1024];
+        SWIGTYPE_p_int[] flagsArray = new SWIGTYPE_p_int[20*1024];
 
         for (int k = 0; k < 500; k++) {
             instInfoArray[k] = new Instruction();
@@ -88,8 +89,6 @@ public class ljdqr {
                 instInfoArray[rec] = instInfo;
                 srcInfoArray[rec] = srcInfo;
                 msgInfoArray[rec] = msgInfo;
-
-                System.out.printf("FLAGS: %x %x\n",TraceDecoder.intp_value(flags),TraceDecoder.intp_value(flagsArray[rec]));
 
                 rec += 1;
             }
@@ -154,7 +153,7 @@ public class ljdqr {
                     }
 
                     if (address != (lastAddress + lastInstSize / 8)) {
-                        String addressLabel = instInfo.getAddressLabel();
+                        String addressLabel = instInfo.addressLabelToString();
                         if (addressLabel != null && addressLabel.length() != 0) {
                             System.out.printf("<%s",addressLabel);
                             if (instInfo.getAddressLabelOffset() != 0) {
@@ -184,26 +183,49 @@ public class ljdqr {
                 dst = instInfo.instructionToString(instLevel);
                 System.out.printf("  %s",dst);
 
-                if (instInfo.getCRFlag().swigValue() == TraceDqr.CallReturnFlag.isCall.swigValue()) {
-                    System.out.printf(" [call]");
-                }
-                else if (instInfo.getCRFlag().swigValue() == TraceDqr.CallReturnFlag.isReturn.swigValue()) {
-                    System.out.printf(" [return]");
-                }
-                else if (instInfo.getCRFlag().swigValue() == TraceDqr.CallReturnFlag.isSwap.swigValue()) {
-                    System.out.printf(" [swap]");
-                }
-                else if (instInfo.getCRFlag().swigValue() == TraceDqr.CallReturnFlag.isException.swigValue()) {
-                    System.out.printf(" [execption]");
-                }
-                else if (instInfo.getCRFlag().swigValue() == TraceDqr.CallReturnFlag.isExceptionReturn.swigValue()) {
-                    System.out.printf(" [exception return]");
-                }
+                int crFlag = instInfo.getCRFlag();
+		String format = "%s";
 
-                System.out.printf("%n");
+		if (crFlag != TraceDqr.CallReturnFlag.isNone.swigValue()) {
+			System.out.print(" [");
 
-                firstPrint = false;
-            }
+			if ((crFlag & TraceDqr.CallReturnFlag.isCall.swigValue()) != 0) {
+				System.out.printf(format,"call");
+				format = ",%s";
+			}
+
+			if ((crFlag & TraceDqr.CallReturnFlag.isReturn.swigValue()) != 0) {
+				System.out.printf(format,"return");
+				format = ",%s";
+			}
+
+			if ((crFlag & TraceDqr.CallReturnFlag.isInterrupt.swigValue()) != 0) {
+				System.out.printf(format,"interrupt");
+				format = ",%s";
+			}
+
+			if ((crFlag & TraceDqr.CallReturnFlag.isSwap.swigValue()) != 0) {
+				System.out.printf(format,"swap");
+				format = ",%s";
+			}
+
+			if ((crFlag & TraceDqr.CallReturnFlag.isException.swigValue()) != 0) {
+				System.out.printf(format,"execption");
+				format = ",%s";
+			}
+
+			if ((crFlag & TraceDqr.CallReturnFlag.isExceptionReturn.swigValue()) != 0) {
+				System.out.printf(format,"exception return");
+				format = ",%s";
+			}
+
+			System.out.print("]");
+		}
+
+		System.out.printf("%n");
+
+		firstPrint = false;
+	    }
 
             if ((trace_flag || itcPrint_flag) && ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_MSGINFO) != 0)) {
                 String msgStr = msgInfo.messageToString(msgLevel);
