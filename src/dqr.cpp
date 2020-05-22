@@ -35,7 +35,7 @@
 
 //#define DQR_MAXCORES	8
 
-const char * const DQR_VERSION = "0.8";
+const char * const DQR_VERSION = "0.81";
 
 // static C type helper functions
 
