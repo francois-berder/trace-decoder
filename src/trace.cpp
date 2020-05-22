@@ -208,6 +208,7 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
   }
 
   instructionInfo.CRFlag = TraceDqr::isNone;
+  instructionInfo.brFlags = TraceDqr::BRFLAG_none;
 
   instructionInfo.address = 0;
   instructionInfo.instruction = 0;
@@ -531,7 +532,7 @@ std::string Trace::flushITCPrintStr(int core, bool &haveData,double &startTime,d
 // The result is the address it stops at. It also consumes the counts (i-cnt,
 // history, taken, not-taken) when appropriate!
 
-TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,int &crFlag)
+TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag)
 {
 	TraceDqr::CountType ct;
 	uint32_t inst;
@@ -543,7 +544,6 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	TraceDqr::Reg rs1;
 	TraceDqr::Reg rd;
 	bool isTaken;
-	bool willRetry = false;
 
 	status = elfReader->getInstructionByAddress(addr,inst);
 	if (status != TraceDqr::DQERR_OK) {
@@ -553,6 +553,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	}
 
 	crFlag = TraceDqr::isNone;
+	brFlag = TraceDqr::BRFLAG_none;
 
 	// figure out how big the instruction is
 	// Note: immediate will already be adjusted - don't need to mult by 2 before adding to address
@@ -651,8 +652,22 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 				return TraceDqr::DQERR_ERR;
 			case TraceDqr::COUNTTYPE_i_cnt:
 				// don't know if the branch is taken or not, so we don't know the next addr
+
+				// This can happen with resource full messages where an i-cnt type resource full
+				// may be emitted by the encoder due to i-cnt overflow, and it still have non-emitted
+				// history bits. We will need to keep reading trace messages untile we get a some
+				// history. The current trace message should be retired.
+
+				//counts->dumpCounts(core);
+
+				printf("Error: nextAddr(): address: 0x%08x, no branch history for branch instruction!\n",addr);
+
 				pc = -1;
-				willRetry = true;
+
+				// The caller can detect this has happened are read a new trace message and retry, by
+				// checkint the brFlag for BRFLAG_unkown
+
+				brFlag = TraceDqr::BRFLAG_unknown;
 				break;
 			case TraceDqr::COUNTTYPE_history:
 				//consume history bit here and set pc accordingly
@@ -668,9 +683,11 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 				if (isTaken) {
 					pc = addr + immediate;
+					brFlag = TraceDqr::BRFLAG_taken;
 				}
 				else {
 					pc = addr + inst_size / 8;
+					brFlag = TraceDqr::BRFLAG_notTaken;
 				}
 				break;
 			case TraceDqr::COUNTTYPE_taken:
@@ -684,6 +701,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 				}
 
 				pc = addr + immediate;
+				brFlag = TraceDqr::BRFLAG_taken;
 				break;
 			case TraceDqr::COUNTTYPE_notTaken:
 				rc = counts->consumeNotTakenCount(core);
@@ -696,26 +714,40 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 				}
 
 				pc = addr + inst_size / 8;
+				brFlag = TraceDqr::BRFLAG_notTaken;
 				break;
 			}
 		}
 		else {
 			// btm mode
 
-			// if i-cnts go to zero after this instruction, taken. Otherwise, not takes. Since direct branch
-			// trace messages do not have a u-addr or f-addr field, we need to get the next addr right!
+			// if i-cnts don't go to zero for this instruction, this branch is not taken in btmmode.
+			// if i-cnts go to zero for this instruciotn, it might be a taken branch. Need to look
+			// at the tcode for the current nexus message. If it is a direct branch with or without
+			// sync, it is taken. Otherwise, not taken (it could be the result of i-cnt reaching the
+			// limit, forcing a sync type message, but branch not taken).
 
 			if (counts->consumeICnt(core,0) > inst_size / 16) {
 				// not taken
 
 				pc = addr + inst_size / 8;
+
+				brFlag = TraceDqr::BRFLAG_notTaken;
 			}
-			else {
+			else if ((tcode == TraceDqr::TCODE_DIRECT_BRANCH) || (tcode == TraceDqr::TCODE_DIRECT_BRANCH_WS)) {
 				// taken
 
 				pc = addr + immediate;
-			}
 
+				brFlag = TraceDqr::BRFLAG_taken;
+			}
+			else {
+				// not taken
+
+				pc = addr + inst_size / 8;
+
+				brFlag = TraceDqr::BRFLAG_notTaken;
+			}
 		}
 		break;
 	case TraceDqr::INST_C_J:
@@ -787,9 +819,10 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		break;
 	}
 
-	// Always consume i-cnt unless willRetry == true
+	// Always consume i-cnt unless brFlag == BRFLAG_unknown because we will retry computing next
+	// addr for this instruction later
 
-	if (willRetry == false) {
+	if (brFlag != TraceDqr::BRFLAG_unknown) {
 		counts->consumeICnt(core,inst_size/16);
 	}
 
@@ -959,8 +992,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	TraceDqr::DQErr rc;
 	TraceDqr::ADDRESS addr;
 	int crFlag;
-
-//	printf("Instinfo: %08llx, MsgInfo: %08x, srcInfo: %08x\n",instInfo,msgInfo,srcInfo);
+	TraceDqr::BranchFlags brFlags;
 
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
@@ -986,15 +1018,20 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			if (rc != TraceDqr::DQERR_OK) {
 				// have an error. either eof, or error
 
-				status = sfp->getErr();
+				status = rc;
 
-				if (status != TraceDqr::DQERR_EOF) {
+				if (status == TraceDqr::DQERR_EOF) {
+					state[currentCore] = TRACE_STATE_DONE;
+				}
+				else {
 					if ( messageSync[currentCore] != nullptr) {
 						printf("Error: Trace file does not contain %d trace messages. %d message found\n",startMessageNum,messageSync[currentCore]->lastMsgNum);
 					}
 					else {
 						printf("Error: Trace file does not contain any trace messages, or is unreadable\n");
 					}
+
+					state[currentCore] = TRACE_STATE_ERROR;
 				}
 
 				return status;
@@ -1218,6 +1255,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// start at one because we have already consumed 0 (its faddr and timestamp are all we
 			// need).
 
+			counts->resetCounts(currentCore);
 			counts->resetStack(currentCore);
 
 			for (int i = 1; i < messageSync[currentCore]->index; i++) {
@@ -1248,7 +1286,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						return status;
 					}
 
-					rc = nextAddr(currentCore,currentPc,newPc,crFlag);
+//					think I need to redo this section to match nextInstruction logic!
+					// foodog
+
+					rc = nextAddr(currentCore,currentPc,newPc,nm.tcode,crFlag,brFlags);
 					if (newPc == (TraceDqr::ADDRESS)-1) {
 						if (counts->getCurrentCountType(currentCore != TraceDqr::COUNTTYPE_none)) {
 							printf("Error: NextInstruction(): state TRACE_STATE_COMPUTESTARTINGADDRESS: counts not consumed\n");
@@ -1396,6 +1437,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 			case TraceDqr::TCODE_RESOURCEFULL:
 				// don't update timestamp until messages are retired!
+
+				// reset all counts before setting them. We have no valid counts before the second message.
+				// first message is a sync-type message. Counts are for up to that message, nothing after.
+
+				counts->resetCounts(currentCore);
 
 				rc = counts->setCounts(&nm);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -1545,7 +1591,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				status = TraceDqr::DQERR_ERR;
 				return status;
 			default:
-				printf("Error: bad tcode type in sate TRACE_STATE_GETNEXTMSG\n");
+				printf("Error: bad tcode type in sate TRACE_STATE_RETIREMESSAGE\n");
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
@@ -1662,48 +1708,51 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				return status;
 			}
 
-			status = analytics.updateInstructionInfo(currentCore,inst,inst_size);
-			if (status != TraceDqr::DQERR_OK) {
-				state[currentCore] = TRACE_STATE_ERROR;
-				return status;
-			}
-
 			Disassemble(addr);
 
 			// compute next address (retire this instruction)
 
-//			nextAddr() will also update counts!!
-//
-//					next addr computes next address if possible, consumes counts!
-//
-//					maybe should check for valid counts before calling next addr, and if none, retire message
+			// nextAddr() will also update counts
+			//
+			// nextAddr() computes next address if possible, consumes counts
 
-			// we should always have a valid count whenever we enter this state. So nextAddr should always return
-			// a valid next addr. If it doesn't we have an error
+			// nextAddr can usually compute the next address, but not always. If it can't, it returns
+			// -1 as the next address.  This should never happen for conditional branches because we
+			// should always have enough informatioon. But it can happen for indirect branches. For indirect
+			// branches, retiring the current trace message (should be an indirect branch or indirect
+			// brnach with sync) will set the next address correclty.
 
-			status = nextAddr(currentCore,currentAddress[currentCore],addr,crFlag);
+			status = nextAddr(currentCore,currentAddress[currentCore],addr,nm.tcode,crFlag,brFlags);
 			if (status != TraceDqr::DQERR_OK) {
 				state[currentCore] = TRACE_STATE_ERROR;
 				return status;
 			}
 
-			// if addr == -1 and we still have counts, it is an error
-			// if addr == -1 and we don't have counts, we need to get another trace message
+			// if addr == -1 and brFlags == BRFLAG_unknown, we need to read another trace message
+			// which hopefully with have history bits. Do not return the instruciton yet - we will
+			// retry it after getting another trace message
 
-			// not sure we need the below code! Lest comment it out and see what happens!
+			// if addr == -1 and brflags != BRFLAG_unknown, and current counts type != none, we have an
+			// error.
 
-			if ((addr == (TraceDqr::ADDRESS)-1) && (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none)) {
-				state[currentCore] = TRACE_STATE_ERROR;
+			// if addr == -1 and brflags != BRFLAG_unkonw and current count type == none, all should
+			// be good. We will return the instruction and read another message
 
-//				need to retry instruction!! Read next trace message and see if that helps
+			if (addr == (TraceDqr::ADDRESS)-1) {
+				if (brFlags == TraceDqr::BRFLAG_unknown) {
+					// read another trace message and retry
 
-//				need to delete insInfo!! - not any more; moved setting it to below
+					state[currentCore] = TRACE_STATE_RETIREMESSAGE;
+					break;
+				}
+				else if (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
+					// error
 
-				state[currentCore] = TRACE_STATE_RETIREMESSAGE;
-				break;
-//
-//				status = TraceDqr::DQERR_ERR;
-//				return status;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					status = TraceDqr::DQERR_ERR;
+					return status;
+				}
 			}
 
 			currentAddress[currentCore] = addr;
@@ -1713,12 +1762,20 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				*instInfo = &instructionInfo;
 				(*instInfo)->CRFlag = (crFlag | enterISR);
 				enterISR = TraceDqr::isNone;
+				(*instInfo)->brFlags = brFlags;
 			}
 
 			if (srcInfo != nullptr) {
 				sourceInfo.coreId = currentCore;
 				*srcInfo = &sourceInfo;
 			}
+
+			status = analytics.updateInstructionInfo(currentCore,inst,inst_size,crFlag,brFlags);
+			if (status != TraceDqr::DQERR_OK) {
+				state[currentCore] = TRACE_STATE_ERROR;
+				return status;
+			}
+
 
 			if (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
 				// still have valid counts. Keep running nextInstruction!
@@ -1728,6 +1785,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			// counts have expired. Retire this message and read next trace message and update. This should cause the
 			// current process instruction (above) to be returned along with the retired trace message
+
+			// if the instruction processed above in an indirect branch, counts should be zero and
+			// retiring this trace message should set the next address (message should be an indirect
+			// brnach type message)
 
 			state[currentCore] = TRACE_STATE_RETIREMESSAGE;
 			break;

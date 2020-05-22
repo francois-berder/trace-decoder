@@ -228,6 +228,13 @@ public:
 		isException       = (1<<4),
 		isExceptionReturn = (1<<5),
 	 };
+
+	enum BranchFlags {
+		BRFLAG_none = 0,
+		BRFLAG_unknown,
+		BRFLAG_taken,
+		BRFLAG_notTaken,
+	};
 };
 
 // class Instruction: work with an instruction
@@ -249,11 +256,12 @@ public:
 	void instructionToText(char *dst,size_t len,int labelLevel);
 	std::string instructionToString(int labelLevel);
 
-	int CRFlag;
+	int               CRFlag;
 
 	uint8_t           coreId;
-	TraceDqr::ADDRESS      address;
-	TraceDqr::RV_INST      instruction;
+	TraceDqr::ADDRESS address;
+	TraceDqr::RV_INST instruction;
+	int               brFlags; // this is an int instead of TraceDqr::BancheFlags because it is easier to work with in java
 	char              instructionText[64];
 	int               instSize;
 	static int        addrSize;
@@ -265,7 +273,7 @@ public:
 	const char       *addressLabel;
 	int               addressLabelOffset;
 	bool              haveOperandAddress;
-	TraceDqr::ADDRESS      operandAddress;
+	TraceDqr::ADDRESS operandAddress;
 #ifdef SWIG
 	%immutable		operandLabel;
 #endif // SWIG
@@ -425,7 +433,7 @@ public:
 	~Analytics();
 
 	TraceDqr::DQErr updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32_t meso_bits,uint32_t ts_bits,uint32_t addr_bits);
-	TraceDqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize);
+	TraceDqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize,int crFlags,TraceDqr::BranchFlags brFlags);
 	int currentTraceMsgNum() { return num_trace_msgs_all_cores; }
 	void setSrcBits(int sbits) { srcBits = sbits; }
 	void toText(char *dst,int dst_len,int detailLevel);
@@ -509,6 +517,15 @@ private:
 		uint32_t num_trace_resourcefull_notTakenCount;
 		uint32_t num_trace_resourcefull_taken_branches;
 		uint32_t num_trace_resourcefull_nottaken_branches;
+
+		uint32_t num_taken_branches;
+		uint32_t num_notTaken_branches;
+		uint32_t num_calls;
+		uint32_t num_returns;
+		uint32_t num_swaps;
+		uint32_t num_exceptions;
+		uint32_t num_exception_returns;
+		uint32_t num_interrupts;
 
 		uint32_t trace_bits_ts;
 		uint32_t trace_bits_ts_max;
@@ -630,7 +647,7 @@ private:
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
-	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,int &crFlag);
+	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag);
 
 	TraceDqr::ADDRESS computeAddress();
 	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts);

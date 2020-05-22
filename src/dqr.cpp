@@ -1499,6 +1499,15 @@ Analytics::Analytics()
 		core[i].trace_bits_faddr_min = 0;
 
 		core[i].trace_bits_hist = 0;
+
+		core[i].num_taken_branches = 0;
+		core[i].num_notTaken_branches = 0;
+		core[i].num_calls = 0;
+		core[i].num_returns = 0;
+		core[i].num_swaps = 0;
+		core[i].num_exceptions = 0;
+		core[i].num_exception_returns = 0;
+		core[i].num_interrupts = 0;
 	}
 
 	etimer = new Timer();
@@ -1831,7 +1840,7 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 	return status;
 }
 
-TraceDqr::DQErr Analytics::updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize)
+TraceDqr::DQErr Analytics::updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize,int crFlags,TraceDqr::BranchFlags brFlags)
 {
 	num_inst_all_cores += 1;
 	core[core_id].num_inst += 1;
@@ -1847,6 +1856,37 @@ TraceDqr::DQErr Analytics::updateInstructionInfo(uint32_t core_id,uint32_t inst,
 		break;
 	default:
 		status = TraceDqr::DQERR_ERR;
+	}
+
+	switch (brFlags) {
+	case TraceDqr::BRFLAG_none:
+	case TraceDqr::BRFLAG_unknown:
+		break;
+	case TraceDqr::BRFLAG_taken:
+		core[core_id].num_taken_branches += 1;
+		break;
+	case TraceDqr::BRFLAG_notTaken:
+		core[core_id].num_notTaken_branches += 1;
+		break;
+	}
+
+	if (crFlags & TraceDqr::isCall) {
+		core[core_id].num_calls += 1;
+	}
+	if (crFlags & TraceDqr::isReturn) {
+		core[core_id].num_returns += 1;
+	}
+	if (crFlags & TraceDqr::isSwap) {
+		core[core_id].num_swaps += 1;
+	}
+	if (crFlags & TraceDqr::isInterrupt) {
+		core[core_id].num_interrupts += 1;
+	}
+	if (crFlags & TraceDqr::isException) {
+		core[core_id].num_exceptions += 1;
+	}
+	if (crFlags & TraceDqr::isExceptionReturn) {
+		core[core_id].num_exception_returns += 1;
 	}
 
 	return status;
@@ -2927,6 +2967,134 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 			position += sprintf(tmp_dst+position,"%10u",t2);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Taken Branches");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_taken_branches);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Not Taken Branches");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_notTaken_branches);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Calls");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_calls);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Returns");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_returns);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Swaps");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_swaps);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Exceptions");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_exceptions);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Exception Returns");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_exception_returns);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Interrupts");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_interrupts);
+				ts += 1;
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -4272,6 +4440,14 @@ Count::~Count()
 {
 }
 
+void Count::resetCounts(int core)
+{
+	i_cnt[core] = 0;
+	histBit[core] = -1;
+	takenCount[core] = 0;
+	notTakenCount[core] = 0;
+}
+
 TraceDqr::CountType Count::getCurrentCountType(int core)
 {
 	// types are prioritized! Order is important
@@ -4560,6 +4736,11 @@ int Count::consumeNotTakenCount(int core)
 	notTakenCount[core] -= 1;
 
 	return 0;
+}
+
+void Count::dumpCounts(int core)
+{
+	printf("Count::dumpCounts(): core: %d, i_cnt: %d, history: 0x%08llx, histBit: %d, takenCount: %d, notTakenCount: %d\n",core,i_cnt[core],history[core],histBit[core],takenCount[core],notTakenCount[core]);
 }
 
 SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
@@ -6074,8 +6255,6 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 		if (!tf) {
 			if (tf.eof()) {
 				status = TraceDqr::DQERR_EOF;
-
-				std::cout << "Info: End of trace file\n";
 			}
 			else {
 				status = TraceDqr::DQERR_ERR;
@@ -6110,8 +6289,6 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 		if (!tf) {
 			if (tf.eof()) {
 				status = TraceDqr::DQERR_EOF;
-
-				std::cout << "End of trace file\n";
 			}
 			else {
 				status = TraceDqr::DQERR_ERR;
@@ -6303,7 +6480,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				// all errors from readBinaryMsg() are non-recoverable.
 
 				if (rc != TraceDqr::DQERR_EOF) {
-					std::cout << "Error: (): readBinaryMsg() returned error " << rc << std::endl;
+					std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
 				}
 
 				status = rc;
@@ -6315,7 +6492,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 			rc = readAscMsg();
 			if (rc != TraceDqr::DQERR_OK) {
 				if (rc != TraceDqr::DQERR_EOF) {
-					std::cout << "Error: (): read/TxtMsg() returned error " << rc << std::endl;
+					std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
 				}
 
 				status = rc;
@@ -6401,7 +6578,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = parseResourceFull(nm,analytics);
 				break;
 			default:
-				std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << tcode << std::dec << std::endl;
+				std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << int(tcode) << std::dec << std::endl;
 				rc = TraceDqr::DQERR_ERR;
 			}
 

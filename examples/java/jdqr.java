@@ -150,6 +150,18 @@ public class jdqr {
           dst = instInfo.instructionToString(instLevel);
           System.out.printf("  %s",dst);
 
+	  int brFlag = instInfo.getBrFlags();
+
+	  if (brFlag == TraceDqr.BranchFlags.BRFLAG_taken.swigValue()) {
+              System.out.print(" [t]");
+	  }
+	  else if (brFlag == TraceDqr.BranchFlags.BRFLAG_notTaken.swigValue()) {
+              System.out.print(" [nt]");
+	  }
+	  else if (brFlag == TraceDqr.BranchFlags.BRFLAG_unknown.swigValue()) {
+              System.out.print(" [u]");
+	  }
+
 	  int crFlag = instInfo.getCRFlag();
 	  String format = "%s";
 

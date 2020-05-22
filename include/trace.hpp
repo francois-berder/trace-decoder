@@ -350,6 +350,8 @@ public:
 	Count();
 	~Count();
 
+	void resetCounts(int core);
+
 	TraceDqr::CountType getCurrentCountType(int core);
 	TraceDqr::DQErr setICnt(int core,int count);
 	TraceDqr::DQErr setHistory(int core,uint64_t hist);
@@ -367,6 +369,8 @@ public:
 	int push(int core,TraceDqr::ADDRESS addr) { return stack[core].push(addr); }
 	TraceDqr::ADDRESS pop(int core) { return stack[core].pop(); }
 	void resetStack(int core) { stack[core].reset(); }
+
+	void dumpCounts(int core);
 
 //	int getICnt(int core);
 //	int adjustICnt(int core,int delta);
