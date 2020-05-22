@@ -92,6 +92,9 @@ static void usage(char *name)
 	printf("-freq nn      Specify the frequency in Hz for the timestamp tics clock. If specified, time instead\n");
 	printf("              of tics will be displayed.\n");
 	printf("-callreturn   Annotate calls, returns, and exceptions\n");
+	printf("-nocallreturn Do not annotate calls, returns, exceptions (default)\n");
+	printf("-branches     Annotate conditional branches with taken or not taken information\n");
+	printf("-nobrnaches   Do not annotate conditional branches with taken or not taken information (default)\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -165,6 +168,7 @@ int main(int argc, char *argv[])
 	bool itcprint_flag = false;
 	int itcprint_channel = 0;
 	bool showCallsReturns = false;
+	bool showBranches = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -394,6 +398,15 @@ int main(int argc, char *argv[])
 		else if (strcmp("-callreturn",argv[i]) == 0 ) {
 			showCallsReturns = true;
 		}
+		else if (strcmp("-nocallreturn",argv[i]) == 0 ) {
+			showCallsReturns = false;
+		}
+		else if (strcmp("-branches",argv[i]) == 0 ) {
+			showBranches = true;
+		}
+		else if (strcmp("-nobranches",argv[i]) == 0 ) {
+			showBranches = false;
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -578,6 +591,22 @@ int main(int argc, char *argv[])
 				instInfo->instructionToText(dst,sizeof dst,instlevel);
 				printf("  %s",dst);
 
+				if (showBranches == true) {
+					switch (instInfo->brFlags) {
+					case TraceDqr::BRFLAG_none:
+						break;
+					case TraceDqr::BRFLAG_unknown:
+						printf(" [u]");
+						break;
+					case TraceDqr::BRFLAG_taken:
+						printf(" [t]");
+						break;
+					case TraceDqr::BRFLAG_notTaken:
+						printf(" [nt]");
+						break;
+					}
+				}
+
 				if (showCallsReturns == true) {
 					if (instInfo->CRFlag != TraceDqr::isNone) {
 						const char *format = "%s";
@@ -677,6 +706,8 @@ int main(int argc, char *argv[])
 		}
 	} while (ec == TraceDqr::DQERR_OK);
 
+	printf("End of Trace File\n");
+
 	if (itcprint_flag) {
 		std::string s = "";
 		bool haveStr;
@@ -720,6 +751,7 @@ int main(int argc, char *argv[])
 	}
 
 	delete trace;
+	trace = nullptr;
 
 	return 0;
 }
