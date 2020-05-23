@@ -1967,6 +1967,7 @@ proc writeSBA {core file limit} {
     global te_sinklimit_offset
     global verbose
 
+
     #if sink is not a buffer, return
 
     set fp [open "$file" wb]
@@ -2011,7 +2012,14 @@ proc writeSBA {core file limit} {
 		set traceend [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
 
 		set tracebegin2 [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-		set traceend2 [expr $tracewp & 0xfffffffe]
+		set traceend2 [expr $tracewp & 0xfffffffe] 
+
+		if { $verbose > 1 } {
+			echo "part 1: trace beg = [format 0x%08x $tracebegin]"
+			echo "        trace end = [format 0x%08x $traceend]"
+			echo "part 2: trace beg = [format 0x%08x $tracebegin2]"
+			echo "        trace end = [format 0x%08x $traceend2]"
+		}
 
 		set do1 1
 		set do2 1
@@ -2050,7 +2058,7 @@ proc writeSBA {core file limit} {
 
 		if {$do1 == 1} {
 			if { $verbose > 1 } {
-				echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+				echo "Part 1: Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
 			}
 
 			writeSBAdataX $tracebegin $traceend $fp
@@ -2058,7 +2066,7 @@ proc writeSBA {core file limit} {
 
 		if {$do2 == 1} {
 			if { $verbose > 1 } {
-				echo "Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
+				echo "Part 2: Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
 			}
 
 			writeSBAdataX $tracebegin2 $traceend2 $fp
@@ -2090,12 +2098,17 @@ proc writeSBAdataXcs { tb te cs fp } {
 	set length [expr $extra_start - $tb]
 	set chunks [expr $length / $cs]
 	if {$verbose > 1} {
-		echo [format "Range : %08X to %08X (not inclusive)" $tb $extra_start]
+		echo [format "Range : %08X to %08X" $tb $extra_start]
 		echo "Chunks: $chunks @ $cs bytes/ea with $extra remaining byte"
 	}
 
 	set elems [expr $cs >> 2]
 	for {set i $tb} {$i < $extra_start} {incr i $cs} {
+		if {$verbose > 2} {
+			echo [format "Chunk: %08X to %08X" $i [expr $i +$cs]
+		}
+
+
 		mem2array x 32 $i $elems
 		for {set j 0} {$j < $elems} {incr j 1} {
 			pack w $x($j) -intle 32
@@ -2114,8 +2127,6 @@ proc writeSBAdataX { tb te fp } {
 
 	set start_addr $tb
 
-	set te [expr $te + 4]
-	
 	# See if our buffer is a multiple of 256 bytes, if not
 	# figure out how many extra bytes at the end we need to
 	# cpature.
@@ -2123,10 +2134,10 @@ proc writeSBAdataX { tb te fp } {
 	set extra [expr $length % $cs]
 
 	if {$verbose > 1} {
-		echo [format "Capturing from %08X to %08X (not inclusive)" $start_addr $te]
+		echo [format "Capturing from %08X to %08X" $start_addr $te]
 	}
 
-	while {$start_addr < $te} {
+	while {$start_addr <= $te && $cs > 0} {
 		set start_addr [writeSBAdataXcs $start_addr $te $cs $fp]
 		set length [expr $te - $start_addr]
 		set cs [expr $cs >> 1]
