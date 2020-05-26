@@ -581,9 +581,11 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// plan unconditional jumps use rd -> r0
 		// inferrable unconditional
 
-		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
-			counts->push(core,addr + inst_size/8);
-			crFlag |= TraceDqr::isCall;
+		if (traceType == TraceDqr::TRACETYPE_HTM) {
+			if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+				counts->push(core,addr + inst_size/8);
+				crFlag |= TraceDqr::isCall;
+			}
 		}
 
 		pc = addr + immediate;
@@ -597,7 +599,17 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// plain unconditional jumps use rd -> r0
 		// not inferrable unconditional
 
-		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+		if (traceType == TraceDqr::TRACETYPE_BTM) {
+			if (counts->consumeICnt(core,0) > inst_size / 16) {
+				// this handles the case of jumping to the instruction following the jump!
+
+				pc = addr + inst_size/8;
+			}
+			else {
+				pc = -1;
+			}
+		}
+		else if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
 			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
 				counts->push(core,addr+inst_size/8);
 				pc = -1;
@@ -619,10 +631,6 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			crFlag |= TraceDqr::isReturn;
 		}
 		else {
-			pc = -1;
-		}
-
-		if (traceType == TraceDqr::TRACETYPE_BTM) {
 			pc = -1;
 		}
 		break;
@@ -765,7 +773,10 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// pc = pc + (signed extended immediate offset)
 		// inferrable unconditional
 
-		counts->push(core,addr + inst_size/8);
+		if (traceType == TraceDqr::TRACETYPE_HTM) {
+			counts->push(core,addr + inst_size/8);
+		}
+
 		pc = addr + immediate;
 		crFlag |= TraceDqr::isCall;
 		break;
@@ -773,16 +784,24 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// pc = pc + rs1
 		// not inferrable unconditional
 
-		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
-			pc = counts->pop(core);
-			crFlag |= TraceDqr::isReturn;
+		if (traceType == TraceDqr::TRACETYPE_BTM) {
+			if (counts->consumeICnt(core,0) > inst_size / 16) {
+				// this handles the case of jumping to the instruction following the jump!
+
+				pc = addr + inst_size / 8;
+			}
+			else {
+				pc = -1;
+			}
 		}
 		else {
-			pc = -1;
-		}
-
-		if (traceType == TraceDqr::TRACETYPE_BTM) {
-			pc = -1;
+			if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+				pc = counts->pop(core);
+				crFlag |= TraceDqr::isReturn;
+			}
+			else {
+				pc = -1;
+			}
 		}
 		break;
 	case TraceDqr::INST_C_JALR:
@@ -790,19 +809,27 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// pc = pc + rs1
 		// not inferrble unconditional
 
-		if (rs1 == TraceDqr::REG_5) {
-			pc = counts->pop(core);
-			counts->push(core,addr+inst_size/8);
-			crFlag |= TraceDqr::isSwap;
+		if (traceType == TraceDqr::TRACETYPE_BTM) {
+			if (counts->consumeICnt(core,0) > inst_size / 16) {
+				// this handles the case of jumping to the instruction following the jump!
+
+				pc = addr + inst_size / 8;
+			}
+			else {
+				pc = -1;
+			}
 		}
 		else {
-			counts->push(core,addr+inst_size/8);
-			pc = -1;
-			crFlag |= TraceDqr::isCall;
-		}
-
-		if (traceType == TraceDqr::TRACETYPE_BTM) {
-			pc = -1;
+			if (rs1 == TraceDqr::REG_5) {
+				pc = counts->pop(core);
+				counts->push(core,addr+inst_size/8);
+				crFlag |= TraceDqr::isSwap;
+			}
+			else {
+				counts->push(core,addr+inst_size/8);
+				pc = -1;
+				crFlag |= TraceDqr::isCall;
+			}
 		}
 		break;
 	case TraceDqr::INST_EBREAK:
@@ -1146,6 +1173,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						printf("Error: cannot start at trace message %d because no preceeding sync\n",startMessageNum);
 
 						status = TraceDqr::DQERR_ERR;
+
 						return status;
 					}
 
@@ -1215,6 +1243,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_ERROR;
 
 				status = TraceDqr::DQERR_ERR;
+
 				return status;
 			}
 			break;
@@ -1229,6 +1258,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_ERROR;
 
 				status = TraceDqr::DQERR_ERR;
+
 				return status;
 			}
 
@@ -1241,6 +1271,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_ERROR;
 
 				status = TraceDqr::DQERR_ERR;
+
 				return status;
 			}
 
@@ -1296,6 +1327,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 							status = TraceDqr::DQERR_ERR;
 							state[currentCore] = TRACE_STATE_ERROR;
+
 							return status;
 						}
 					}
@@ -1312,6 +1344,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					status = TraceDqr::DQERR_ERR;
 					state[currentCore] = TRACE_STATE_ERROR;
+
 					return status;
 				}
 
@@ -1330,6 +1363,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					*msgInfo = &messageInfo;
 
 					status = TraceDqr::DQERR_OK;
+
 					return status;
 				}
 			}
@@ -1344,6 +1378,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				state[currentCore] = TRACE_STATE_DONE;
 				status = TraceDqr::DQERR_DONE;
+
 				return status;
 			}
 
@@ -1358,6 +1393,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					status = TraceDqr::DQERR_ERR;
 					state[currentCore] = TRACE_STATE_ERROR;
+
 					return status;
 				}
 
@@ -1423,6 +1459,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				state[currentCore] = TRACE_STATE_DONE;
 				status = TraceDqr::DQERR_DONE;
+
 				return status;
 			}
 
@@ -1478,12 +1515,14 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				readNewTraceMessage = true;
+
 				return status;
 			default:
 				printf("Error: bad tcode type in sate TRACE_STATE_GETNEXTMSG.TCODE_DIRECT_BRANCH\n");
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
+
 				return status;
 			}
 			break;
@@ -1514,6 +1553,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					status = TraceDqr::DQERR_ERR;
 					state[currentCore] = TRACE_STATE_ERROR;
+
 					return status;
 				}
 
@@ -1589,12 +1629,14 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
+
 				return status;
 			default:
 				printf("Error: bad tcode type in sate TRACE_STATE_RETIREMESSAGE\n");
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
+
 				return status;
 			}
 
@@ -1608,6 +1650,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				state[currentCore] = TRACE_STATE_DONE;
 				status = TraceDqr::DQERR_DONE;
+
 				return status;
 			}
 
@@ -1662,6 +1705,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			default:
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
+
 				return status;
 			}
 			break;
@@ -1705,6 +1749,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
+
 				return status;
 			}
 
@@ -1725,6 +1770,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			status = nextAddr(currentCore,currentAddress[currentCore],addr,nm.tcode,crFlag,brFlags);
 			if (status != TraceDqr::DQERR_OK) {
 				state[currentCore] = TRACE_STATE_ERROR;
+
 				return status;
 			}
 
@@ -1751,6 +1797,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					state[currentCore] = TRACE_STATE_ERROR;
 
 					status = TraceDqr::DQERR_ERR;
+
 					return status;
 				}
 			}
@@ -1773,6 +1820,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			status = analytics.updateInstructionInfo(currentCore,inst,inst_size,crFlag,brFlags);
 			if (status != TraceDqr::DQERR_OK) {
 				state[currentCore] = TRACE_STATE_ERROR;
+
 				return status;
 			}
 
