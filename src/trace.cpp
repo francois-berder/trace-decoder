@@ -581,11 +581,9 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// plan unconditional jumps use rd -> r0
 		// inferrable unconditional
 
-		if (traceType == TraceDqr::TRACETYPE_HTM) {
-			if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
-				counts->push(core,addr + inst_size/8);
-				crFlag |= TraceDqr::isCall;
-			}
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			counts->push(core,addr + inst_size/8);
+			crFlag |= TraceDqr::isCall;
 		}
 
 		pc = addr + immediate;
@@ -599,17 +597,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// plain unconditional jumps use rd -> r0
 		// not inferrable unconditional
 
-		if (traceType == TraceDqr::TRACETYPE_BTM) {
-			if (counts->consumeICnt(core,0) > inst_size / 16) {
-				// this handles the case of jumping to the instruction following the jump!
-
-				pc = addr + inst_size/8;
-			}
-			else {
-				pc = -1;
-			}
-		}
-		else if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
 			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
 				counts->push(core,addr+inst_size/8);
 				pc = -1;
@@ -632,6 +620,17 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		}
 		else {
 			pc = -1;
+		}
+
+		if (traceType == TraceDqr::TRACETYPE_BTM) {
+			if (counts->consumeICnt(core,0) > inst_size / 16) {
+				// this handles the case of jumping to the instruction following the jump!
+
+				pc = addr + inst_size/8;
+			}
+			else {
+				pc = -1;
+			}
 		}
 		break;
 	case TraceDqr::INST_BEQ:
@@ -773,31 +772,30 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// pc = pc + (signed extended immediate offset)
 		// inferrable unconditional
 
-		if (traceType == TraceDqr::TRACETYPE_HTM) {
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
 			counts->push(core,addr + inst_size/8);
+			crFlag |= TraceDqr::isCall;
 		}
 
 		pc = addr + immediate;
-		crFlag |= TraceDqr::isCall;
 		break;
 	case TraceDqr::INST_C_JR:
 		// pc = pc + rs1
 		// not inferrable unconditional
+
+		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+			pc = counts->pop(core);
+			crFlag |= TraceDqr::isReturn;
+		}
+		else {
+			pc = -1;
+		}
 
 		if (traceType == TraceDqr::TRACETYPE_BTM) {
 			if (counts->consumeICnt(core,0) > inst_size / 16) {
 				// this handles the case of jumping to the instruction following the jump!
 
 				pc = addr + inst_size / 8;
-			}
-			else {
-				pc = -1;
-			}
-		}
-		else {
-			if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
-				pc = counts->pop(core);
-				crFlag |= TraceDqr::isReturn;
 			}
 			else {
 				pc = -1;
@@ -809,6 +807,17 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// pc = pc + rs1
 		// not inferrble unconditional
 
+		if (rs1 == TraceDqr::REG_5) {
+			pc = counts->pop(core);
+			counts->push(core,addr+inst_size/8);
+			crFlag |= TraceDqr::isSwap;
+		}
+		else {
+			counts->push(core,addr+inst_size/8);
+			pc = -1;
+			crFlag |= TraceDqr::isCall;
+		}
+
 		if (traceType == TraceDqr::TRACETYPE_BTM) {
 			if (counts->consumeICnt(core,0) > inst_size / 16) {
 				// this handles the case of jumping to the instruction following the jump!
@@ -819,27 +828,17 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 				pc = -1;
 			}
 		}
-		else {
-			if (rs1 == TraceDqr::REG_5) {
-				pc = counts->pop(core);
-				counts->push(core,addr+inst_size/8);
-				crFlag |= TraceDqr::isSwap;
-			}
-			else {
-				counts->push(core,addr+inst_size/8);
-				pc = -1;
-				crFlag |= TraceDqr::isCall;
-			}
-		}
 		break;
 	case TraceDqr::INST_EBREAK:
 	case TraceDqr::INST_ECALL:
 		crFlag |= TraceDqr::isException;
+		pc = -1;
 		break;
 	case TraceDqr::INST_MRET:
 	case TraceDqr::INST_SRET:
 	case TraceDqr::INST_URET:
 		crFlag |= TraceDqr::isExceptionReturn;
+		pc = -1;
 		break;
 	default:
 		pc = addr + inst_size / 8;

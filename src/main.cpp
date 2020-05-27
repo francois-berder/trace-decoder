@@ -706,7 +706,12 @@ int main(int argc, char *argv[])
 		}
 	} while (ec == TraceDqr::DQERR_OK);
 
-	printf("End of Trace File\n");
+	if (ec == TraceDqr::DQERR_EOF) {
+		printf("End of Trace File\n");
+	}
+	else {
+		printf("Error (%d) terminated trace decode\n",ec);
+	}
 
 	if (itcprint_flag) {
 		std::string s = "";
