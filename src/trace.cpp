@@ -246,6 +246,15 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 
 Trace::~Trace()
 {
+	cleanUp();
+}
+
+void Trace::cleanUp()
+{
+	for (int i = 0; (size_t)i < (sizeof state / sizeof state[0]); i++) {
+		state[i] = TRACE_STATE_DONE;
+	}
+
 	if (sfp != nullptr) {
 		delete sfp;
 		sfp = nullptr;
@@ -256,6 +265,11 @@ Trace::~Trace()
 		elfReader = nullptr;
 	}
 
+//	if (symtab != nullptr) {
+//		delete symtab;
+//		symtab = nullptr;
+//	}
+
 	if (itcPrint  != nullptr) {
 		delete itcPrint;
 		itcPrint = nullptr;
@@ -264,6 +278,18 @@ Trace::~Trace()
 	if (counts != nullptr) {
 		delete [] counts;
 		counts = nullptr;
+	}
+
+//	if (disassembler != nullptr) {
+//		delete disassembler;
+//		disassembler = nullptr;
+//	}
+
+	for (int i = 0; (size_t)i < (sizeof messageSync / sizeof messageSync[0]); i++) {
+		if (messageSync[i] != nullptr) {
+			delete messageSync[i];
+			messageSync[i] = nullptr;
+		}
 	}
 }
 

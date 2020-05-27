@@ -755,6 +755,8 @@ int main(int argc, char *argv[])
 		printf("%s",dst);
 	}
 
+	trace->cleanUp();
+
 	delete trace;
 	trace = nullptr;
 

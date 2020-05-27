@@ -307,6 +307,10 @@ public class jdqr {
 		}
 	}
 
-    t.analyticsToString(1);
+	System.out.println("End of Trace File");
+
+        System.out.print(t.analyticsToString(2));
+
+	t.cleanUp();
   }
 }
