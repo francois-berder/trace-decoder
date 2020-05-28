@@ -6902,7 +6902,6 @@ int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_
 	*ins_size = size;
 
 	if (size == 16) {
-//    printf("instruction: %04x\n",inst);
 		*ins = inst;
 	}
 	else {
@@ -7498,17 +7497,19 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 			is_branch = true;
 			immediate = 0;
 		}
-		else if ((instruction & 0x000fff80) == 0x0000) { // bits 7 - 19
-			if ((instruction & 0xFFF00000) == 0x00100000) {
-				inst_type = TraceDqr::INST_EBREAK;
-				immediate = 0;
-				is_branch = true;
-			}
-			else if ((instruction & 0xFFF00000) == 0x00000000) {
-				inst_type = TraceDqr::INST_ECALL;
-				immediate = 0;
-				is_branch = true;
-			}
+		else if (instruction == 0x00000073) {
+			inst_type = TraceDqr::INST_ECALL;
+			immediate = 0;
+			is_branch = true;
+		}
+		else if (instruction == 0x00100073) {
+			inst_type = TraceDqr::INST_EBREAK;
+			immediate = 0;
+			is_branch = true;
+		}
+		else {
+			inst_type = TraceDqr::INST_UNKNOWN;
+			is_branch = false;
 		}
 		break;
 	default:
@@ -7820,17 +7821,22 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 			is_branch = true;
 			immediate = 0;
 		}
-		else if ((instruction & 0x000fff80) == 0x0000) { // bits 7 - 19
-			if ((instruction & 0xFFF00000) == 0x00100000) {
-				inst_type = TraceDqr::INST_EBREAK;
-				immediate = 0;
-				is_branch = true;
-			}
-			else if ((instruction & 0xFFF00000) == 0x00000000) {
-				inst_type = TraceDqr::INST_ECALL;
-				immediate = 0;
-				is_branch = true;
-			}
+		else if (instruction == 0x00000073) {
+			inst_type = TraceDqr::INST_ECALL;
+			immediate = 0;
+			is_branch = true;
+		}
+		else if (instruction == 0x00100073) {
+			inst_type = TraceDqr::INST_EBREAK;
+			immediate = 0;
+			is_branch = true;
+		}
+		else {
+			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
+			is_branch = false;
 		}
 		break;
 	default:
