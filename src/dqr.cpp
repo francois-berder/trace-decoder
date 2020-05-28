@@ -377,8 +377,10 @@ std::string Instruction::addressLabelToString()
 {
 	std::string s = "";
 
-	for (int i = 0; addressLabel[i] != 0; i++) {
-		s += addressLabel[i];
+	if (addressLabel != nullptr) {
+		for (int i = 0; addressLabel[i] != 0; i++) {
+			s += addressLabel[i];
+		}
 	}
 
 	return s;
@@ -388,8 +390,10 @@ std::string Instruction::operandLabelToString()
 {
 	std::string s = "";
 
-	for (int i = 0; operandLabel[i] != 0; i++) {
-		s += operandLabel[i];
+	if (operandLabel != nullptr) {
+		for (int i = 0; operandLabel[i] != 0; i++) {
+			s += operandLabel[i];
+		}
 	}
 
 	return s;
