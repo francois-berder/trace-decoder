@@ -34,6 +34,7 @@
 #include "dqr.hpp"
 #include "trace.hpp"
 
+#ifdef DO_TIMES
 Timer::Timer()
 {
 	struct timespec ts;
@@ -68,6 +69,7 @@ double Timer::etime()
 
 	return t-startTime;
 }
+#endif // DO_TIMES
 
 // class trace methods
 

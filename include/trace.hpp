@@ -42,6 +42,8 @@
 #include <cstdint>
 #include <cassert>
 
+#ifdef DO_TIMES
+
 class Timer {
 public:
 	Timer();
@@ -53,6 +55,8 @@ public:
 private:
 	double startTime;
 };
+
+#endif // DO_TIMES
 
 // class section: work with elf file sections using libbfd
 

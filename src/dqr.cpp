@@ -1514,17 +1514,21 @@ Analytics::Analytics()
 		core[i].num_interrupts = 0;
 	}
 
+#ifdef DO_TIMES
 	etimer = new Timer();
+#endif // DO_TIMES
 
 	status = TraceDqr::DQERR_OK;
 }
 
 Analytics::~Analytics()
 {
+#ifdef DO_TIMES
 	if (etimer != nullptr) {
 		delete etimer;
 		etimer = nullptr;
 	}
+#endif // DO_TIMES
 }
 
 TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32_t mseo_bits,uint32_t ts_bits,uint32_t addr_bits)
@@ -1912,7 +1916,9 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 {
 	char tmp_dst[512];
 	int n;
+#ifdef DO_TIMES
 	double etime = etimer->etime();
+#endif // DO_TIMES
 
 	assert(dst != nullptr);
 
@@ -3105,12 +3111,14 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		updateDst(n,dst,dst_len);
 	}
 
+#ifdef DO_TIMES
 	n = snprintf(dst,dst_len,"\nTime %f seconds\n",etime);
 	updateDst(n,dst,dst_len);
 	n = snprintf(dst,dst_len,"Instructions decoded per second: %0.2f\n",num_inst_all_cores/etime);
 	updateDst(n,dst,dst_len);
 	n = snprintf(dst,dst_len,"Trace messages decoded per second: %0.2f\n",num_trace_msgs_all_cores/etime);
 	updateDst(n,dst,dst_len);
+#endif // DO_TIMES
 }
 
 std::string Analytics::toString(int detailLevel)
