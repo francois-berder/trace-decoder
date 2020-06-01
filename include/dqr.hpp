@@ -441,7 +441,9 @@ public:
 
 private:
 	TraceDqr::DQErr status;
+#ifdef DO_TIMES
 	class Timer *etimer;
+#endif // DO_TIMES
 
 	uint32_t cores;
 

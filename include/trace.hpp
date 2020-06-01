@@ -43,7 +43,6 @@
 #include <cassert>
 
 #ifdef DO_TIMES
-
 class Timer {
 public:
 	Timer();
@@ -55,7 +54,6 @@ public:
 private:
 	double startTime;
 };
-
 #endif // DO_TIMES
 
 // class section: work with elf file sections using libbfd
@@ -63,6 +61,8 @@ private:
 class section {
 public:
 	section();
+	~section();
+
 	section *initSection(section **head,asection *newsp);
 	section *getSectionByAddress(TraceDqr::ADDRESS addr);
 
@@ -92,6 +92,7 @@ public:
 	};
 
 	fileReader(/*paths?*/);
+	~fileReader();
 
 	fileList *findFile(const char *file);
 private:
@@ -260,6 +261,7 @@ private:
 class Disassembler {
 public:
 	      Disassembler(bfd *abfd);
+	      ~Disassembler();
 	int   Disassemble(TraceDqr::ADDRESS addr);
 
 	int   getSrcLines(TraceDqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **line);
@@ -291,6 +293,7 @@ private:
 	long              number_of_syms;
 	asymbol         **symbol_table;
 	asymbol         **sorted_syms;
+
 	func_info_t      *func_info;
 	disassemble_info *info;
 	section	         *codeSectionLst;
@@ -303,9 +306,6 @@ private:
 	Source      source;
 
 	class fileReader *fileReader;
-
-	const char  *lastFileName;
-	unsigned int lastLineNumber;
 
 	void print_address(bfd_vma vma);
 	void print_address_and_instruction(bfd_vma vma);

@@ -267,10 +267,13 @@ void Trace::cleanUp()
 		elfReader = nullptr;
 	}
 
-//	if (symtab != nullptr) {
+	// do not delete the symtab object!! It is the same symtab object type the elfReader object
+	// contains, and deleting the elfRead above will delete the symtab object below!
+
+	if (symtab != nullptr) {
 //		delete symtab;
-//		symtab = nullptr;
-//	}
+		symtab = nullptr;
+	}
 
 	if (itcPrint  != nullptr) {
 		delete itcPrint;
@@ -282,10 +285,10 @@ void Trace::cleanUp()
 		counts = nullptr;
 	}
 
-//	if (disassembler != nullptr) {
-//		delete disassembler;
-//		disassembler = nullptr;
-//	}
+	if (disassembler != nullptr) {
+		delete disassembler;
+		disassembler = nullptr;
+	}
 
 	for (int i = 0; (size_t)i < (sizeof messageSync / sizeof messageSync[0]); i++) {
 		if (messageSync[i] != nullptr) {
@@ -1345,7 +1348,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 
 //					think I need to redo this section to match nextInstruction logic!
-					// foodog
 
 					rc = nextAddr(currentCore,currentPc,newPc,nm.tcode,crFlag,brFlags);
 					if (newPc == (TraceDqr::ADDRESS)-1) {

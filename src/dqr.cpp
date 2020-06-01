@@ -230,6 +230,14 @@ section::section()
 	code      = nullptr;
 }
 
+section::~section()
+{
+	if (code != nullptr) {
+		delete [] code;
+		code = nullptr;
+	}
+}
+
 section *section::initSection(section **head, asection *newsp)
 {
 	next = *head;
@@ -502,6 +510,40 @@ fileReader::fileReader(/*paths*/)
 	files = nullptr;
 }
 
+fileReader::~fileReader()
+{
+	for (fileList *fl = files; fl != nullptr;) {
+		fileList *nextFl = fl->next;
+
+		for (funcList *func = fl->funcs; func != nullptr;) {
+			funcList *nextFunc = func->next;
+			if (func->func != nullptr) {
+				delete [] func->func;
+				func->func = nullptr;
+			}
+			delete func;
+			func = nextFunc;
+		}
+
+		if (fl->name != nullptr) {
+			delete [] fl->name;
+			fl->name = nullptr;
+		}
+
+		if (fl->lines != nullptr) {
+			if (fl->lines[0] != nullptr) {
+				delete [] fl->lines[0];
+			}
+			delete fl->lines;
+			fl->lines = nullptr;
+		}
+
+		fl = nextFl;
+	}
+
+	files = nullptr;
+}
+
 fileReader::fileList *fileReader::readFile(const char *file)
 {
 	assert(file != nullptr);
@@ -625,6 +667,9 @@ fileReader::fileList *fileReader::readFile(const char *file)
 		delete [] lines;
 		delete [] buffer;
 
+		fl->lineCount = 0;
+		fl->lines = nullptr;
+
 		printf("Error: readFile(): Error computing line count for file\n");
 
 		return nullptr;
@@ -704,6 +749,7 @@ Symtab::~Symtab()
 {
 	if (symbol_table != nullptr) {
 		delete[] symbol_table;
+		symbol_table = nullptr;
 	}
 }
 
@@ -862,6 +908,12 @@ ElfReader::~ElfReader()
 	if (symtab != nullptr) {
 		delete symtab;
 		symtab = nullptr;
+	}
+
+	while (codeSectionLst != nullptr) {
+		section *nextSection = codeSectionLst->next;
+		delete codeSectionLst;
+		codeSectionLst = nextSection;
 	}
 
 	if (abfd != nullptr) {
@@ -4450,6 +4502,7 @@ Count::Count()
 
 Count::~Count()
 {
+	// nothing to do here!
 }
 
 void Count::resetCounts(int core)
@@ -6842,9 +6895,6 @@ Disassembler::Disassembler(bfd *abfd)
 
    	fileReader = new class fileReader();
 
-   	lastFileName = nullptr;
-   	lastLineNumber = -1;
-
     const bfd_arch_info_type *aitp;
 
     aitp = bfd_get_arch_info(abfd);
@@ -6870,6 +6920,40 @@ Disassembler::Disassembler(bfd *abfd)
     }
 
     status = TraceDqr::DQERR_OK;
+}
+
+Disassembler::~Disassembler()
+{
+	if (symbol_table != nullptr) {
+		delete [] symbol_table;
+		symbol_table = nullptr;
+	}
+
+	if (sorted_syms != nullptr) {
+		delete [] sorted_syms;
+		sorted_syms = nullptr;
+	}
+
+	if (func_info != nullptr) {
+		delete [] func_info;
+		func_info = nullptr;
+	}
+
+	while (codeSectionLst != nullptr) {
+		section *nextSection = codeSectionLst->next;
+		delete codeSectionLst;
+		codeSectionLst = nextSection;
+	}
+
+	if (info != nullptr) {
+		delete info;
+		info = nullptr;
+	}
+
+	if (fileReader != nullptr) {
+		delete fileReader;
+		fileReader = nullptr;
+	}
 }
 
 int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size)
@@ -6914,8 +6998,6 @@ int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_
 	}
 	else {
 		*ins = (((uint32_t)sp->code[(vma - sp->startAddr)/2+1]) << 16) | inst;
-
-//    printf("instruction: %08x\n",*ins);
 	}
 
 	return 0;
@@ -7517,6 +7599,9 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 		}
 		else {
 			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
 			is_branch = false;
 		}
 		break;
