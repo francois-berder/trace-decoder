@@ -58,10 +58,13 @@
 #define	atbSink			((uint32_t*)(baseAddress+Offset_atbSink))
 #define pibSink			((uint32_t*)(baseAddress+Offset_pibSink))
 
-static int itc_channel_set = 0;
+/*
+ * Default to channel 0.
+ */
 static int itc_print_channel = 0;
+static int _trace_config = 0;
 
-static int itc_enable(int channel)
+int itc_enable(int channel)
 {
 	if ((channel < 0) || (channel > 31)) {
 		return 1;
@@ -72,18 +75,44 @@ static int itc_enable(int channel)
 	return 0;
 }
 
-static inline void itc_write_uint32(uint32_t data)
+int itc_disable(int channel)
+{
+	if ((channel < 0) || (channel > 31)) {
+		return 1;
+	}
+
+	*itcTraceEnable &= ~(1 << channel);
+
+	return 0;
+}
+
+
+
+static inline void _disable_inst_trace()
+{
+	_trace_config = *teControl;
+	*teControl = _trace_config &= ~(0x70);
+	int tmp = *teControl;
+}
+
+static inline void _restore_inst_trace()
+{
+	*teControl = _trace_config  |= 0x3;
+	int tmp = *teControl;
+}
+
+static inline void _itc_print_write_uint32(uint32_t data)
 {
 	itcStimulus[itc_print_channel] = data;
 }
 
-static inline void itc_write_uint8(uint8_t data)
+static inline void _itc_print_write_uint8(uint8_t data)
 {
 	uint8_t *itc_uint8 = (uint8_t*)&itcStimulus[itc_print_channel];
 	itc_uint8[3] = data;
 }
 
-static inline void itc_write_uint16(uint16_t data)
+static inline void _itc_print_write_uint16(uint16_t data)
 {
 	uint16_t *itc_uint16 = (uint16_t*)&itcStimulus[itc_print_channel];
 	itc_uint16[1] = data;
@@ -91,16 +120,11 @@ static inline void itc_write_uint16(uint16_t data)
 
 // itc_fputs(): like itc_puts(), but no \n at end of text. Internal use only
 
-static int itc_fputs(const char *f)
+static int _itc_fputs(const char *f)
 {
-	int rc;
+	//_disable_inst_trace();
 
-	if (itc_channel_set == 0) {
-		rc = itc_set_channel(0);
-		if (rc != 0) {
-			return 0;
-		}
-	}
+	int rc;
 
 	rc = strlen(f);
 
@@ -110,46 +134,34 @@ static int itc_fputs(const char *f)
 	uint16_t a;
 
     for (i = 0; i < words; i += 4) {
-		itc_write_uint32(*(uint32_t*)(f+i));
+		_itc_print_write_uint32(*(uint32_t*)(f+i));
 	}
 
     switch (bytes) {
     case 0:
     	break;
     case 1:
-    	itc_write_uint8(*(uint8_t*)(f+i));
+    	_itc_print_write_uint8(*(uint8_t*)(f+i));
     	break;
     case 2:
-    	itc_write_uint16(*(uint16_t*)(f+i));
+    	_itc_print_write_uint16(*(uint16_t*)(f+i));
     	break;
     case 3:
     	a = *(uint16_t*)(f+i);
-    	itc_write_uint16(a);
+    	_itc_print_write_uint16(a);
 
     	a = ((uint16_t)(*(uint8_t*)(f+i+2)));
-    	itc_write_uint8((uint8_t)a);
+    	_itc_print_write_uint8((uint8_t)a);
     	break;
     }
 
+    //_restore_inst_trace();
 	return rc;
 }
 
-int itc_set_channel(int channel)
+int itc_set_print_channel(int channel)
 {
-	static uint32_t inited_mask = 0;
-
-	if (inited_mask & (1 << channel) == 0) {
-		int rc = itc_enable(channel);
-		if (rc == 0) {
-			inited_mask |= (1 << channel);
-			itc_print_channel = channel;
-		}
-
-		itc_channel_set = 1;
-
-		return rc;
-	}
-
+	itc_print_channel = channel;
 	return 0;
 }
 
@@ -157,16 +169,9 @@ int itc_set_channel(int channel)
 
 int itc_puts(const char *f)
 {
-	int rc;
+	//_disable_inst_trace();
 
-	if (itc_channel_set == 0) {
-		rc = itc_set_channel(0);
-		if (rc != 0) {
-			return 0;
-		}
-	}
-
-	rc = strlen(f);
+	int rc = strlen(f);
 
 	int words = (rc/4)*4;
 	int bytes = rc & 0x03;
@@ -174,7 +179,7 @@ int itc_puts(const char *f)
 	uint16_t a;
 
     for (i = 0; i < words; i += 4) {
-		itc_write_uint32(*(uint32_t*)(f+i));
+		_itc_print_write_uint32(*(uint32_t*)(f+i));
 	}
 
     // we actually have one more byte to send than bytes, because we need to append
@@ -182,25 +187,26 @@ int itc_puts(const char *f)
 
     switch (bytes) {
     case 0:
-    	itc_write_uint8('\n');
+    	_itc_print_write_uint8('\n');
     	break;
     case 1:
     	a = *(uint8_t*)(f+i);
-    	itc_write_uint16(('\n' << 8) | a);
+    	_itc_print_write_uint16(('\n' << 8) | a);
     	break;
     case 2:
-    	itc_write_uint16(*(uint16_t*)(f+i));
-    	itc_write_uint8('\n');
+    	_itc_print_write_uint16(*(uint16_t*)(f+i));
+    	_itc_print_write_uint8('\n');
     	break;
     case 3:
     	a = *(uint16_t*)(f+i);
-    	itc_write_uint16(a);
+    	_itc_print_write_uint16(a);
 
     	a = ((uint16_t)(*(uint8_t*)(f+i+2)));
-    	itc_write_uint16(('\n' << 8) | a);
+    	_itc_print_write_uint16(('\n' << 8) | a);
     	break;
     }
 
+    //_restore_inst_trace();
 	return rc+1;
 }
 
@@ -214,6 +220,25 @@ int itc_printf(const char *f, ... )
 	rc = vsnprintf(buffer,sizeof buffer, f, args);
 	va_end(args);
 
-	itc_fputs(buffer);
+	_itc_fputs(buffer);
 	return rc;
 }
+
+inline void itc_write_uint32(int channel, uint32_t data)
+{
+	itcStimulus[channel] = data;
+}
+
+inline void itc_write_uint8(int channel, uint8_t data)
+{
+	uint8_t *itc_uint8 = (uint8_t*)&itcStimulus[channel];
+	itc_uint8[3] = data;
+}
+
+inline void itc_write_uint16(int channel, uint16_t data)
+{
+	uint16_t *itc_uint16 = (uint16_t*)&itcStimulus[channel];
+	itc_uint16[1] = data;
+}
+
+
