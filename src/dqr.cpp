@@ -35,7 +35,7 @@
 
 //#define DQR_MAXCORES	8
 
-const char * const DQR_VERSION = "0.9.3";
+const char * const DQR_VERSION = "0.9.4";
 
 // static C type helper functions
 
@@ -3352,6 +3352,7 @@ NexusMessage::NexusMessage()
 	timestamp      = 0;
 	currentAddress = 0;
 	time = 0;
+
 	offset = 0;
 	for (int i = 0; (size_t)i < sizeof rawData/sizeof rawData[0]; i++) {
 		rawData[i] = 0xff;
@@ -4824,6 +4825,8 @@ TraceDqr::CountType Count::getCurrentCountType(int core)
 	if (i_cnt[core] > 0) {
 		return TraceDqr::COUNTTYPE_i_cnt;
 	}
+
+//	printf("count type: hist: %d taken:%d not taken:%d i_cnt: %d\n",histBit[core],takenCount[core],notTakenCount[core],i_cnt[core]);
 
 	return TraceDqr::COUNTTYPE_none;
 }
@@ -6854,6 +6857,7 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 
 			return status;
 		}
+
 
 		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff)) {
 			printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);

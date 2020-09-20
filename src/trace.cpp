@@ -71,6 +71,302 @@ double Timer::etime()
 }
 #endif // DO_TIMES
 
+// class CATrace methods
+
+void CATraceRec::dump()
+{
+	printf("0x%08x\n",(uint32_t)address);
+	for (int i = 0; (size_t)i < sizeof data / sizeof data[0]; i++) {
+		printf("%3d  ",(i*30)>>1);
+
+		for (int j = 28; j >= 0; j -= 2) {
+			if (j != 28) {
+				printf(":");
+			}
+			printf("%01x",(data[i] >> j) & 0x3);
+		}
+
+		printf("\n");
+	}
+}
+
+void CATraceRec::dumpWithCycle()
+{
+	printf("0x%08x\n",(uint32_t)address);
+	for (int i = 0; (size_t)i < sizeof data / sizeof data[0]; i++) {
+		for (int j = 28; j >= 0; j -= 2) {
+			printf("%d %01x\n",(i*30+(28-j))>>1,(data[i] >> j) & 0x3);
+		}
+	}
+}
+
+int CATraceRec::consume(int &pipe,uint32_t &cycles)
+{
+	int dataIndex;
+	int bitIndex;
+	bool found = false;
+
+	// check if we have exhausted all bits in this record
+
+	if (offset >= 30 * 32) {
+		// this record is exhausted. Tell caller to read another record
+		return 0;
+	}
+
+	// find next non-zero bit field
+
+	dataIndex = offset / 30; // 30 bits of data in each data word
+	bitIndex = 29 - (offset % 30);  // 0 - 29 is the bit index to start looking at (29 oldest, 0 newest)
+
+	while (found == false) {
+		while ((bitIndex >= 0) && ((data[dataIndex] & (1<<bitIndex)) == 0)) {
+			bitIndex -= 1;
+			offset += 1;
+		}
+
+		if (bitIndex < 0) {
+			// didn't find any 1s in data[dataIndex]. Check next data item
+			dataIndex += 1;
+
+			if ((size_t)dataIndex >= sizeof data / sizeof data[0]) {
+				return 0; // failure
+			}
+
+			bitIndex = 29;
+		}
+		else {
+			// found a one
+
+			cycles = offset/2;
+
+			// Bump past it
+			offset += 1;
+			found = true;
+		}
+	}
+
+	if (bitIndex & 0x01) {
+		pipe = 0;
+	}
+	else {
+		pipe = 1;
+	}
+
+	return 1;	// success
+}
+
+CATrace::CATrace(char *caf_name)
+{
+	caBufferSize = 0;
+	caBuffer = nullptr;
+	caBufferIndex = 0;
+	status = TraceDqr::DQERR_OK;
+
+	if (caf_name == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	std::ifstream catf;
+
+	catf.open(caf_name, std::ios::in | std::ios::binary);
+
+	if (!catf) {
+		printf("Error: CATrace::CATrace(): could not open cycle accurate trace file %s for input\n",caf_name);
+		status = TraceDqr::DQERR_OPEN;
+		return;
+	}
+
+	catf.seekg(0, catf.end);
+	caBufferSize = catf.tellg();
+	catf.seekg(0, catf.beg);
+
+	caBuffer = new uint8_t[caBufferSize];
+
+	catf.read((char*)caBuffer,caBufferSize);
+
+	catf.close();
+
+	TraceDqr::DQErr rc;
+
+	rc = parseNextCATraceRec(catr);
+	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: CATRACE::CATrace(): Error parsing first CA trace record\n");
+		status = rc;
+	}
+	else {
+		status = TraceDqr::DQERR_OK;
+	}
+
+	startAddr = catr.address;
+	baseCycles = 0;
+	syncing = true;
+
+	return;
+};
+
+CATrace::~CATrace()
+{
+	if (caBuffer != nullptr) {
+		delete [] caBuffer;
+		caBuffer = nullptr;
+	}
+
+	caBufferSize = 0;
+	caBufferIndex = 0;
+}
+
+TraceDqr::DQErr CATrace::dumpCurrentCARecord(int level)
+{
+	switch (level) {
+	case 0:
+		catr.dump();
+		break;
+	case 1:
+		catr.dumpWithCycle();
+		break;
+	default:
+		printf("Error: CATrace::dumpCurrentCARecord(): invalid level %d\n",level);
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CATrace::consume(int &numConsumed,int &pipe,uint32_t &cycles)
+{
+	TraceDqr::DQErr rc;
+
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
+	}
+
+	numConsumed = 0;
+
+	while (numConsumed == 0) {
+		numConsumed = catr.consume(pipe,cycles);
+		if (numConsumed == 0) {
+			// need to read another record
+
+			rc = parseNextCATraceRec(catr);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			baseCycles += (30*32)/2;
+		}
+	}
+
+	cycles += baseCycles;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::ADDRESS CATrace::getCATraceStartAddr()
+{
+	// of course it ins't this simple. If bit 29 in data[0] is 0, the start address is actually the address of the next
+	// instruction! To compute that, we must know the size of the instruction at the reported address. And to make things
+	// worse, if that instruction is a conditional branch or an indirect jump (like a return), we can't compute the next
+	// address because there is not instruction trace info for that instruction!
+
+	return startAddr;
+}
+
+TraceDqr::DQErr CATrace::parseNextCATraceRec(CATraceRec &car)
+{
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
+	}
+
+	uint32_t d = 0;
+	bool firstRecord = false;
+
+	if (caBufferIndex == 0) {
+		// find start of first message (in case buffer wrapped)
+		uint32_t last;
+
+		firstRecord = true;
+
+		do {
+			last = d >> 30;
+			d = *(uint32_t*)(&caBuffer[caBufferIndex]);
+			caBufferIndex += sizeof(uint32_t);
+		} while (((d >> 30) != 0x3) && (last != 0) && (caBufferIndex < caBufferSize));
+
+		if ((int)caBufferIndex >= (int)(caBufferSize - sizeof(uint32_t)*15)) {
+			return TraceDqr::DQERR_EOF;
+		}
+	}
+	else {
+		if ((int)caBufferIndex >= (int)(caBufferSize - sizeof(uint32_t)*32)) {
+			// need to have at least 32 words of 32 bits in buffer for a complete CA frame
+
+			return TraceDqr::DQERR_EOF;
+		}
+
+		// need to get first word into d
+		d = *(uint32_t*)(&caBuffer[caBufferIndex]); //is this in the correct order, or backwards?
+		caBufferIndex += sizeof(uint32_t);
+	}
+
+//	printf("have start of file %d\n",caBufferIndex);
+
+	// read next record. skip records with all retire bits = 0 (but update baseCycles for each skip
+
+	TraceDqr::ADDRESS addr;
+	uint32_t x;
+
+	do {
+		addr = 0;
+		car.data[0] = d & 0x3fffffff;
+		x = car.data[0];
+
+		for (int i = 1; i < 32; i++) {
+			d = *(uint32_t*)(&caBuffer[caBufferIndex]);
+			caBufferIndex += sizeof(uint32_t);
+
+			addr |= (((TraceDqr::ADDRESS)(d >> 30)) << 2*(i-1));
+			car.data[i] = d & 0x3fffffff;
+			x |= car.data[i];
+		}
+
+		if (x == 0) {
+			d = *(uint32_t*)(&caBuffer[caBufferIndex]); //is this in the correct order, or backwards?
+			caBufferIndex += sizeof(uint32_t);
+			baseCycles += (30*32)/2;
+		}
+	} while (x == 0);
+
+	if (firstRecord != false) {
+		car.data[0] |= (1<<29);
+	}
+
+	car.address = addr;
+	car.offset = 0;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CATrace::parseCATrace()
+{
+	if (caBuffer == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	TraceDqr::DQErr rc;
+	CATraceRec catr;
+
+	do {
+		rc = parseNextCATraceRec(catr);
+		if (rc == TraceDqr::DQERR_OK) {
+			catr.dump();
+		}
+	} while (rc == TraceDqr::DQERR_OK);
+
+	return rc;
+}
+
 // class trace methods
 
 int Trace::decodeInstructionSize(uint32_t inst, int &inst_size)
@@ -89,6 +385,7 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
   elfReader    = nullptr;
   symtab       = nullptr;
   disassembler = nullptr;
+  caTrace      = nullptr;
 
   assert(tf_name != nullptr);
 
@@ -202,6 +499,14 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 	  lastTime[i] = 0;
   }
 
+  for (int i = 0; (size_t)i < sizeof lastCycle / sizeof lastCycle[0]; i++) {
+	  lastCycle[i] = 0;
+  }
+
+  for (int i = 0; (size_t)i < sizeof eCycleCount / sizeof eCycleCount[0]; i++) {
+	  eCycleCount[i] = 0;
+  }
+
   startMessageNum  = 0;
   endMessageNum    = 0;
 
@@ -236,6 +541,7 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 
   instructionInfo.timestamp = 0;
   instructionInfo.cycles = 0;
+  instructionInfo.pipe = 0;
 
   sourceInfo.sourceFile = nullptr;
   sourceInfo.sourceFunction = nullptr;
@@ -304,6 +610,11 @@ void Trace::cleanUp()
 			messageSync[i] = nullptr;
 		}
 	}
+
+	if (caTrace != nullptr) {
+		delete caTrace;
+		caTrace = nullptr;
+	}
 }
 
 const char *Trace::version()
@@ -349,8 +660,10 @@ TraceDqr::DQErr Trace::setTraceRange(int start_msg_num,int stop_msg_num)
 	startMessageNum = start_msg_num;
 	endMessageNum = stop_msg_num;
 
-	for (int i = 0; (size_t)i < sizeof state / sizeof state[0]; i++) {
-		state[i] = TRACE_STATE_GETSTARTTRACEMSG;
+	if ((startMessageNum != 0) || (endMessageNum != 0)) {
+		for (int i = 0; (size_t)i < sizeof state / sizeof state[0]; i++) {
+			state[i] = TRACE_STATE_GETSTARTTRACEMSG;
+		}
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -365,6 +678,26 @@ TraceDqr::DQErr Trace::setPathType(TraceDqr::pathType pt)
 	}
 
 	return TraceDqr::DQERR_ERR;
+}
+
+TraceDqr::DQErr Trace::setCATraceFile( char *caf_name)
+{
+	caTrace = new CATrace(caf_name);
+
+	TraceDqr::DQErr rc;
+	rc = caTrace->getStatus();
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+		return rc;
+	}
+
+	// need to sync up ca trace file and trace file. Here, or in next instruction?
+
+	for (int i = 0; (size_t)i < sizeof state / sizeof state[0]; i++ ) {
+		state[i] = TRACE_STATE_SYNCCATE;
+	}
+
+	return status;
 }
 
 TraceDqr::DQErr Trace::setTSSize(int size)
@@ -940,6 +1273,142 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr Trace::nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &savedAddr)
+{
+	uint32_t inst;
+	int inst_size;
+	TraceDqr::InstType inst_type;
+	int32_t immediate;
+	bool isBranch;
+	int rc;
+	TraceDqr::Reg rs1;
+	TraceDqr::Reg rd;
+//	bool isTaken;
+
+	// note: since saveAddr is a single address, we are only implementing a one address stack (not much of a stack)
+
+	status = elfReader->getInstructionByAddress(addr,inst);
+	if (status != TraceDqr::DQERR_OK) {
+		printf("Error: nextCAAddr(): getInstructionByAddress() failed\n");
+
+		return status;
+	}
+
+	// figure out how big the instruction is
+	// Note: immediate will already be adjusted - don't need to mult by 2 before adding to address
+
+	rc = decodeInstruction(inst,inst_size,inst_type,rs1,rd,immediate,isBranch);
+	if (rc != 0) {
+		printf("Error: nextCAAddr(): Cannot decode instruction %04x\n",inst);
+
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	switch (inst_type) {
+	case TraceDqr::INST_UNKNOWN:
+		addr = addr + inst_size/8;
+		break;
+	case TraceDqr::INST_JAL:
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			savedAddr = addr + inst_size/8;
+		}
+
+		addr = addr + immediate;
+		break;
+	case TraceDqr::INST_JALR:
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
+				savedAddr = addr+inst_size/8;
+				addr = -1;
+			}
+			else if (rd != rs1) { // rd == link; rs1 == link; rd != rs1
+				addr = savedAddr;
+				savedAddr = -1;
+			}
+			else { // rd == link; rs1 == link; rd == rs1
+				savedAddr = addr+inst_size/8;
+				addr = -1;
+			}
+		}
+		else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) { // rd != link; rs1 == link
+			addr = savedAddr;
+			savedAddr = -1;
+		}
+		else {
+			addr = -1;
+		}
+		break;
+	case TraceDqr::INST_BEQ:
+	case TraceDqr::INST_BNE:
+	case TraceDqr::INST_BLT:
+	case TraceDqr::INST_BGE:
+	case TraceDqr::INST_BLTU:
+	case TraceDqr::INST_BGEU:
+	case TraceDqr::INST_C_BEQZ:
+	case TraceDqr::INST_C_BNEZ:
+		if ((addr + inst_size/8) == (addr + immediate)) {
+			addr += immediate;
+		}
+		else {
+			addr = -1;
+		}
+		break;
+	case TraceDqr::INST_C_J:
+		addr += immediate;
+		break;
+	case TraceDqr::INST_C_JAL:
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			savedAddr = addr + inst_size/8;
+		}
+
+		addr += immediate;
+		break;
+	case TraceDqr::INST_C_JR:
+		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+			addr = savedAddr;
+			savedAddr = -1;
+		}
+		else {
+			addr = -1;
+		}
+		break;
+	case TraceDqr::INST_C_JALR:
+		if (rs1 == TraceDqr::REG_5) {
+			TraceDqr::ADDRESS taddr;
+
+			// swap addr, saveAddr
+			taddr = addr;
+			addr = savedAddr;
+			savedAddr = taddr;
+		}
+		else {
+			savedAddr = addr+inst_size/8;
+			addr = -1;
+		}
+		break;
+	case TraceDqr::INST_EBREAK:
+	case TraceDqr::INST_ECALL:
+		addr = -1;
+		break;
+	case TraceDqr::INST_MRET:
+	case TraceDqr::INST_SRET:
+	case TraceDqr::INST_URET:
+		addr = -1;
+		break;
+	default:
+		addr += inst_size / 8;
+		break;
+	}
+
+	if (addr == (TraceDqr::ADDRESS)-1) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 // adjust pc, faddr, timestamp based on faddr, uaddr, timestamp, and message type.
 // Do not adjust counts! They are handled elsewhere
 
@@ -1011,21 +1480,22 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		if (nm.haveTimestamp) {
 			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
-		faddr = faddr ^ (nm.ict.ckdata << 1);
 
-		// don't update pc for INCIRCUITTRACE messages
-		//pc = faddr;
+		// update faddr but not pc
+
+		faddr = faddr ^ (nm.ict.ckdata << 1);
+//		pc = faddr;
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 		if (nm.haveTimestamp) {
 			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
 		}
+
+		// update faddr but not pc
+
 		faddr = nm.ictWS.ckdata << 1;
-
-		// don't update pc for INCIRCUITTRACE messages
-		//pc = faddr;
-
-		// don't reset call/return stack for this message
+//		pc = faddr;
+		// don't reset call/return stack for this message - not a normal sync!
 		break;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
@@ -1231,6 +1701,124 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		}
 
 		switch (state[currentCore]) {
+		case TRACE_STATE_SYNCCATE:
+			if (caTrace != nullptr) {
+				// if first trace record is not a message we can sync with CA record, error
+
+				TraceDqr::ADDRESS teAddr;
+
+				switch (nm.tcode) {
+				case TraceDqr::TCODE_OWNERSHIP_TRACE:
+				case TraceDqr::TCODE_DIRECT_BRANCH:
+				case TraceDqr::TCODE_INDIRECT_BRANCH:
+				case TraceDqr::TCODE_DATA_ACQUISITION:
+				case TraceDqr::TCODE_ERROR:
+				case TraceDqr::TCODE_AUXACCESS_WRITE:
+				case TraceDqr::TCODE_INCIRCUITTRACE:
+				case TraceDqr::TCODE_CORRELATION:
+				case TraceDqr::TCODE_RESOURCEFULL:
+				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+				case TraceDqr::TCODE_REPEATBRANCH:
+				case TraceDqr::TCODE_REPEATINSTRUCTION:
+				case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+				case TraceDqr::TCODE_AUXACCESS_READNEXT:
+				case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+				case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+				case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+				case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+				case TraceDqr::TCODE_AUXACCESS_READ:
+				case TraceDqr::TCODE_DATA_WRITE_WS:
+				case TraceDqr::TCODE_DATA_READ_WS:
+				case TraceDqr::TCODE_WATCHPOINT:
+				case TraceDqr::TCODE_CORRECTION:
+				case TraceDqr::TCODE_DATA_WRITE:
+				case TraceDqr::TCODE_DATA_READ:
+				case TraceDqr::TCODE_DEBUG_STATUS:
+				case TraceDqr::TCODE_DEVICE_ID:
+					// bad news
+					printf("Error: NextInstruction(): wrong tcode type (%d); can't sync te and ca traces\n",nm.tcode);
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				case TraceDqr::TCODE_SYNC:
+					teAddr = nm.sync.f_addr << 1;
+					break;
+				case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+					teAddr = nm.directBranchWS.f_addr << 1;
+					break;
+				case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+					teAddr = nm.indirectBranchWS.f_addr << 1;
+					break;
+				case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+					teAddr = nm.ictWS.ckdata << 1;
+					break;
+				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+					teAddr = nm.indirectHistoryWS.f_addr << 1;
+					break;
+				case TraceDqr::TCODE_UNDEFINED:
+				default:
+					printf("Error: NextInstruction(): Undefined tcode type (%d)\n",nm.tcode);
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+
+				// run ca code until we get to the te trace address. only do 6 instructions a the most
+
+				addr = caTrace->getCATraceStartAddr();
+				TraceDqr::ADDRESS savedAddr = -1;
+				int numConsumed;
+				int pipe;
+				int skippedInsts = 0;
+				uint32_t cycles;
+
+				for (int i = 0; (teAddr != addr) && (i < 6); i++) {
+					status = nextCAAddr(addr,savedAddr);
+					if (status != TraceDqr::DQERR_OK) {
+						printf("Error: nextAddr() failed\n");
+
+						state[currentCore] = TRACE_STATE_ERROR;
+
+						return status;
+					}
+
+					rc = caTrace->consume(numConsumed,pipe,cycles);
+					if (rc == TraceDqr::DQERR_EOF) {
+						state[currentCore = TRACE_STATE_DONE];
+
+						status = rc;
+						return rc;
+					}
+
+					if (rc != TraceDqr::DQERR_OK) {
+						state[currentCore] = TRACE_STATE_ERROR;
+
+						status = rc;
+						return status;
+					}
+
+					skippedInsts += 1;
+				}
+
+				if (teAddr != addr) {
+					printf("Error: nextInstructino(): Failed to sync te and ca traces\n");
+					state[currentCore] = TRACE_STATE_ERROR;
+					return TraceDqr::DQERR_ERR;
+				}
+
+//				printf("TE/CA sync found after %d instructions\n",skippedInsts);
+//				printf("catr.address:%08x, teAddr:%08x, addr:%08x\n",caTrace->getCATraceStartAddr(),teAddr,addr);
+
+				// now need to consume retired instructions in CA trace to line it up with the teTrace
+
+//				caTrace->dumpCurrentCARecord(0);
+//				caTrace->dumpCurrentCARecord(1);
+
+				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
+			}
+			break;
 		case TRACE_STATE_GETSTARTTRACEMSG:
 			if (startMessageNum <= 1) {
 				// if starting at beginning, just switch to normal state for starting
@@ -1276,7 +1864,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 						state[currentCore] = TRACE_STATE_ERROR;
 
-						printf("Error: cannot start at trace message %d because no preceeding sync\n",startMessageNum);
+						printf("Error: cannot start at trace message %d because no preceding sync\n",startMessageNum);
 
 						status = TraceDqr::DQERR_ERR;
 
@@ -1582,7 +2170,17 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			if (msgInfo != nullptr) {
 				messageInfo = nm;
-				messageInfo.currentAddress = currentAddress[currentCore];
+
+				// if doing pc-sampling and msg type is INCIRCUITTRACE_WS, we want to use faddr
+				// and not currentAddress
+
+				if (nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE_WS) {
+					messageInfo.currentAddress = lastFaddr[currentCore];
+				}
+				else {
+					messageInfo.currentAddress = currentAddress[currentCore];
+				}
+
 				messageInfo.time = lastTime[currentCore];
 
 				if (messageInfo.processITCPrintData(itcPrint) == false) {
@@ -1759,7 +2357,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = currentAddress[currentCore];
+
+					if ((nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE) || (nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE_WS)) {
+						messageInfo.currentAddress = lastFaddr[currentCore];
+					}
+					else {
+						messageInfo.currentAddress = currentAddress[currentCore];
+					}
 
 					if (messageInfo.processITCPrintData(itcPrint) == false) {
 						*msgInfo = &messageInfo;
@@ -1767,7 +2371,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				if ((srcInfo != nullptr) && (*srcInfo == nullptr)) {
-					Disassemble(currentAddress[currentCore]);
+					if ((nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE) || (nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE_WS)) {
+						Disassemble(lastFaddr[currentCore]);
+					}
+					else {
+						Disassemble(currentAddress[currentCore]);
+					}
 
 					sourceInfo.coreId = currentCore;
 					*srcInfo = &sourceInfo;
@@ -1985,6 +2594,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			status = nextAddr(currentCore,currentAddress[currentCore],addr,nm.tcode,crFlag,brFlags);
 			if (status != TraceDqr::DQERR_OK) {
+				printf("Error: nextAddr() failed\n");
+
 				state[currentCore] = TRACE_STATE_ERROR;
 
 				return status;
@@ -2011,6 +2622,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					// error
 					// must have a JR/JALR or exception/exception return to get here, and the CR stack is empty
 
+					printf("Error: getCurrentCountType(core:%d) still has counts; have countType: %d\n",currentCore,counts->getCurrentCountType(currentCore));
 					state[currentCore] = TRACE_STATE_ERROR;
 
 					status = TraceDqr::DQERR_ERR;
@@ -2021,6 +2633,28 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			currentAddress[currentCore] = addr;
 
+			int numConsumed;
+			int pipe;
+			uint32_t cycles;
+
+			if (caTrace != nullptr) {
+				status = caTrace->consume(numConsumed,pipe,cycles);
+				if (status == TraceDqr::DQERR_EOF) {
+					state[currentCore] = TRACE_STATE_DONE;
+					return status;
+				}
+
+				if (status != TraceDqr::DQERR_OK) {
+					state[currentCore] = TRACE_STATE_ERROR;
+					return status;
+				}
+
+//				if (lastCycle[currentCore] != cycles) {
+					eCycleCount[currentCore] = cycles - lastCycle[currentCore];
+//				}
+				lastCycle[currentCore] = cycles;
+			}
+
 			if (instInfo != nullptr) {
 				instructionInfo.coreId = currentCore;
 				*instInfo = &instructionInfo;
@@ -2028,9 +2662,21 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				enterISR[currentCore] = TraceDqr::isNone;
 				(*instInfo)->brFlags = brFlags;
 
-				(*instInfo)->timestamp = lastTime[currentCore];
-				(*instInfo)->cycles = 0;
+				if (caTrace != nullptr) {
+					(*instInfo)->timestamp = cycles;
+//					(*instInfo)->cycles = cycles - lastCycle[currentCore];
+//					if (lastCycle[currentCore] == cycles) {
+						(*instInfo)->cycles = eCycleCount[currentCore];
+//					}
+					(*instInfo)->pipe = pipe;
+				}
+				else {
+					(*instInfo)->timestamp = lastTime[currentCore];
+				}
 			}
+
+
+//			lastCycle[currentCore] = cycles;
 
 			if (srcInfo != nullptr) {
 				sourceInfo.coreId = currentCore;
@@ -2041,6 +2687,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			if (status != TraceDqr::DQERR_OK) {
 				state[currentCore] = TRACE_STATE_ERROR;
 
+				printf("Error: updateInstructionInfo() failed\n");
 				return status;
 			}
 

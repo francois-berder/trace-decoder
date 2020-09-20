@@ -46,6 +46,7 @@ static void usage(char *name)
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
 	printf("-s simfile:   Specify the name of the simulator output file. When using a simulator output file, cannot use\n");
 	printf("              a tracefile (-t option). Can provide an elf file (-e option), but is not required.\n");
+	printf("-ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
 	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
@@ -160,6 +161,7 @@ int main(int argc, char *argv[])
 	char *base_name = nullptr;
 	char *ef_name = nullptr;
 	char *sf_name = nullptr;
+	char *ca_name = nullptr;
 	char buff[128];
 	int buff_index = 0;
 	bool usage_flag = false;
@@ -225,6 +227,16 @@ int main(int argc, char *argv[])
 			base_name = nullptr;
 
 			ef_name = argv[i];
+		}
+		else if (strcmp("-ca",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: option -ca reques a file name\n");
+				usage(argv[0]);
+				return 1;
+			}
+
+			ca_name = argv[i];
 		}
 		else if (strcmp("-binary",argv[i]) == 0) {
 			binary_flag = true;
@@ -544,6 +556,15 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 
+		if (ca_name != nullptr) {
+			TraceDqr::DQErr rc;
+			rc = trace->setCATraceFile(ca_name);
+			if (rc != TraceDqr::DQERR_OK) {
+				printf("Error: Could not set cycle accurate trace file\n");
+				return 1;
+			}
+		}
+
 		trace->setTraceRange(start_msg_num,stop_msg_num);
 		trace->setTSSize(tssize);
 		trace->setPathType(pt);
@@ -601,6 +622,8 @@ int main(int argc, char *argv[])
 		}
 
 		if (ec == TraceDqr::DQERR_OK) {
+//			printf("-> m:%d, s:%d, i:%d\n",msgInfo!=nullptr,srcInfo!=nullptr,instInfo!=nullptr);
+
 			if (srcInfo != nullptr) {
 				if ((lastSrcFile != srcInfo->sourceFile) || (lastSrcLine != srcInfo->sourceLine) || (lastSrcLineNum != srcInfo->sourceLineNum)) {
 					lastSrcFile = srcInfo->sourceFile;
@@ -670,7 +693,7 @@ int main(int argc, char *argv[])
 
 				int n;
 
-				if ((sim != nullptr) && (instInfo->timestamp != 0)) {
+				if (((sim != nullptr) || (ca_name != nullptr)) && (instInfo->timestamp != 0)) {
 					n = printf("t:%d ",instInfo->timestamp);
 
 					n += printf("[%d] ",instInfo->cycles);
