@@ -40,7 +40,7 @@ static void usage(char *name)
 	printf("           [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path]\n");
 	printf("           [-itcprint | -itcprint=n] [-noitcprint] [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+]\n");
 	printf("           [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n] [-noanalytics] [-freq nn] [-tssize=n]\n");
-	printf("           [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-v] [-h]\n");
+	printf("           [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n] [-v] [-h]\n");
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
@@ -106,7 +106,7 @@ static void usage(char *name)
 	printf("-pathwindows: Show all file paths using windows-type '\\' path separators\n");
 	printf("              Also cleans up path, removing // -> /, /./ -> /, and uplevels for each /../\n");
 	printf("-pathraw:     Show all file path in the format stored in the elf file\n");
-	printf("-msgLevel=n:  Set the nexus trace message detail level. n must be >= 0, <= 3\n");
+	printf("-msglevel=n:  Set the nexus trace message detail level. n must be >= 0, <= 3\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }

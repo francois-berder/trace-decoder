@@ -1597,6 +1597,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	TraceDqr::ADDRESS addr;
 	int crFlag;
 	TraceDqr::BranchFlags brFlags;
+	int numConsumed;
+	int pipe;
+	uint32_t cycles;
 
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
@@ -1702,122 +1705,193 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 		switch (state[currentCore]) {
 		case TRACE_STATE_SYNCCATE:
-			if (caTrace != nullptr) {
-				// if first trace record is not a message we can sync with CA record, error
+//			printf("TRACE_STATE_SYNCCATE\n");
 
-				TraceDqr::ADDRESS teAddr;
-
-				switch (nm.tcode) {
-				case TraceDqr::TCODE_OWNERSHIP_TRACE:
-				case TraceDqr::TCODE_DIRECT_BRANCH:
-				case TraceDqr::TCODE_INDIRECT_BRANCH:
-				case TraceDqr::TCODE_DATA_ACQUISITION:
-				case TraceDqr::TCODE_ERROR:
-				case TraceDqr::TCODE_AUXACCESS_WRITE:
-				case TraceDqr::TCODE_INCIRCUITTRACE:
-				case TraceDqr::TCODE_CORRELATION:
-				case TraceDqr::TCODE_RESOURCEFULL:
-				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
-				case TraceDqr::TCODE_REPEATBRANCH:
-				case TraceDqr::TCODE_REPEATINSTRUCTION:
-				case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
-				case TraceDqr::TCODE_AUXACCESS_READNEXT:
-				case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
-				case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-				case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
-				case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
-				case TraceDqr::TCODE_AUXACCESS_READ:
-				case TraceDqr::TCODE_DATA_WRITE_WS:
-				case TraceDqr::TCODE_DATA_READ_WS:
-				case TraceDqr::TCODE_WATCHPOINT:
-				case TraceDqr::TCODE_CORRECTION:
-				case TraceDqr::TCODE_DATA_WRITE:
-				case TraceDqr::TCODE_DATA_READ:
-				case TraceDqr::TCODE_DEBUG_STATUS:
-				case TraceDqr::TCODE_DEVICE_ID:
-					// bad news
-					printf("Error: NextInstruction(): wrong tcode type (%d); can't sync te and ca traces\n",nm.tcode);
-					status = TraceDqr::DQERR_ERR;
-					state[currentCore] = TRACE_STATE_ERROR;
-
-					return status;
-				case TraceDqr::TCODE_SYNC:
-					teAddr = nm.sync.f_addr << 1;
-					break;
-				case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-					teAddr = nm.directBranchWS.f_addr << 1;
-					break;
-				case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-					teAddr = nm.indirectBranchWS.f_addr << 1;
-					break;
-				case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-					teAddr = nm.ictWS.ckdata << 1;
-					break;
-				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
-					teAddr = nm.indirectHistoryWS.f_addr << 1;
-					break;
-				case TraceDqr::TCODE_UNDEFINED:
-				default:
-					printf("Error: NextInstruction(): Undefined tcode type (%d)\n",nm.tcode);
-					status = TraceDqr::DQERR_ERR;
-					state[currentCore] = TRACE_STATE_ERROR;
-
-					return status;
-				}
-
-				// run ca code until we get to the te trace address. only do 6 instructions a the most
-
-				addr = caTrace->getCATraceStartAddr();
-				TraceDqr::ADDRESS savedAddr = -1;
-				int numConsumed;
-				int pipe;
-				int skippedInsts = 0;
-				uint32_t cycles;
-
-				for (int i = 0; (teAddr != addr) && (i < 6); i++) {
-					status = nextCAAddr(addr,savedAddr);
-					if (status != TraceDqr::DQERR_OK) {
-						printf("Error: nextAddr() failed\n");
-
-						state[currentCore] = TRACE_STATE_ERROR;
-
-						return status;
-					}
-
-					rc = caTrace->consume(numConsumed,pipe,cycles);
-					if (rc == TraceDqr::DQERR_EOF) {
-						state[currentCore = TRACE_STATE_DONE];
-
-						status = rc;
-						return rc;
-					}
-
-					if (rc != TraceDqr::DQERR_OK) {
-						state[currentCore] = TRACE_STATE_ERROR;
-
-						status = rc;
-						return status;
-					}
-
-					skippedInsts += 1;
-				}
-
-				if (teAddr != addr) {
-					printf("Error: nextInstructino(): Failed to sync te and ca traces\n");
-					state[currentCore] = TRACE_STATE_ERROR;
-					return TraceDqr::DQERR_ERR;
-				}
-
-//				printf("TE/CA sync found after %d instructions\n",skippedInsts);
-//				printf("catr.address:%08x, teAddr:%08x, addr:%08x\n",caTrace->getCATraceStartAddr(),teAddr,addr);
-
-				// now need to consume retired instructions in CA trace to line it up with the teTrace
-
-//				caTrace->dumpCurrentCARecord(0);
-//				caTrace->dumpCurrentCARecord(1);
-
-				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
+			if (caTrace == nullptr) {
+				// have an error! Should never have TRACE_STATE_SYNC whthout a caTrace ptr
+				printf("Error: caTrace is null\n");
+				status = TraceDqr::DQERR_ERR;
+				state[currentCore] = TRACE_STATE_ERROR;
+				return status;
 			}
+
+			// loop through trace messages until we find a sync of some kind. First sync should do it
+			// sync reason must be correct
+
+			TraceDqr::ADDRESS teAddr;
+
+			switch (nm.tcode) {
+			case TraceDqr::TCODE_OWNERSHIP_TRACE:
+			case TraceDqr::TCODE_DIRECT_BRANCH:
+			case TraceDqr::TCODE_INDIRECT_BRANCH:
+			case TraceDqr::TCODE_DATA_ACQUISITION:
+			case TraceDqr::TCODE_ERROR:
+			case TraceDqr::TCODE_AUXACCESS_WRITE:
+			case TraceDqr::TCODE_INCIRCUITTRACE:
+			case TraceDqr::TCODE_CORRELATION:
+			case TraceDqr::TCODE_RESOURCEFULL:
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+			case TraceDqr::TCODE_REPEATBRANCH:
+			case TraceDqr::TCODE_REPEATINSTRUCTION:
+			case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+			case TraceDqr::TCODE_AUXACCESS_READNEXT:
+			case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+			case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+			case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+			case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+			case TraceDqr::TCODE_AUXACCESS_READ:
+			case TraceDqr::TCODE_DATA_WRITE_WS:
+			case TraceDqr::TCODE_DATA_READ_WS:
+			case TraceDqr::TCODE_WATCHPOINT:
+			case TraceDqr::TCODE_CORRECTION:
+			case TraceDqr::TCODE_DATA_WRITE:
+			case TraceDqr::TCODE_DATA_READ:
+			case TraceDqr::TCODE_DEBUG_STATUS:
+			case TraceDqr::TCODE_DEVICE_ID:
+				readNewTraceMessage = true;
+
+				// here we return the trace messages before we have actually started tracing
+				// this could be at the start of a trace, or after leaving a trace because of
+				// a correlation message
+
+				if (msgInfo != nullptr) {
+					messageInfo = nm;
+
+					// if doing pc-sampling and msg type is INCIRCUITTRACE_WS, we want to use faddr
+					// and not currentAddress
+
+					if (nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE_WS) {
+						messageInfo.currentAddress = lastFaddr[currentCore];
+					}
+					else {
+						messageInfo.currentAddress = currentAddress[currentCore];
+					}
+
+					messageInfo.time = lastTime[currentCore];
+
+					if (messageInfo.processITCPrintData(itcPrint) == false) {
+						*msgInfo = &messageInfo;
+					}
+				}
+
+				status = TraceDqr::DQERR_OK;
+
+				return status;
+			case TraceDqr::TCODE_SYNC:
+			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+			case TraceDqr::TCODE_INCIRCUITTRACE_WS: // this may be problem. Can't start on this
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+				// sync reason should be either EXIT_DEBUG or TRACE_ENABLE. Otherwise, keep looking
+				TraceDqr::SyncReason sr;
+
+				sr = nm.getSyncReason();
+				switch (sr) {
+				case TraceDqr::SYNC_EXIT_DEBUG:
+				case TraceDqr::SYNC_TRACE_ENABLE:
+					teAddr = nm.getF_Addr() << 1;
+					break;
+				case TraceDqr::SYNC_EVTI:
+				case TraceDqr::SYNC_EXIT_RESET:
+				case TraceDqr::SYNC_T_CNT:
+				case TraceDqr::SYNC_I_CNT_OVERFLOW:
+				case TraceDqr::SYNC_WATCHPINT:
+				case TraceDqr::SYNC_FIFO_OVERRUN:
+				case TraceDqr::SYNC_EXIT_POWERDOWN:
+				case TraceDqr::SYNC_MESSAGE_CONTENTION:
+				case TraceDqr::SYNC_PC_SAMPLE:
+					readNewTraceMessage = true;
+
+					// here we return the trace messages before we have actually started tracing
+					// this could be at the start of a trace, or after leaving a trace because of
+					// a correlation message
+
+					if (msgInfo != nullptr) {
+						messageInfo = nm;
+
+						// if doing pc-sampling and msg type is INCIRCUITTRACE_WS, we want to use faddr
+						// and not currentAddress
+
+						if (nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE_WS) {
+							messageInfo.currentAddress = lastFaddr[currentCore];
+						}
+						else {
+							messageInfo.currentAddress = currentAddress[currentCore];
+						}
+
+						messageInfo.time = lastTime[currentCore];
+
+						if (messageInfo.processITCPrintData(itcPrint) == false) {
+							*msgInfo = &messageInfo;
+						}
+					}
+
+					status = TraceDqr::DQERR_OK;
+
+					return status;
+					break;
+				case TraceDqr::SYNC_NONE:
+				default:
+					printf("Error: invalid sync reason\n");
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+				break;
+			case TraceDqr::TCODE_UNDEFINED:
+			default:
+				printf("Error: NextInstruction(): Undefined tcode type (%d)\n",nm.tcode);
+				status = TraceDqr::DQERR_ERR;
+				state[currentCore] = TRACE_STATE_ERROR;
+
+				return status;
+			}
+
+			// run ca code until we get to the te trace address. only do 6 instructions a the most
+
+			addr = caTrace->getCATraceStartAddr();
+
+			TraceDqr::ADDRESS savedAddr;
+			int skippedInsts;
+			savedAddr = -1;
+			skippedInsts = 0;
+
+			for (int i = 0; (teAddr != addr) && (i < 30); i++) {
+				status = nextCAAddr(addr,savedAddr);
+				if (status != TraceDqr::DQERR_OK) {
+					printf("Error: nextAddr() failed\n");
+
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+
+				rc = caTrace->consume(numConsumed,pipe,cycles);
+				if (rc == TraceDqr::DQERR_EOF) {
+					state[currentCore = TRACE_STATE_DONE];
+
+					status = rc;
+					return rc;
+				}
+
+				if (rc != TraceDqr::DQERR_OK) {
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					status = rc;
+					return status;
+				}
+
+				skippedInsts += 1;
+			}
+
+			if (teAddr != addr) {
+				printf("Error: nextInstructino(): Failed to sync te and ca traces\n");
+				state[currentCore] = TRACE_STATE_ERROR;
+				return TraceDqr::DQERR_ERR;
+			}
+
+			state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 			break;
 		case TRACE_STATE_GETSTARTTRACEMSG:
 			if (startMessageNum <= 1) {
@@ -2063,6 +2137,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_GETFIRSTSYNCMSG:
+//			printf("TRACE_STATE_GETFIRSTSYNCMSG\n");
+
 			// read trace messages until a sync is found. Should be the first message normally, unless wrapped buffer
 
 			// only exit this state when sync type message is found
@@ -2191,6 +2267,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			status = TraceDqr::DQERR_OK;
 			return status;
 		case TRACE_STATE_GETSECONDMSG:
+//			printf("TRACE_STATE_GETSECONDMSG %08x\n",lastFaddr[currentCore]);
 			// only message with i-cnt/hist/taken/notTaken will release from this state
 
 			// return any message without an i-cnt (or hist, taken/not taken)
@@ -2249,22 +2326,29 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 
-				if ((instInfo != nullptr) || (srcInfo != nullptr)) {
-					Disassemble(lastFaddr[currentCore]);
+				// only fill out instinfo/srcinfo if we have the correct reason field (wachpoint or pc_sample)
 
-					if (instInfo != nullptr) {
-						instructionInfo.coreId = currentCore;
-						*instInfo = &instructionInfo;
-						(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
-						enterISR[currentCore] = TraceDqr::isNone;
-						(*instInfo)->brFlags = brFlags;
+				TraceDqr::ICTReason isr;
 
-						(*instInfo)->timestamp = lastTime[currentCore];
-					}
+				isr = nm.getICTReason();
+				if ((isr == TraceDqr::ICT_WATCHPOINT) || (isr == TraceDqr::ICT_PC_SAMPLE)) {
+					if ((instInfo != nullptr) || (srcInfo != nullptr)) {
+						Disassemble(lastFaddr[currentCore]);
 
-					if (srcInfo != nullptr) {
-						sourceInfo.coreId = currentCore;
-						*srcInfo = &sourceInfo;
+						if (instInfo != nullptr) {
+							instructionInfo.coreId = currentCore;
+							*instInfo = &instructionInfo;
+							(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
+							enterISR[currentCore] = TraceDqr::isNone;
+							(*instInfo)->brFlags = brFlags;
+
+							(*instInfo)->timestamp = lastTime[currentCore];
+						}
+
+						if (srcInfo != nullptr) {
+							sourceInfo.coreId = currentCore;
+							*srcInfo = &sourceInfo;
+						}
 					}
 				}
 
@@ -2322,6 +2406,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_RETIREMESSAGE:
+//			printf("TRACE_STATE_RETIREMESSAGE\n");
+
 			// Process message being retired (currently in nm) i_cnt/taken/not taken/history has gone to 0
 			// compute next address
 
@@ -2466,6 +2552,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			status = TraceDqr::DQERR_OK;
 			return status;
 		case TRACE_STATE_GETNEXTMSG:
+//			printf("TRACE_STATE_GETNEXTMSG\n");
+
 			// exit this state when message with i-cnt, history, taken, or not-taken is read
 
 			if ((endMessageNum != 0) && (nm.msgNum > endMessageNum)) {
@@ -2539,6 +2627,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_RETIREMESSAGE;
 				break;
 			}
+
+//			printf("state TRACE_STATE_GETNEXTINSTRUCTION\n");
 
 			// Should first process addr, and then compute next addr!!! If can't compute next addr, it is an error.
 			// Should always be able to process instruction at addr and compute next addr when we get here.
@@ -2632,10 +2722,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 
 			currentAddress[currentCore] = addr;
-
-			int numConsumed;
-			int pipe;
-			uint32_t cycles;
 
 			if (caTrace != nullptr) {
 				status = caTrace->consume(numConsumed,pipe,cycles);
