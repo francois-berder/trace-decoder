@@ -30,8 +30,8 @@
 #define ca_sink_rp_offset   (0x20)
 #define ca_sink_data_offset (0x24)
 
-#define mww(addr,data) (*(unsigned int*)(addr)=(data))
-#define mrw(addr) (*(unsigned int*)(addr))
+#define mww(addr,data) (*(volatile unsigned int*)(addr)=(data))
+#define mrw(addr) (*(volatile unsigned int*)(addr))
 
 // caTraceOn selects SRAM for both traces, stop on wrap for both traces
 
@@ -43,7 +43,7 @@
     mww(traceBaseAddress+te_sink_rp_offset, 0x00000000); \
     mww(traceBaseAddress+xti_control_offset,0x04);       \
     mww(traceBaseAddress+xto_control_offset,0x21);       \
-    mww(caBaseAddress+ca_control_offset,0x01);           \
+    mww(caBaseAddress+ca_control_offset,0x00000001);     \
     mww(caBaseAddress+ca_sink_wp_offset,0x00000000);     \
     mww(caBaseAddress+ca_sink_rp_offset,0x00000000);     \
     mww(caBaseAddress+ca_control_offset,0x40004003);     \
