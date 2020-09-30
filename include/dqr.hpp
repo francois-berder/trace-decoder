@@ -611,6 +611,7 @@ public:
 	CATrace(char *caf_name);
 	~CATrace();
 	TraceDqr::DQErr consume(int &numConsumed,int &pipe, uint32_t &cycles);
+	TraceDqr::DQErr rewind();
 	TraceDqr::ADDRESS getCATraceStartAddr();
 
 	TraceDqr::DQErr parseCATrace();
@@ -622,7 +623,6 @@ public:
 private:
 	TraceDqr::DQErr status;
 
-	bool     syncing;
 	int      caBufferSize;
 	uint8_t *caBuffer;
 	int      caBufferIndex;
@@ -734,6 +734,8 @@ private:
 	Instruction      instructionInfo;
 	Source           sourceInfo;
 
+	int              syncCount;
+	TraceDqr::ADDRESS caSyncAddr;
 	class CATrace   *caTrace;
 	TraceDqr::TIMESTAMP lastCycle[DQR_MAXCORES];
 	int               eCycleCount[DQR_MAXCORES];

@@ -200,9 +200,6 @@ CATrace::CATrace(char *caf_name)
 
 	startAddr = catr.address;
 	baseCycles = 0;
-	syncing = true;
-
-	return;
 };
 
 CATrace::~CATrace()
@@ -214,6 +211,27 @@ CATrace::~CATrace()
 
 	caBufferSize = 0;
 	caBufferIndex = 0;
+}
+
+TraceDqr::DQErr CATrace::rewind()
+{
+	TraceDqr::DQErr rc;
+
+	caBufferIndex = 0;
+
+	rc = parseNextCATraceRec(catr);
+	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: CATrace::rewind(): Error parsing first CA trace record\n");
+		status = rc;
+	}
+	else {
+		status = TraceDqr::DQERR_OK;
+	}
+
+	startAddr = catr.address;
+	baseCycles = 0;
+
+	return status;
 }
 
 TraceDqr::DQErr CATrace::dumpCurrentCARecord(int level)
@@ -386,6 +404,9 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
   symtab       = nullptr;
   disassembler = nullptr;
   caTrace      = nullptr;
+
+  syncCount = 0;
+  caSyncAddr = (TraceDqr::ADDRESS)-1;
 
   assert(tf_name != nullptr);
 
@@ -1594,7 +1615,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	assert(sfp != nullptr);
 
 	TraceDqr::DQErr rc;
-	TraceDqr::ADDRESS addr;
 	int crFlag;
 	TraceDqr::BranchFlags brFlags;
 	int numConsumed;
@@ -1705,8 +1725,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 		switch (state[currentCore]) {
 		case TRACE_STATE_SYNCCATE:
-//			printf("TRACE_STATE_SYNCCATE\n");
-
 			if (caTrace == nullptr) {
 				// have an error! Should never have TRACE_STATE_SYNC whthout a caTrace ptr
 				printf("Error: caTrace is null\n");
@@ -1850,45 +1868,52 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			// run ca code until we get to the te trace address. only do 6 instructions a the most
 
-			addr = caTrace->getCATraceStartAddr();
+			caSyncAddr = caTrace->getCATraceStartAddr();
+
+//			printf("caSyncAddr: %08x, teAddr: %08x\n",caSyncAddr,teAddr);
 
 			TraceDqr::ADDRESS savedAddr;
-			int skippedInsts;
 			savedAddr = -1;
-			skippedInsts = 0;
 
-			for (int i = 0; (teAddr != addr) && (i < 30); i++) {
-				status = nextCAAddr(addr,savedAddr);
-				if (status != TraceDqr::DQERR_OK) {
-					printf("Error: nextAddr() failed\n");
+			bool fail;
+			fail = false;
 
-					state[currentCore] = TRACE_STATE_ERROR;
-
-					return status;
-				}
-
-				rc = caTrace->consume(numConsumed,pipe,cycles);
-				if (rc == TraceDqr::DQERR_EOF) {
-					state[currentCore = TRACE_STATE_DONE];
-
-					status = rc;
-					return rc;
-				}
-
+			for (int i = 0; (fail == false) && (teAddr != caSyncAddr) && (i < 30); i++) {
+				rc = nextCAAddr(caSyncAddr,savedAddr);
 				if (rc != TraceDqr::DQERR_OK) {
-					state[currentCore] = TRACE_STATE_ERROR;
-
-					status = rc;
-					return status;
+					fail = true;
 				}
+				else {
+//					printf("caSyncAddr: %08x, teAddr: %08x\n",caSyncAddr,teAddr);
 
-				skippedInsts += 1;
+					rc = caTrace->consume(numConsumed,pipe,cycles);
+					if (rc == TraceDqr::DQERR_EOF) {
+						state[currentCore = TRACE_STATE_DONE];
+
+						status = rc;
+						return rc;
+					}
+
+					if (rc != TraceDqr::DQERR_OK) {
+						state[currentCore] = TRACE_STATE_ERROR;
+
+						status = rc;
+						return status;
+					}
+				}
 			}
 
-			if (teAddr != addr) {
-				printf("Error: nextInstructino(): Failed to sync te and ca traces\n");
-				state[currentCore] = TRACE_STATE_ERROR;
-				return TraceDqr::DQERR_ERR;
+			if (teAddr != caSyncAddr) {
+				// unable to sync by fast-forwarding the CA trace to match the instruction trace
+				// so we will try to run the normal trace for a few instructions with the hope it
+				// will syunc up with the ca trace! We set the max number of instructions to run
+				// the normal trace below, and turn tracing loose!
+
+				syncCount = 16;
+				caTrace->rewind();
+				caSyncAddr = caTrace->getCATraceStartAddr();
+
+//				printf("starting normal trace to sync up; caSyncAddr: %08x\n",caSyncAddr);
 			}
 
 			state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
@@ -2076,7 +2101,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// now run through the code updating the pc until we consume all the counts for the current message
 
 				while (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
-					if (addr == (TraceDqr::ADDRESS)-1) {
+					if (currentPc == (TraceDqr::ADDRESS)-1) {
 						printf("Error: NextInstruction(): state TRACE_STATE_COMPUTESTARTINGADDRESS: can't compute address\n");
 
 						status = TraceDqr::DQERR_ERR;
@@ -2514,7 +2539,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 
-					// leaving trace mode - addr should be last faddr + i_cnt *2
+					// leaving trace mode - currentAddress should be last faddr + i_cnt *2
 
 					messageInfo.currentAddress = lastFaddr[currentCore] + nm.correlation.i_cnt*2;
 
@@ -2634,6 +2659,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// Should always be able to process instruction at addr and compute next addr when we get here.
 			// After processing next addr, if there are no more counts, retire trace message and get another
 
+			TraceDqr::ADDRESS addr;
+
 			addr = currentAddress[currentCore];
 
 			uint32_t inst;
@@ -2724,21 +2751,41 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			currentAddress[currentCore] = addr;
 
 			if (caTrace != nullptr) {
-				status = caTrace->consume(numConsumed,pipe,cycles);
-				if (status == TraceDqr::DQERR_EOF) {
-					state[currentCore] = TRACE_STATE_DONE;
-					return status;
+				if (syncCount > 0) {
+					if (caSyncAddr == instructionInfo.address) {
+//						printf("ca sync successful at addr %08x\n",caSyncAddr);
+
+						syncCount = 0;
+					}
+					else {
+						syncCount -= 1;
+						if (syncCount == 0) {
+							printf("Error: unable to sync CA trace and instruction trace\n");
+							state[currentCore] = TRACE_STATE_ERROR;
+							status = TraceDqr::DQERR_ERR;
+							return status;
+						}
+					}
 				}
 
-				if (status != TraceDqr::DQERR_OK) {
-					state[currentCore] = TRACE_STATE_ERROR;
-					return status;
-				}
+				if (syncCount == 0) {
+					status = caTrace->consume(numConsumed,pipe,cycles);
+					if (status == TraceDqr::DQERR_EOF) {
+						state[currentCore] = TRACE_STATE_DONE;
+						return status;
+					}
+
+					if (status != TraceDqr::DQERR_OK) {
+						state[currentCore] = TRACE_STATE_ERROR;
+						return status;
+					}
 
 //				if (lastCycle[currentCore] != cycles) {
 					eCycleCount[currentCore] = cycles - lastCycle[currentCore];
 //				}
-				lastCycle[currentCore] = cycles;
+
+					lastCycle[currentCore] = cycles;
+				}
 			}
 
 			if (instInfo != nullptr) {
@@ -2748,7 +2795,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				enterISR[currentCore] = TraceDqr::isNone;
 				(*instInfo)->brFlags = brFlags;
 
-				if (caTrace != nullptr) {
+				if ((caTrace != nullptr) && (syncCount == 0)) {
+//					printf("setting info %d %d %d\n",cycles,eCycleCount[currentCore],pipe);
 					(*instInfo)->timestamp = cycles;
 //					(*instInfo)->cycles = cycles - lastCycle[currentCore];
 //					if (lastCycle[currentCore] == cycles) {
