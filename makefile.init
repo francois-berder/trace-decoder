@@ -267,7 +267,7 @@ else
                 LIBPATH = ../lib/linux
                 PICLIBFLAGS := -L$(LIBPATH)/picbfd -L$(LIBPATH)/picopcodes -L$(LIBPATH)/picliberty
                 LIBS := -lbfd -lopcodes -liberty -lz -ldl
-                LNFLAGS = -static
+                LNFLAGS =
                 EXECUTABLE := dqr
             endif
         endif
