@@ -1872,6 +1872,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 //			printf("caSyncAddr: %08x, teAddr: %08x\n",caSyncAddr,teAddr);
 
+//			caTrace->dumpCurrentCARecord(1);
+
 			TraceDqr::ADDRESS savedAddr;
 			savedAddr = -1;
 
@@ -1902,6 +1904,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 				}
 			}
+
+//			if (teAddr == caSyncAddr) {
+//				printf("ca sync found at address %08x, cycles: %d\n",caSyncAddr,cycles);
+//			}
 
 			if (teAddr != caSyncAddr) {
 				// unable to sync by fast-forwarding the CA trace to match the instruction trace
@@ -2780,9 +2786,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						return status;
 					}
 
-//				if (lastCycle[currentCore] != cycles) {
 					eCycleCount[currentCore] = cycles - lastCycle[currentCore];
-//				}
 
 					lastCycle[currentCore] = cycles;
 				}
