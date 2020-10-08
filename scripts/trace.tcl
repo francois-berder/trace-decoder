@@ -5,9 +5,9 @@
 
 #set traceBaseAddresses {0x20007000 0x20008000}
 #set traceFunnelAddress 0x20009000
-#set traceBaseAddresses 0x10000000
+set traceBaseAddresses 0x10000000
 #set traceFunnelAddress 0x00000000
-#set caBaseAddresses 0x1000f000
+set caBaseAddresses 0x1000f000
 
 set te_control_offset      0x00
 set te_impl_offset         0x04
@@ -642,8 +642,8 @@ proc getTeStopOnWrap {core} {
     set t [expr ($t >> 14) & 0x1]
 
     switch $t {
-		0 { return "off"  }
-		1 { return "on"  }
+    0 { return "off"  }
+    1 { return "on"  }
     }
 }
 
@@ -655,8 +655,8 @@ proc getCAStopOnWrap {core} {
     set t [expr ($t >> 14) & 0x1]
 
     switch $t {
-		0 { return "off"  }
-		1 { return "on"  }
+    0 { return "off"  }
+    1 { return "on"  }
     }
 }
 
@@ -1750,6 +1750,91 @@ proc readCASRAMData {core} {
     return [word [expr $CABaseAddrArray($core) + $ca_sink_data_offset]]
 }
 
+proc computeStartEnd {wIdx buffSize wrap sow numWant start1 end1 start2 end2} {
+# if sow == on, want oldest (first - forwards from beginning (0) )
+# if sow == off, want newest (last - backwards from end (wIdx))
+
+    upvar $start1 s1
+    upvar $end1 e1
+    upvar $start2 s2
+    upvar $end2 e2
+
+    if {$wrap == 0 } {
+        # buffer has not wrapped
+
+        if {$numWant == 0} {
+            # want whole buffer
+
+            set s1 0
+            set e1 $wIdx
+        } else {
+            # numWant != 0
+
+            if {$numWant > $wIdx} {
+                # don't have numWant bytes in buffer. Set end to number we have
+
+
+                set s1 0
+                set e1 $wIdx
+            } else if {$sow == "on"} {
+                # want beginning of buffer (oldest)
+
+                set s1 0
+                set e1 $numWant
+            } else {
+                # want end of buffer (newest)
+
+                set s1 [expr $wIdx - $numWant]
+                set e1 $wIdx
+            }
+        }
+
+        set s2 0;
+        set e2 0;
+    } else {
+        # buffer has wrapped
+
+        if {($numWant == 0) || ($numWant >= $buffSize)} {
+            # want it all
+
+            set s1 $wIdx
+            set e1 $buffSize
+            set s2 0
+            set e2 $wIdx
+        } else {
+            if {$sow == "on"} {
+                # want beginning of buffer (oldest)
+
+                set s1 $wIdx
+
+                if {$numWant > [expr $buffSize - $wIdx]} {
+                    set e1 $buffSize
+                    set s2 0
+                    set e2 [expr $numWant - ($e1 - $s1)]
+                } else {
+                    set e1 [expr $s1 + $numWant]
+                    set s2 0
+                    set e2 0
+                }
+            } else {
+                # want end of buffer (newest)
+
+                if {$numWant > $wIdx} {
+                    set s1 [expr $buffSize - ($numWant - $wIdx)]
+                    set e1 $buffSize
+                    set s2 0
+                    set e2 $wIdx
+                } else {
+                    set s1 [expr $wIdx - $numWant]
+                    set e1 $wIdx
+                    set e2 0
+                    set s2 0
+                }
+            }
+        }
+    }
+}
+
 proc writeSRAM {core file limit} {
     global verbose
 	
@@ -1757,214 +1842,77 @@ proc writeSRAM {core file limit} {
         echo ""
     }
 
-	set tracewp [gettracewp $core]
+    set tracewp [gettracewp $core]
+    if {($tracewp & 1) == 0} {
+        set wrap 0
+    } else {
+        set wrap 1
+        set tracewp [expr $tracewp & 0xfffffffe]
+    }
+
+    set buffersize [getTraceBufferSize $core]
+
+    set tracewp [expr $tracewp & 0xfffffffe]
+
+    set stop_on_wrap [getTeStopOnWrap $core]
+
+    computeStartEnd $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
 
     if {$file == "stdout"} {
-		if {($tracewp & 1) == 0 } { 
-			# buffer has not wrapped
-			set tracebegin 0
-			set traceend $tracewp
+	# write start1 to end1, start2 to end2
 
-			if {$limit > 0} {
-				set stop_on_wrap [getTeStopOnWrap $core]
-				set length [expr $traceend - $tracebegin]
-				if {$length > $limit} {
-					if {$stop_on_wrap=="on"} {
-						# use the beginning of the buffer by
-						# adjusting the end point.
-						set traceend [expr $tracebegin + $limit]
-					} else {
-						# use the end of the buffer by adjusting 
-						# the begin point
-						set tracebegin [expr $traceend - $limit]
-					}
-				}
-			}
+        # this version reads a word at a time from the trace buffer
 
-			if { $verbose > 1 } {
-				echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
-			}
+       	if {$verbose > 1} {
+            if {$star1 != $end1} {
+                echo "Trace from [format 0x%08x $start1] to [format %08x $end1], [expr $end1 - $start1] bytes"
+            }
+        }
 
-			setreadptr $core 0
+        setreadptr $core $start1
+        set f ""
 
-			set f ""
+        for {set i $start1} {$i < $end1} {incr i 4} {
+            set w [format %08x [eval readSRAMData $core]]
+            append f $w
+        }
 
-			for {set i 0} {$i < $traceend} {incr i 4} {
-				set w [format %08x [eval readSRAMData $core]]
-				append f $w
-			}
-		} else {
-			if { $verbose > 1 } {
-				echo "Trace wrapped"
-			}
-			set tracebegin [expr $tracewp & 0xfffffffe]
-			set traceend [getTraceBufferSize $core]
+       	if {$verbose > 1} {
+            if {$star2 != $end2} {
+                echo "Trace from [format 0x%08x $start2] to [format 0x%08x $end2], [expr $end2 - $start2] bytes"
+            }
+        }
 
-			set tracebegin 0
-			set traceend [expr $tracewp & 0xfffffffe]
+        setreadptr $core $start2
 
-			set do1 1
-			set do2 1
+        for {set i $start2} {$i < $end2} {incr i 4} {
+            set w [format %08x [eval readSRAMData $core]]
+            append f $w
+        }
 
-			if {$limit > 0} {
-				set stop_on_wrap [getTeStopOnWrap $core]
-				set length1 [expr $traceend - $tracebegin]
-				set length2 [expr $traceend2 - $tracebegin2]
-				if {$stop_on_wrap=="on"} {
-					#use the beginning of the buffer
-					if { $limit < $length1 } {
-						# everything is in part1, just need
-						# adjust the endpoint
-						set traceend [expr $tracebegin + $limit]
-						# don't do part 2
-						set do2 0
-					} else {
-						# need all of part 1, and part of part 2
-						set limit [expr $limit - $length1]
-						set traceend2 [expr $tracebegin2 + $limit]
-					}
-				} else {
-					#use the end of the buffer
-					if { $length2 > $limit } {
-						# only need to do part 2
-						set tracebegin2 [expr $traceend2 - $limit]
-						set do1 0
-					} else {
-						# need to do the end of part 1 
-						# and all of part 2
-						set limit [expr $limit - $length2]
-						set tracebegin [expr $traceend - $limit]
-					}
-				}
-			}
-
-			if {$do1 == 1} {
-				if { $verbose > 1 } {
-					echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
-				}
-
-				setreadptr $core $tracebegin
-
-				set f ""
-
-				for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-					set w [format %08x [eval readSRAMData $core]]
-					append f $w
-				}
-			}
-
-			if {$do2 == 1} {
-				if { $verbose > 1 } {
-					echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
-				}
-
-				setreadptr $core 0
-
-				for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-					set w [format %08x [eval readSRAMData $core]]
-					append f $w
-				}
-			}
-		}
-
-
-		return $f
+        return $f
     } else {
-		set fp [open "$file" wb]
+        set fp [open "$file" wb]
 
-		if {($tracewp & 1) == 0 } { 
-			# buffer has not wrapped
-			set tracebegin 0
-			set traceend $tracewp
+        if {$start1 != $end1} {
+            if { $verbose > 1 } {
+                echo "Trace from [format 0x%08x $start1] to [format %08x $end1], [expr $end1 - $start1] bytes"
+            }
 
-			if {$limit > 0} {
-				set stop_on_wrap [getTeStopOnWrap $core]
-				set length [expr $traceend - $tracebegin]
-				if {$length > $limit} {
-					if {$stop_on_wrap == "on"} {
-						# use the beginning of the buffer by
-						# adjusting the end point.
-						set traceend [expr $tracebegin + $limit]
-					} else {
-						# use the end of the buffer by adjusting 
-						# the begin point
-						set tracebegin [expr $traceend - $limit]
-					}
-				}
-			}
+            writeSRAMdata $core $start1 $end1 $fp
+        }
 
-			if { $verbose > 1 } {
-				echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
-			}
-			setreadptr $core 0
+        if {$start2 != $end2} {
+            if { $verbose > 1 } {
+                echo "Trace from [format 0x%08x $start2] to [format 0x%08x $end2], [expr $end2 - $start2] bytes"
+            }
 
-			writeSRAMdata $core $tracebegin $traceend $fp
-		} else {
-			if { $verbose > 1 } {
-				echo "Trace wrapped"
-			}
+            writeSRAMdata $core $start2 $end2 $fp
+        }
 
-			set tracebegin [expr $tracewp & 0xfffffffe]
-			set traceend [getTraceBufferSize $core]
+        close $fp
 
-			set tracebegin2 0
-			set traceend2 [expr $tracewp & 0xfffffffe]
-
-			set do1 1
-			set do2 1
-
-			if {$limit > 0} {
-				set stop_on_wrap [getTeStopOnWrap $core]
-				set length1 [expr $traceend - $tracebegin]
-				set length2 [expr $traceend2 - $tracebegin2]
-				if {$stop_on_wrap == "on"} {
-					#use the beginning of the buffer
-					if { $limit < $length1 } {
-						# everything is in part1, just need
-						# adjust the endpoint
-						set traceend [expr $tracebegin + $limit]
-						# don't do part 2
-						set do2 0
-					} else {
-						# need all of part 1, and part of part 2
-						set limit [expr $limit - $length1]
-						set traceend2 [expr $tracebegin2 + $limit]
-					}
-				} else {
-					#use the end of the buffer
-					if { $length2 > $limit } {
-						# only need to do part 2
-						set tracebegin2 [expr $traceend2 - $limit]
-						set do1 0
-					} else {
-						# need to do the end of part 1 
-						# and all of part 2
-						set limit [expr $limit - $length2]
-						set tracebegin [expr $traceend - $limit]
-					}
-				}
-			}
-
-			if {$do1 == 1} {
-				if { $verbose > 1 } {
-					echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
-				}
-
-				setreadptr $core $tracebegin
-				writeSRAMdata $core $tracebegin $traceend $fp
-			}
-
-
-			if {$do2 == 1} {
-				if { $verbose > 1 } {
-					echo "Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
-				}
-				setreadptr $core 0
-				writeSRAMdata $core $tracebegin2 $traceend2 $fp
-			}
-		}
-
-		close $fp
+	return ""
     }
 }
 
@@ -1976,212 +1924,76 @@ proc writeCASRAM {core file limit} {
     }
 
     set tracewp [getcatracewp $core]
+    if {($tracewp & 1) == 0} {
+        set wrap 0
+    } else {
+        set wrap 1
+        set tracewp [expr $tracewp & 0xfffffffe]
+    }
+
+    set buffersize [getCATraceBufferSize $core]
+
+    set tracewp [expr $tracewp & 0xfffffffe]
+
+    set stop_on_wrap [getCAStopOnWrap $core]
+
+    computeStartEnd $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
 
     if {$file == "stdout"} {
-		if {($tracewp & 1) == 0 } { 
-			# buffer has not wrapped
-			set tracebegin 0
-			set traceend $tracewp
+	# write start1 to end1, start2 to end2
 
-			if {$limit > 0} {
-				set stop_on_wrap [getCAStopOnWrap $core]
-				set length [expr $traceend - $tracebegin]
-				if {$length > $limit} {
-					if {$stop_on_wrap=="on"} {
-						# use the beginning of the buffer by
-						# adjusting the end point.
-						set traceend [expr $tracebegin + $limit]
-					} else {
-						# use the end of the buffer by adjusting 
-						# the begin point
-						set tracebegin [expr $traceend - $limit]
-					}
-				}
-			}
+        # this version reads a word at a time from the trace buffer
 
-			if { $verbose > 1 } {
-				echo "CA Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
-			}
+       	if {$verbose > 1} {
+            if {$star1 != $end1} {
+                echo "Trace from [format 0x%08x $start1] to [format %08x $end1], [expr $end1 - $start1] bytes"
+            }
+        }
 
-			setcareadptr $core 0
+        setcareadptr $core $start1
+        set f ""
 
-			set f ""
+        for {set i $start1} {$i < $end1} {incr i 4} {
+            set w [format %08x [eval readCASRAMData $core]]
+            append f $w
+        }
 
-			for {set i 0} {$i < $traceend} {incr i 4} {
-				set w [format %08x [eval readCASRAMData $core]]
-				append f $w
-			}
-		} else {
-			if { $verbose > 1 } {
-				echo "CA Trace wrapped"
-			}
-			set tracebegin [expr $tracewp & 0xfffffffe]
-			set traceend [getCATraceBufferSize $core]
+       	if {$verbose > 1} {
+            if {$star2 != $end2} {
+                echo "Trace from [format 0x%08x $start2] to [format 0x%08x $end2], [expr $end2 - $start2] bytes"
+            }
+        }
 
-			set tracebegin 0
-			set traceend [expr $tracewp & 0xfffffffe]
+        setreadptr $core $start2
 
-			set do1 1
-			set do2 1
+        for {set i $start2} {$i < $end2} {incr i 4} {
+            set w [format %08x [eval readCASRAMData $core]]
+            append f $w
+        }
 
-			if {$limit > 0} {
-				set stop_on_wrap [getCAStopOnWrap $core]
-				set length1 [expr $traceend - $tracebegin]
-				set length2 [expr $traceend2 - $tracebegin2]
-				if {$stop_on_wrap=="on"} {
-					#use the beginning of the buffer
-					if { $limit < $length1 } {
-						# everything is in part1, just need
-						# adjust the endpoint
-						set traceend [expr $tracebegin + $limit]
-						# don't do part 2
-						set do2 0
-					} else {
-						# need all of part 1, and part of part 2
-						set limit [expr $limit - $length1]
-						set traceend2 [expr $tracebegin2 + $limit]
-					}
-				} else {
-					#use the end of the buffer
-					if { $length2 > $limit } {
-						# only need to do part 2
-						set tracebegin2 [expr $traceend2 - $limit]
-						set do1 0
-					} else {
-						# need to do the end of part 1 
-						# and all of part 2
-						set limit [expr $limit - $length2]
-						set tracebegin [expr $traceend - $limit]
-					}
-				}
-			}
-
-			if {$do1 == 1} {
-				if { $verbose > 1 } {
-					echo "CA Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
-				}
-
-				setcareadptr $core $tracebegin
-
-				set f ""
-
-				for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-					set w [format %08x [eval readCASRAMData $core]]
-					append f $w
-				}
-			}
-
-			if {$do2 == 1} {
-				if { $verbose > 1 } {
-					echo "CA Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
-				}
-
-				setcareadptr $core 0
-
-				for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-					set w [format %08x [eval readCASRAMData $core]]
-					append f $w
-				}
-			}
-		}
-
-		return $f
+        return $f
     } else {
-		set fp [open "$file" wb]
+        set fp [open "$file" wb]
 
-		if {($tracewp & 1) == 0 } { 
-			# buffer has not wrapped
-			set tracebegin 0
-			set traceend $tracewp
+        if {$start1 != $end1} {
+            if { $verbose > 1 } {
+                echo "Trace from [format 0x%08x $start1] to [format %08x $end1], [expr $end1 - $start1] bytes"
+            }
 
-			if {$limit > 0} {
-				set stop_on_wrap [getCAStopOnWrap $core]
-				set length [expr $traceend - $tracebegin]
-				if {$length > $limit} {
-					if {$stop_on_wrap == "on"} {
-						# use the beginning of the buffer by
-						# adjusting the end point.
-						set traceend [expr $tracebegin + $limit]
-					} else {
-						# use the end of the buffer by adjusting 
-						# the begin point
-						set tracebegin [expr $traceend - $limit]
-					}
-				}
-			}
+            writeCASRAMdata $core $start1 $end1 $fp
+        }
 
-			if { $verbose > 1 } {
-				echo "CA Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
-			}
-			setcareadptr $core 0
+        if {$start2 != $end2} {
+            if { $verbose > 1 } {
+                echo "Trace from [format 0x%08x $start2] to [format 0x%08x $end2], [expr $end2 - $start2] bytes"
+            }
 
-			writeCASRAMdata $core $tracebegin $traceend $fp
-		} else {
-			if { $verbose > 1 } {
-				echo "CA Trace wrapped"
-			}
+            writeCASRAMdata $core $start2 $end2 $fp
+        }
 
-			set tracebegin [expr $tracewp & 0xfffffffe]
-			set traceend [getCATraceBufferSize $core]
+        close $fp
 
-			set tracebegin2 0
-			set traceend2 [expr $tracewp & 0xfffffffe]
-
-			set do1 1
-			set do2 1
-
-			if {$limit > 0} {
-				set stop_on_wrap [getCAStopOnWrap $core]
-				set length1 [expr $traceend - $tracebegin]
-				set length2 [expr $traceend2 - $tracebegin2]
-				if {$stop_on_wrap == "on"} {
-					#use the beginning of the buffer
-					if { $limit < $length1 } {
-						# everything is in part1, just need
-						# adjust the endpoint
-						set traceend [expr $tracebegin + $limit]
-						# don't do part 2
-						set do2 0
-					} else {
-						# need all of part 1, and part of part 2
-						set limit [expr $limit - $length1]
-						set traceend2 [expr $tracebegin2 + $limit]
-					}
-				} else {
-					#use the end of the buffer
-					if { $length2 > $limit } {
-						# only need to do part 2
-						set tracebegin2 [expr $traceend2 - $limit]
-						set do1 0
-					} else {
-						# need to do the end of part 1 
-						# and all of part 2
-						set limit [expr $limit - $length2]
-						set tracebegin [expr $traceend - $limit]
-					}
-				}
-			}
-
-			if {$do1 == 1} {
-				if { $verbose > 1 } {
-					echo "CA Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
-				}
-
-				setcareadptr $core $tracebegin
-				writeCASRAMdata $core $tracebegin $traceend $fp
-			}
-
-
-			if {$do2 == 1} {
-				if { $verbose > 1 } {
-					echo "CA Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
-				}
-				setcareadptr $core 0
-				writeCASRAMdata $core $tracebegin2 $traceend2 $fp
-			}
-		}
-
-		close $fp
+	return ""
     }
 }
 
@@ -2196,40 +2008,47 @@ proc writeSRAMdata { core tracebegin traceend fp } {
     global traceBaseAddrArray
     global te_sinkdata_offset
 
-	set length [expr ($traceend - $tracebegin) / 4]
-	if {$length>0} {
-		set daddr  [expr $traceBaseAddrArray($core) + $te_sinkdata_offset]
-		set data [riscv repeat_read $length $daddr 4] 
-		set packed ""
+    set length [expr ($traceend - $tracebegin) / 4]
 
-		foreach value [split $data "\r\n "] {
-			if {$value != ""} {
-				pack w 0x$value -intle 32
-				append packed $w
-			}
-		}
-		puts $fp $packed
-	}
+    if {$length > 0} {
+        setreadptr $core $tracebegin
+
+        set daddr  [expr $traceBaseAddrArray($core) + $te_sinkdata_offset]
+        set data [riscv repeat_read $length $daddr 4] 
+        set packed ""
+
+        foreach value [split $data "\r\n "] {
+            if {$value != ""} {
+                incr j
+                pack w 0x$value -intle 32
+                append packed $w
+            }
+        }
+
+        puts -nonewline $fp $packed
+    }
 }
 
 proc writeCASRAMdata { core tracebegin traceend fp } {
     global CABaseAddrArray
     global ca_sink_data_offset
 
-	set length [expr ($traceend - $tracebegin) / 4]
-	if {$length>0} {
-		set daddr  [expr $CABaseAddrArray($core) + $ca_sink_data_offset]
-		set data [riscv repeat_read $length $daddr 4] 
-		set packed ""
+    set length [expr ($traceend - $tracebegin) / 4]
+    if {$length>0} {
+        setcareadptr $core $tracebegin
 
-		foreach value [split $data "\r\n "] {
-			if {$value != ""} {
-				pack w 0x$value -intle 32
-				append packed $w
-			}
-		}
-		puts $fp $packed
-	}
+        set daddr  [expr $CABaseAddrArray($core) + $ca_sink_data_offset]
+        set data [riscv repeat_read $length $daddr 4] 
+        set packed ""
+
+        foreach value [split $data "\r\n "] {
+            if {$value != ""} {
+                pack w 0x$value -intle 32
+                append packed $w
+            }
+        }
+        puts -nonewline $fp $packed
+    }
 }
 
 proc getCapturedTraceSize { core } {
@@ -2280,121 +2099,89 @@ proc getTraceBufferSizeSBA {core} {
 }
 
 proc writeSBA {core file limit} {
-    global traceBaseAddrArray
-    global tracedBufferSizeArray
-    global te_sinkbase_offset
-    global te_sinklimit_offset
     global verbose
-
-
-    #if sink is not a buffer, return
-
-    set fp [open "$file" wb]
-
-    set tracewp [gettracewp $core]
-
+	
     if { $verbose > 1 } {
         echo ""
     }
 
-    if {($tracewp & 1) == 0 } { 
-		# buffer has not wrapped
-		set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-		set traceend $tracewp
-		if {$limit > 0} {
-			set stop_on_wrap [getTeStopOnWrap $core]
-			set length [expr $traceend - $tracebegin]
-			if {$length > $limit} {
-				if {$stop_on_wrap == "on"} {
-					# use the beginning of the buffer by
-					# adjusting the end point.
-					set traceend [expr $tracebegin + $limit]
-				} else {
-					# use the end of the buffer by adjusting 
-					# the begin point
-					set tracebegin [expr $traceend - $limit]
-				}
-			}
-		}
-
-		if { $verbose > 1 } {
-			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
-		}
-
-		writeSBAdataX $tracebegin $traceend $fp
-	} else {
-		if { $verbose > 1 } {
-			echo "Trace wrapped"
-		}
-
-		set tracebegin [expr $tracewp & 0xfffffffe]
-		set traceend [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
-
-		set tracebegin2 [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-		set traceend2 [expr $tracewp & 0xfffffffe] 
-
-		if { $verbose > 1 } {
-			echo "part 1: trace beg = [format 0x%08x $tracebegin]"
-			echo "        trace end = [format 0x%08x $traceend]"
-			echo "part 2: trace beg = [format 0x%08x $tracebegin2]"
-			echo "        trace end = [format 0x%08x $traceend2]"
-		}
-
-		set do1 1
-		set do2 1
-
-		if {$limit > 0} {
-			set stop_on_wrap [getTeStopOnWrap $core]
-			set length1 [expr $traceend - $tracebegin]
-			set length2 [expr $traceend2 - $tracebegin2]
-			if  {$stop_on_wrap == "on"} {
-				# use the beginning of the buffer
-				if { $limit < $length1 } {
-					# everything is in part1, just need
-					# adjust the endpoint
-					set traceend [expr $tracebegin + $limit]
-					# don't do part 2
-					set do2 0
-				} else {
-					# need all of part 1, and part of part 2
-					set limit [expr $limit - $length1]
-					set traceend2 [expr $tracebegin2 + $limit]
-				}
-			} else {
-				# use the end of the buffer
-				if { $length2 > $limit } {
-					# only need to do part 2
-					set tracebegin2 [expr $traceend2 - $limit]
-					set do1 0
-				} else {
-					# need to do the end of part 1 
-					# and all of part 2
-					set limit [expr $limit - $length2]
-					set tracebegin [expr $traceend - $limit]
-				}
-			}
-		}
-
-		if {$do1 == 1} {
-			if { $verbose > 1 } {
-				echo "Part 1: Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
-			}
-
-			writeSBAdataX $tracebegin $traceend $fp
-		}
-
-		if {$do2 == 1} {
-			if { $verbose > 1 } {
-				echo "Part 2: Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
-			}
-
-			writeSBAdataX $tracebegin2 $traceend2 $fp
-		}
+    set tracewp [gettracewp $core]
+    if {$tracewp & 1) == 0} {
+        set wrap 0
     }
-    close $fp
+    else {
+        set wrap 1
+        set tracewp [expr $tracewp & 0xfffffffe]
+    }
+
+    set buffersize [getTraceBufferSize $core]
+
+    set tracewp [expr $tracewp & 0xfffffffe]
+
+    set stop_on_wrap [getTeStopOnWrap $core]
+
+    computeStartEnd $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
+
+    if {$file == "stdout"} {
+	# write start1 to end1, start2 to end2
+
+        # this version reads a word at a time from the trace buffer
+
+       	if {$verbose > 1} {
+            if {$star1 != $end1} {
+                echo "Trace from [format 0x%08x $start1] to [format %08x $end1], [expr $end1 - $start1] bytes"
+            }
+        }
+
+        setreadptr $core $start1
+        set f ""
+
+        for {set i $start1} {$i < $end1} {incr i 4} {
+            set w [format %08x [eval readSBAData $core]]
+            append f $w
+        }
+
+       	if {$verbose > 1} {
+            if {$star2 != $end2} {
+                echo "Trace from [format 0x%08x $start2] to [format 0x%08x $end2], [expr $end2 - $start2] bytes"
+            }
+        }
+
+        setreadptr $core $start2
+
+        for {set i $start2} {$i < $end2} {incr i 4} {
+            set w [format %08x [eval readSRBAData $core]]
+            append f $w
+        }
+
+        return $f
+    } else {
+        set fp [open "$file" wb]
+
+        if {$start1 != $end1} {
+            if { $verbose > 1 } {
+                echo "Trace from [format 0x%08x $start1] to [format %08x $end1], [expr $end1 - $start1] bytes"
+            }
+
+            writeSBAdataX $start1 $end1 $fp
+        }
+
+        if {$start2 != $end2} {
+            if { $verbose > 1 } {
+                echo "Trace from [format 0x%08x $start2] to [format 0x%08x $end2], [expr $end2 - $start2] bytes"
+            }
+
+            writeSBAdataX $tracebegin2 $traceend2 $fp
+        }
+
+        close $fp
+
+	return ""
+    }
 }
 
 # The slow way...not used, but left here for posterity.
+
 proc writeSBAdata { tb te fp } {
 	for {set i $tb} {$i < $te} {incr i 4} {
 	    pack w [word $i] -intle 32
@@ -2476,45 +2263,47 @@ proc wtb {{file "trace.rtd"} {limit 0}} {
     global num_cores
     global verbose
 
-	riscv set_prefer_sba off
     if  { $verbose > 0 } {
-		echo -n "collecting trace..."
+        echo -n "collecting trace..."
     }
 
+    riscv set_prefer_sba off
+
     if {$has_funnel != 0} {
-		set s [getSink funnel]
-		switch [string toupper $s] {
-			"SRAM" { set f [writeSRAM funnel $file $limit]}
-			"SBA" { set f [writeSBA funnel $file $limit]}
-		}
-		if { $verbose > 0 } {
-			echo "done."
-		}
-		riscv set_prefer_sba on
+        set s [getSink funnel]
+
+        switch [string toupper $s] {
+        "SRAM" { set f [writeSRAM funnel $file $limit]}
+        "SBA"  { set f [writeSBA funnel $file $limit]}
+        }
     } else {
-		set coreList [parseCoreList "all"]
+        set coreList [parseCoreList "all"]
 
-		foreach core $coreList {
-			set s [getSink $core]
+        foreach core $coreList {
+            set s [getSink $core]
 
-			if {$num_cores > 1} {
-				set fn $file.$core
-			} else {
-				set fn $file
-			}
+            if {$num_cores > 1} {
+                set fn $file.$core
+            } else {
+                set fn $file
+            }
 
-			switch [string toupper $s] {
-				"SRAM" { set f [writeSRAM $core $fn $limit]}
-				"SBA" { set f [writeSBA $core $fn $limit]}
-				}
-			if { $verbose > 0 } {
-				echo "done."
-			}
-		}
-		riscv set_prefer_sba on
-		if {$file == "stdout"} {
-			return $f
-		}
+            switch [string toupper $s] {
+            "SRAM" { set f [writeSRAM $core $fn $limit]}
+            "SBA"  { set f [writeSBA $core $fn $limit]}
+            }
+
+        }
+    }
+
+    riscv set_prefer_sba on
+
+    if { $verbose > 0 } {
+        echo "done."
+    }
+
+    if {$file == "stdout"} {
+        return $f
     }
 }
 
@@ -2522,11 +2311,11 @@ proc wcab {{file "trace.cat"} {limit 0}} {
     global num_cores
     global verbose
 
-    riscv set_prefer_sba off
-
     if  { $verbose > 0 } {
         echo -n "collecting CA trace..."
     }
+
+    riscv set_prefer_sba off
 
     set coreList [parseCoreList "all"]
 
@@ -2540,18 +2329,18 @@ proc wcab {{file "trace.cat"} {limit 0}} {
         }
 
         switch [string toupper $s] {
-            "SRAM" { set f [writeCASRAM $core $fn $limit]}
-	    default { echo "wcatb: unsupported CA sink: $s"
-                      set f ""
-	            }
-        }
-
-        if { $verbose > 0 } {
-            echo "done."
+        "SRAM" { set f [writeCASRAM $core $fn $limit]}
+        default { echo "wcatb: unsupported CA sink: $s"
+                  set f ""
+                }
         }
     }
 
     riscv set_prefer_sba on
+
+    if { $verbose > 0 } {
+        echo "done."
+    }
 
     if {$file == "stdout"} {
         return $f
@@ -2691,13 +2480,13 @@ proc getCATraceBufferSize {core} {
     global ca_sinklimit_offset
 
     switch [string toupper [getCASink $core]] {
-        "SRAM" { set t [word [expr $CABaseAddrArray($core) + $ca_sink_wp_offset]]
-                 mww [expr $CABaseAddrArray($core) + $ca_sink_wp_offset] 0xfffffffc
-                 set size [expr [word [expr $CABaseAddrArray($core) + $ca_sink_wp_offset]] + 4]
-                 mww [expr $CABaseAddrArray($core) + $ca_sink_wp_offset] $t
-                 return $size
-               }
-        default { echo "unsupported CA trace buffer sink" }
+    "SRAM" { set t [word [expr $CABaseAddrArray($core) + $ca_sink_wp_offset]]
+             mww [expr $CABaseAddrArray($core) + $ca_sink_wp_offset] 0xfffffffc
+             set size [expr [word [expr $CABaseAddrArray($core) + $ca_sink_wp_offset]] + 4]
+             mww [expr $CABaseAddrArray($core) + $ca_sink_wp_offset] $t
+             return $size
+           }
+    default { echo "unsupported CA trace buffer sink" }
     }
 
     return 0
