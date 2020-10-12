@@ -4,6 +4,8 @@ SWIGLIBOBJS += ./dqr_wrap.o ./dqr.o ./trace.o
 SWIGINCLUDES += ../include/dqr.i
 SWIGCPP += ./dqr_wrap.cpp
 SWIGOBJ += ./dqr_wrap.o
+SWTOBJS += ./swt.o ./swt_main.o
+SWTINCLUDES += ../include/swt.hpp
 
 %.o: ../src/%.cpp $(INCLUDES)
 	@echo 'Building file: $<'
@@ -69,6 +71,7 @@ ifeq ($(OS),Windows_NT)
     LNFLAGS = -static
     LIBS := -lbfd -lopcodes -lintl -liberty -lz
     EXECUTABLE := dqr.exe
+    SWTEXECUTABLE := swt.exe
 else
     UNAME_S := $(shell uname -s)
     ifeq ($(UNAME_S),Linux)
@@ -230,6 +233,7 @@ else
             PICLIBFLAGS := -L$(LIBPATH)/picbfd -L$(LIBPATH)/picopcodes -L$(LIBPATH)/picliberty
             LNFLAGS :=
             EXECUTABLE := dqr
+	    SWTEXECUTABLE := swt
         else
             ifeq ($(CROSSPREFIX),x86_64-w64-mingw32-)
                 PLATFORM := windows
@@ -253,6 +257,7 @@ else
                 LNFLAGS = -static
                 LIBS := -lbfd -lopcodes -lintl -liberty -lz
                 EXECUTABLE := dqr.exe
+                SWTEXECUTABLE := swt.exe
                 LIBSEARCHPATH := $(shell $(CROSSPREFIX)gcc -print-search-dirs | grep -i "libraries: =" 2> /dev/null)
                 LIBSEARCHPATH := $(patsubst libraries:%,%,$(LIBSEARCHPATH))
                 LIBSEARCHPATH := $(patsubst =%,%,$(LIBSEARCHPATH))
@@ -269,6 +274,7 @@ else
                 LIBS := -lbfd -lopcodes -liberty -lz -ldl
                 LNFLAGS = -static
                 EXECUTABLE := dqr
+		SWTEXECUTABLE := swt
             endif
         endif
     endif
@@ -324,6 +330,7 @@ else
         LIBS := -lbfd -lopcodes -liberty -lz -lintl -liconv
         LNFLAGS =
         EXECUTABLE := dqr
+	SWTEXECUTABLE := swt
     endif
     UNAME_P := $(shell uname -p)
 endif
