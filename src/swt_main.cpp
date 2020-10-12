@@ -14,9 +14,9 @@ bool openSerialDevice(const std::string &dev, int &fd);
 // the main program
 int main(int argc, char *argv[])
 {
-   std::string serialdev = "/dev/ttyUSB0";  // overridden by --device argument
-   int srcbits = 0;  // overridden by --srcbits argument
-   int port = 4567;  // overridden by --port argument
+   std::string serialdev = "/dev/ttyUSB0";  // overridden by -device argument
+   int srcbits = 0;  // overridden by -srcbits argument
+   int port = 4567;  // overridden by -port argument
 
    parse_args(argc, argv, serialdev, srcbits, port);
 
@@ -76,15 +76,15 @@ void parse_args(int argc, char *argv[], std::string &serialdev, int &srcbits, in
       else
       {
 	 // not in arg
-	 if (strcmp(argv[i], "--device") == 0)
+	 if (strcmp(argv[i], "-device") == 0)
 	 {
 	    state = IN_DEVICE;
 	 }
-	 else if (strcmp(argv[i], "--srcbits") == 0)
+	 else if (strcmp(argv[i], "-srcbits") == 0)
 	 {
 	    state = IN_SRCBITS;
 	 }
-	 else if (strcmp(argv[i], "--port") == 0)
+	 else if (strcmp(argv[i], "-port") == 0)
 	 {
 	    state = IN_PORT;
 	 }
