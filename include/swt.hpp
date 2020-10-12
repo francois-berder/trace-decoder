@@ -46,11 +46,11 @@ public:
    void emptyData();
    void appendByte(uint8_t byte);
 private:
-   bool inMessage;
    NexusSliceAcceptor& acceptor;
+   bool inMessage;   
    enum { MAX_DATA = 4096 };
    uint8_t data[MAX_DATA];
-   int datanumbits;
+   uint32_t datanumbits;
    bool dataoverflowed;
 };
 
@@ -175,6 +175,7 @@ public:
    void serviceConnections();
 private:
    enum {SERIAL_BUFFER_NUMBYTES=1024};
+   NexusStream ns;   
    int serverSocketFd;
    int serialFd;
    std::list<IoConnection> connections;
@@ -184,7 +185,7 @@ private:
    fd_set exceptfds;
    bool warnedAboutSerialDeviceClosed;
 
-   NexusStream ns;
+
 
    
    bool doWaitForIoActivity();

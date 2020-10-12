@@ -261,8 +261,8 @@ void NexusDataAcquisitionMessage::dump()
 
 
 NexusMessageReassembler::NexusMessageReassembler(int srcbits)
-   : srcbits(srcbits), acceptingMessage(false), fieldcount(0), messageReady(false),
-     messageHasOverflowedField(false)
+   : srcbits(srcbits), acceptingMessage(false), fieldcount(0), 
+     messageHasOverflowedField(false), messageReady(false)
 {
 
 }
@@ -471,7 +471,7 @@ void SwtMessageStreamBuilder::addLiteralSlice(uint8_t slice)
 void SwtMessageStreamBuilder::dump()
 {
    std::cout << "Slices:" << std::endl;
-   for (int i = 0; i < slices.size(); i++) {
+   for (std::vector<uint8_t>::size_type i = 0; i < slices.size(); i++) {
       std::cout << std::hex << slices.at(i) << std::endl;
    }
 }
@@ -608,7 +608,6 @@ IoConnections::IoConnections(int port, int srcbits, int serialFd)
 {
    struct sockaddr_in address = {0}; 
    int opt = 1; 
-   int addrlen = sizeof(address);
    
    // Creating socket file descriptor 
    if ((serverSocketFd = socket(AF_INET, SOCK_STREAM, 0)) == 0) 
@@ -622,6 +621,7 @@ IoConnections::IoConnections(int port, int srcbits, int serialFd)
 		  &opt, sizeof(opt))) 
    {
       int err = errno;
+      (void)err;  // quash compile warning, but being able to see err in debugger would be nice.
       std::cerr << "Attempt to set server socket options failed" << std::endl;
       exit(-1);
    } 

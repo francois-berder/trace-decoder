@@ -27,7 +27,6 @@ int main(int argc, char *argv[])
    internal_components_test2();   
 #endif
    
-   uint8_t bytes[1024];
    NexusDataAcquisitionMessage msg;   
    NexusStream ns(srcbits);
    int serialFd;
