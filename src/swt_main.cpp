@@ -1,5 +1,6 @@
 #include "swt.hpp"
 #include <iostream>
+#include <cstdio>
 #include <string.h>
 #include <termios.h>
 #include <sys/types.h>
@@ -8,7 +9,8 @@
 
 
 // prototypes
-void parse_args(int argc, char *argv[], std::string &serialdev, int &srcbits, int &port);
+void parse_args(int argc, char *argv[], std::string &serialdev, int &srcbits, int &port, bool &help);
+void usage(void);
 bool openSerialDevice(const std::string &dev, int &fd);
 
 // the main program
@@ -17,8 +19,15 @@ int main(int argc, char *argv[])
    std::string serialdev = "/dev/ttyUSB0";  // overridden by -device argument
    int srcbits = 0;  // overridden by -srcbits argument
    int port = 4567;  // overridden by -port argument
+   bool help = false;
 
-   parse_args(argc, argv, serialdev, srcbits, port);
+   parse_args(argc, argv, serialdev, srcbits, port, help);
+
+   if (help)
+   {
+      usage();
+      return 0;
+   }
 
    srand (time(NULL));   // for stress/fuzz testing purposes
 
@@ -51,7 +60,7 @@ int main(int argc, char *argv[])
 }
 
 
-void parse_args(int argc, char *argv[], std::string &serialdev, int &srcbits, int &port)
+void parse_args(int argc, char *argv[], std::string &serialdev, int &srcbits, int &port, bool &help)
 {
    enum State {  NOT_IN_ARG, IN_DEVICE, IN_SRCBITS, IN_PORT };
    State state = NOT_IN_ARG;
@@ -87,6 +96,11 @@ void parse_args(int argc, char *argv[], std::string &serialdev, int &srcbits, in
 	 else if (strcmp(argv[i], "-port") == 0)
 	 {
 	    state = IN_PORT;
+	 }
+	 else if (strcmp(argv[i], "-h") == 0)
+	 {
+	    help = true;
+	    // no change in state for argument-less options
 	 }
 	 else
 	 {
@@ -124,4 +138,15 @@ bool openSerialDevice(const std::string &dev, int &fd)
 
       
    return fd != -1;
+}
+
+void usage(void)
+{
+ 	printf("Usage: swt [-device serial_device] [-port n] [-srcbits n]\n");
+	printf("\n");
+	printf("-device serial_device:   The file system path of the serial device to use.  Default is /dev/ttyUSB0.\n");
+	printf("-port n:   The TCP port on which swt will listen for client socket connections.  Default is 4567.\n");	
+	printf("-srcbits n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables\n");
+	printf("              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.\n");
+	printf("-h:           Display this usage information.\n");
 }
