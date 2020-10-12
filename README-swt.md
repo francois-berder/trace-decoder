@@ -40,6 +40,7 @@ Usage: swt [-device serial_device] [-port n] [-srcbits n]
 -port n:   The TCP port on which swt will listen for client socket connections.  Default is 4567.
 -srcbits n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables
               multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.
+-autoexit:    This option causes the process to exit when the number of socket clients decreases from non-zero to zero.
 -h:           Display this usage information.
 ```
 

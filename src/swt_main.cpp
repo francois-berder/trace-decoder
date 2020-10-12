@@ -7,23 +7,37 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+struct Args
+{
+   std::string serialdev;
+   int srcbits;
+   int port;
+   bool help;
+   bool autoexit;
+
+   Args()
+   {
+      serialdev = "/dev/ttyUSB0";  // overridden by -device argument
+      srcbits = 0;  // overridden by -srcbits argument
+      port = 4567;  // overridden by -port argument
+      help = false; // overridden by -h option
+      autoexit = false; // overridden by -autoexit option
+   }
+};
 
 // prototypes
-void parse_args(int argc, char *argv[], std::string &serialdev, int &srcbits, int &port, bool &help);
+void parse_args(int argc, char *argv[], Args & args);
 void usage(void);
 bool openSerialDevice(const std::string &dev, int &fd);
 
 // the main program
 int main(int argc, char *argv[])
 {
-   std::string serialdev = "/dev/ttyUSB0";  // overridden by -device argument
-   int srcbits = 0;  // overridden by -srcbits argument
-   int port = 4567;  // overridden by -port argument
-   bool help = false;
+   Args args;
 
-   parse_args(argc, argv, serialdev, srcbits, port, help);
+   parse_args(argc, argv, args);
 
-   if (help)
+   if (args.help)
    {
       usage();
       return 0;
@@ -37,21 +51,21 @@ int main(int argc, char *argv[])
 #endif
    
    NexusDataAcquisitionMessage msg;   
-   NexusStream ns(srcbits);
+   NexusStream ns(args.srcbits);
    int serialFd;
 
-   if (openSerialDevice(serialdev, serialFd))
+   if (openSerialDevice(args.serialdev, serialFd))
    {
-      IoConnections ioConnections(port, srcbits, serialFd);
+      IoConnections ioConnections(args.port, args.srcbits, serialFd);
       
-      while (!ioConnections.hasClientCountDecreasedToZero())
+      while (! (args.autoexit && ioConnections.hasClientCountDecreasedToZero()) )
       {
 	 ioConnections.serviceConnections();
       }
    }
    else
    {
-      std::cerr << "Unable to open serial device " << serialdev << std::endl;
+      std::cerr << "Unable to open serial device " << args.serialdev << std::endl;
       return -1;
    }
 
@@ -60,7 +74,7 @@ int main(int argc, char *argv[])
 }
 
 
-void parse_args(int argc, char *argv[], std::string &serialdev, int &srcbits, int &port, bool &help)
+void parse_args(int argc, char *argv[], Args & args)
 {
    enum State {  NOT_IN_ARG, IN_DEVICE, IN_SRCBITS, IN_PORT };
    State state = NOT_IN_ARG;
@@ -69,17 +83,17 @@ void parse_args(int argc, char *argv[], std::string &serialdev, int &srcbits, in
    {
       if (state == IN_DEVICE)
       {
-	 serialdev = argv[i];
+	 args.serialdev = argv[i];
 	 state = NOT_IN_ARG;
       }
       else if (state == IN_SRCBITS)
       {
-	 srcbits = atoi(argv[i]);
+	 args.srcbits = atoi(argv[i]);
 	 state = NOT_IN_ARG;
       }
       else if (state == IN_PORT)
       {
-	 port = atoi(argv[i]);
+	 args.port = atoi(argv[i]);
 	 state = NOT_IN_ARG;
       }
       else
@@ -99,7 +113,12 @@ void parse_args(int argc, char *argv[], std::string &serialdev, int &srcbits, in
 	 }
 	 else if (strcmp(argv[i], "-h") == 0)
 	 {
-	    help = true;
+	    args.help = true;
+	    // no change in state for argument-less options
+	 }
+	 else if (strcmp(argv[i], "-autoexit") == 0)
+	 {
+	    args.autoexit = true;
 	    // no change in state for argument-less options
 	 }
 	 else
@@ -148,5 +167,6 @@ void usage(void)
 	printf("-port n:   The TCP port on which swt will listen for client socket connections.  Default is 4567.\n");	
 	printf("-srcbits n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables\n");
 	printf("              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.\n");
+	printf("-autoexit:    This option causes the process to exit when the number of socket clients decreases from non-zero to zero\n");		
 	printf("-h:           Display this usage information.\n");
 }
