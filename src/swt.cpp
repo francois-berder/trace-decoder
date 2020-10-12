@@ -33,15 +33,7 @@ bool useSimulatedSerialData;
 
 
 
-
-bool SwtDummyByteStream::nextByte(uint8_t & ch)
-{
-   ch = 0;
-   return true;
-}
-
-
-
+// SwtTestMessageStream method definitions
 SwtTestMessageStream::SwtTestMessageStream(std::vector<uint8_t> vec)
    : vec(vec)
 {
@@ -65,7 +57,7 @@ bool SwtTestMessageStream::nextByte(uint8_t & ch)
 
 
 
-
+// Utility routines
 
 void buf_dump(uint8_t *buf, int numbits)
 {
@@ -126,6 +118,8 @@ uint64_t buf_to_u64(uint8_t *buf, int bufbitpos, int numbits)
    return val;
 }
 
+
+// NexusSliceUnwrapper method definitions
 NexusSliceUnwrapper::NexusSliceUnwrapper(NexusSliceAcceptor &acceptor)
    : acceptor(acceptor), inMessage(false), datanumbits(0), dataoverflowed(false)
 {
@@ -186,7 +180,7 @@ void NexusSliceUnwrapper::appendByte(uint8_t byte)
 }
 
 
-
+// TestAcceptor method definitions
 void TestAcceptor::startMessage(int tcode)
 {
    std::cout << "start message, tcode = " << std::dec << tcode << std::endl;
@@ -209,7 +203,7 @@ void TestAcceptor::endMessage()
 }
 
 
-
+// NexusDataAcquisitionMessage method definitions
 NexusDataAcquisitionMessage::NexusDataAcquisitionMessage()
 {
    clear();
@@ -259,6 +253,7 @@ void NexusDataAcquisitionMessage::dump()
 }
 
 
+// NexusMessageReassembler method definitions
 
 NexusMessageReassembler::NexusMessageReassembler(int srcbits)
    : srcbits(srcbits), acceptingMessage(false), fieldcount(0), 
@@ -383,6 +378,8 @@ bool NexusMessageReassembler::getMessage(NexusDataAcquisitionMessage &msg)
 }
 
 
+// NexusStream method definitions
+
 NexusStream::NexusStream(int srcbits)
    : reassembler(srcbits), unwrapper(reassembler)
 {
@@ -399,6 +396,7 @@ bool NexusStream::appendByteAndCheckForMessage(uint8_t byte, NexusDataAcquisitio
 
 
 
+// SwtMessageStreamBuilder method definitions
 
 SwtByteStream *SwtMessageStreamBuilder::makeByteStream()
 {
@@ -564,7 +562,7 @@ int SwtMessageStreamBuilder::minBits(uint64_t val, int numbits)
 
 
 
-
+// IoConnection method definitions
 
 IoConnection::IoConnection(int fd) : fd(fd), withholding(false),
 				     itcFilterMask(0x0)
@@ -600,7 +598,7 @@ int IoConnection::getQueueLength()
 }
 
 
-// IoConnections (plural!)
+// IoConnections (plural!) method definitions
 
 IoConnections::IoConnections(int port, int srcbits, int serialFd)
    : ns(srcbits), serialFd(serialFd), numClientsHighWater(0),
@@ -862,9 +860,7 @@ int IoConnections::serialReadBytes(uint8_t *bytes, size_t numbytes)
 
 int IoConnections::simulatedSerialReadBytes(uint8_t *bytes, size_t numbytes)
 {
-   // RESOLVE - read data from real serial device instead of treating this like a dummy device
-   // Currently treating like dummy/similated device.  Specifically, we're simulating no serial data
-   // available for the first 30 seconds or so, and then it comes out.
+   // Development scaffolding - maybe this isn't needed anymore, but maybe it could be useful for future unit tests, so keeping it around
 
    static bool already_run = 0;
    static time_t before;
@@ -995,8 +991,9 @@ void IoConnections::queueMessageToClients(NexusDataAcquisitionMessage &msg)
 }
 
 
-
-
+// Internal test scaffolding; maybe this isn't needed anymore, but keeping it around, and ifdef'ed out,
+// just in case
+#ifdef SWT_CPP_TEST
 
 #include <ctime>
 #include <cstdlib>
@@ -1064,5 +1061,4 @@ void internal_components_test2()
    sb.freeByteStream(stream);   
 }
 
-
-
+#endif

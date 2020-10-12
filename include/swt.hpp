@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <netinet/in.h>
 
+// A neutral abstraction of a stream of bytes
 class SwtByteStream
 {
 public:
@@ -11,14 +12,7 @@ public:
       virtual bool nextByte(uint8_t & ch) = 0;  
 };
 
-
-class SwtDummyByteStream : public SwtByteStream
-{
-public:
-   virtual bool nextByte(uint8_t & ch);
-};
-
-
+// A class used for internal test scaffolding; a simulated stream of slice bytes
 class SwtTestMessageStream : public SwtByteStream
 {
    std::vector<uint8_t> vec;
@@ -28,7 +22,8 @@ public:
    bool nextByte(uint8_t & ch);
 };
 
-
+// An abstract callback interface that the Nexus slice unwrapper
+// calls into as it recognizes incoming Nexus messages
 class NexusSliceAcceptor
 {
 public:
@@ -38,7 +33,12 @@ public:
    virtual void endMessage() = 0;
 };
 
-
+// A state-driven translator from a stream of bytes to callback events
+// that assist in the reconstruction of Nexus messages from slice bytes.
+// Bytes are fed to the class one at a time, and
+// callbacks are made to the slice acceptor, as parts of a message are
+// unwrapped.  (Stateful passive approach made sense for the particular
+// streaming oriented usage of Nexus messages over sockets).
 class NexusSliceUnwrapper
 {
 public:
@@ -54,7 +54,7 @@ private:
    bool dataoverflowed;
 };
 
-
+// A class used for test scaffolding
 class TestAcceptor : public NexusSliceAcceptor
 {
    void startMessage(int tcode);
@@ -63,6 +63,7 @@ class TestAcceptor : public NexusSliceAcceptor
    void endMessage();
 };    
 
+// Representation of the main type of Nexus message that SWT is currently concerned with
 struct NexusDataAcquisitionMessage {
    // optional message fields
    bool haveTimestamp;
@@ -82,7 +83,8 @@ struct NexusDataAcquisitionMessage {
 };
 
 
-
+// Class that statefully/passively reconstructs full Nexus messages
+// as callbacks get made as side effect of bytes being appended to unwrapper instance
 class NexusMessageReassembler : public NexusSliceAcceptor
 {
 public:
@@ -102,7 +104,7 @@ private:
 };    
 
 
-
+// Simplified interface to a combined unwrapper/reassembler combination
 class NexusStream
 {
 public:
@@ -115,11 +117,10 @@ private:
 
 
 
+// Class available for internal test purposes.  Enable building a stream of bytes that have well formed and/or malformed Nexus messages/slices.
 class SwtMessageStreamBuilder
 {
-   // For test purposes.  Enable building a stream of bytes that have well formed and/or malformed messages.
 public:
-
    SwtByteStream *makeByteStream();
    void freeByteStream(SwtByteStream *stream);
    void addDataAcquisitionMessage(int srcbits, int src, int itcIdx, int size, uint32_t data, bool haveTimestamp, uint64_t timestamp);
@@ -144,7 +145,7 @@ private:
 };
 
 
-
+// Class that represents/manages a single client socket connection
 struct IoConnection
 {
    int fd;  // type probably shouldn't be int
@@ -162,6 +163,7 @@ struct IoConnection
 };
 
 
+// Class that represents/manages all I/O descriptors (those that are server related, and all client connections too).
 class IoConnections
 {
    // manage all external IOs
@@ -185,15 +187,12 @@ private:
    fd_set exceptfds;
    bool warnedAboutSerialDeviceClosed;
 
-
-
-   
    bool doWaitForIoActivity();
+   bool isItcFilterCommand(const std::string& str, uint32_t& filterMask);   
 
    // temp scaffolding before we have serial cable... dummy data
    SwtMessageStreamBuilder sb;
    SwtByteStream *simulatedSerialStream;
    int simulatedSerialReadBytes(uint8_t *bytes, size_t numbytes);   
    void makeSimulatedSerialPortStream();
-   bool isItcFilterCommand(const std::string& str, uint32_t& filterMask);
 };
