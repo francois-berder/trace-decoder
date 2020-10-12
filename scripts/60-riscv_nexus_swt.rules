@@ -1,0 +1,17 @@
+# Copy this file to /etc/udev/rules.d/
+# If rules fail to reload automatically, you can refresh udev rules
+# with the command "udevadm control --reload"
+
+ACTION!="add|change", GOTO="riscv_nexus_swt_rules_end"
+SUBSYSTEM!="usb|tty|hidraw", GOTO="riscv_nexus_swt_rules_end"
+
+# Please keep this list sorted by VID:PID
+
+# Prolific Technoligies USB/TTL cable
+ATTRS{idVendor}=="067b", ATTRS{idProduct}=="2303", MODE="660", GROUP="plugdev", TAG+="uaccess"
+
+# Silicon Labs CP201x
+ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE="660", GROUP="plugdev", TAG+="uaccess"
+
+
+LABEL="riscv_nexus_swt_rules_end"
