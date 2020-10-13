@@ -174,6 +174,7 @@ public:
    bool isSerialIoReadable();
    bool hasClientCountDecreasedToZero();
    void queueMessageToClients(NexusDataAcquisitionMessage &msg);
+   void queueSerialBytesToClients(uint8_t *bytes, uint32_t numbytes);
    void serviceConnections();
 private:
    enum {SERIAL_BUFFER_NUMBYTES=1024};

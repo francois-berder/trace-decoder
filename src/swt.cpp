@@ -749,6 +749,7 @@ void IoConnections::serviceConnections()
 	    }
 	    if (numSerialBytesRead)
 	    {
+#if NEXUS_AWARE
 	       for (int i = 0; i < numSerialBytesRead; i++)
 	       {
 		  bool haveMessage = ns.appendByteAndCheckForMessage(bytes[i], msg);
@@ -758,6 +759,10 @@ void IoConnections::serviceConnections()
 		     queueMessageToClients(msg);
 		  }
 	       }
+#else
+	       // simply shuttle the raw bytes to clients, with no translation or filtering
+	       queueSerialBytesToClients(bytes, numSerialBytesRead);
+#endif	       
 	    }
 	 } while (numSerialBytesRead == sizeof(bytes));
       }
@@ -949,6 +954,42 @@ bool IoConnections::isSerialIoReadable()
    return serialFd != -1 && FD_ISSET(serialFd, &readfds);
 }
 
+
+void IoConnections::queueSerialBytesToClients(uint8_t *bytes, uint32_t numbytes)
+{
+   std::list<IoConnection>::iterator it = connections.begin();
+   while (it != connections.end())
+   {
+      // First check whether buffer for this connection is very high, indicating that the client end of the socket
+      // isn't consuming the data (e.g. it's buggy).  If so, then let's drop this transmission for that client, and maybe
+      // output a warning to std err because otherwise we'll keep queueing up socket data that never gets consumed
+      // and freed, jeopardizing long term stability of a long-running instance of this program.
+      bool shouldWithhold = it->getQueueLength() > QUEUE_STALLED_CLIENT_SUSPICION_THRESHOLD;
+      if (shouldWithhold)
+      {
+#if 0
+	 // Disconnecting the client was originally going to be the remedy, but that might be too severe
+	 std::cerr << "Socket client doesn't seem to be consuming data we're trying to send; disconnecting from that client!" << std::endl;
+	 it->disconnect();
+	 it = connections.erase(it);
+#endif
+	 // Only output message when *newly* withholding
+	 if (!it->withholding)
+	 {
+	    std::cerr << "Socket client doesn't seem to be consuming data fast enough to keep up!  Withholding message." << std::endl;
+	 }
+	 // just don't enqueue the message to this particular connection
+	 it++;
+      }
+      else
+      {
+	 std::string serialized((const char*)bytes, numbytes);
+	 it->enqueue(serialized);
+	 it++;
+      }
+      it->withholding = shouldWithhold;
+   }
+}
 
 void IoConnections::queueMessageToClients(NexusDataAcquisitionMessage &msg)
 {
