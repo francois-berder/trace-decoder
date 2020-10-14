@@ -14,6 +14,7 @@ struct Args
    int port;
    bool help;
    bool autoexit;
+   bool debug;
 
    Args()
    {
@@ -22,6 +23,7 @@ struct Args
       port = 4567;  // overridden by -port argument
       help = false; // overridden by -h option
       autoexit = false; // overridden by -autoexit option
+      debug = false; // overridden by -debug option
    }
 };
 
@@ -56,7 +58,7 @@ int main(int argc, char *argv[])
 
    if (openSerialDevice(args.serialdev, serialFd))
    {
-      IoConnections ioConnections(args.port, args.srcbits, serialFd);
+      IoConnections ioConnections(args.port, args.srcbits, serialFd, args.debug);
       
       while (! (args.autoexit && ioConnections.hasClientCountDecreasedToZero()) )
       {
@@ -110,6 +112,11 @@ void parse_args(int argc, char *argv[], Args & args)
 	 else if (strcmp(argv[i], "-port") == 0)
 	 {
 	    state = IN_PORT;
+	 }
+	 else if (strcmp(argv[i], "-d") == 0)
+	 {
+	    args.debug = true;
+	    // no change in state for argument-less options	    
 	 }
 	 else if (strcmp(argv[i], "-h") == 0)
 	 {
@@ -167,6 +174,7 @@ void usage(void)
 	printf("-port n:   The TCP port on which swt will listen for client socket connections.  Default is 4567.\n");	
 	printf("-srcbits n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables\n");
 	printf("              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.\n");
-	printf("-autoexit:    This option causes the process to exit when the number of socket clients decreases from non-zero to zero\n");		
+	printf("-autoexit:    This option causes the process to exit when the number of socket clients decreases from non-zero to zero\n");
+	printf("-d:           Dump to standard output (for troubleshooting) the raw serial byte stream and reconstructed messages.\n");	
 	printf("-h:           Display this usage information.\n");
 }

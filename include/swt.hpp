@@ -168,7 +168,7 @@ class IoConnections
 {
    // manage all external IOs
 public:
-   IoConnections(int port, int srcbits, int serialFd);
+   IoConnections(int port, int srcbits, int serialFd, bool dumpNexusMessagesToStdout);
    int serialReadBytes(uint8_t *bytes, size_t numbytes);
    bool waitForIoActivity();
    bool isSerialIoReadable();
@@ -177,7 +177,7 @@ public:
    void queueSerialBytesToClients(uint8_t *bytes, uint32_t numbytes);
    void serviceConnections();
 private:
-   enum {SERIAL_BUFFER_NUMBYTES=1024};
+   enum {SERIAL_BUFFER_NUMBYTES=1024*4};
    NexusStream ns;   
    int serverSocketFd;
    int serialFd;
@@ -187,6 +187,7 @@ private:
    fd_set writefds;
    fd_set exceptfds;
    bool warnedAboutSerialDeviceClosed;
+   bool dumpNexusMessagesToStdout;
 
    bool doWaitForIoActivity();
    bool isItcFilterCommand(const std::string& str, uint32_t& filterMask);   

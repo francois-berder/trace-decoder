@@ -17,9 +17,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-// #define SWT_CPP_TEST 1
 
+// Internal debug scaffolding
+// #define SWT_CPP_TEST 1
 // #define DEBUG_PRINT 1
+
 
 #define QUEUE_STALLED_CLIENT_SUSPICION_THRESHOLD (512 * 1024)
 #define SUSPECT_PROTOCOL_LINE_LENGTH_THRESHOLD 30
@@ -246,7 +248,7 @@ std::string NexusDataAcquisitionMessage::serialized()
 
 void NexusDataAcquisitionMessage::dump()
 {
-   std::cout << "haveTimestamp = " << haveTimestamp << ", timestamp = 0x" <<
+   std::cout << std::dec << "tcode = " << tcode << ", haveTimestamp = " << haveTimestamp << ", timestamp = 0x" <<
       std::hex << timestamp << ", haveSrc = " << haveSrc << ", src = " << std::dec <<
       src << ", idtag = 0x" << std::hex << idtag << ", dqdata = 0x" << dqdata
 	     << std::endl;
@@ -600,9 +602,10 @@ int IoConnection::getQueueLength()
 
 // IoConnections (plural!) method definitions
 
-IoConnections::IoConnections(int port, int srcbits, int serialFd)
+IoConnections::IoConnections(int port, int srcbits, int serialFd, bool dumpNexusMessagesToStdout)
    : ns(srcbits), serialFd(serialFd), numClientsHighWater(0),
-     warnedAboutSerialDeviceClosed(false)
+     warnedAboutSerialDeviceClosed(false),
+     dumpNexusMessagesToStdout(dumpNexusMessagesToStdout)
 {
    struct sockaddr_in address = {0}; 
    int opt = 1; 
@@ -733,10 +736,15 @@ void IoConnections::serviceConnections()
 	 do
 	 {
 	    numSerialBytesRead = serialReadBytes(bytes, sizeof(bytes));
-#if 0	    
-	    std::cout << "num bytes read: " << numSerialBytesRead << std::endl;
-	    buf_dump(bytes, numSerialBytesRead*8);
-#endif	    
+
+
+	    if (dumpNexusMessagesToStdout)
+	    {
+	       std::cout << "num bytes read: " << numSerialBytesRead << std::endl;
+	       std::cout << "raw bytes: ";
+	       buf_dump(bytes, numSerialBytesRead*8);
+	    }
+
 	    if (numSerialBytesRead < 0)
 	    {
 	       if (!warnedAboutSerialDeviceClosed)
@@ -749,20 +757,23 @@ void IoConnections::serviceConnections()
 	    }
 	    if (numSerialBytesRead)
 	    {
-#if NEXUS_AWARE
-	       for (int i = 0; i < numSerialBytesRead; i++)
+	       if (dumpNexusMessagesToStdout)
 	       {
-		  bool haveMessage = ns.appendByteAndCheckForMessage(bytes[i], msg);
-		  if (haveMessage)
+		  for (int i = 0; i < numSerialBytesRead; i++)
 		  {
-		     // enqueue a serialized representation of the message to all existing connections
-		     queueMessageToClients(msg);
+		     bool haveMessage = ns.appendByteAndCheckForMessage(bytes[i], msg);
+		     if (haveMessage)
+		     {
+			// Dump reconstructed Nexus message to stdout for debugging, but don't transmit this level of
+			// abstraction to the client (client cares about the raw slice stream)
+			std::cout << "Nexus message: ";
+			msg.dump();
+		     }
 		  }
 	       }
-#else
-	       // simply shuttle the raw bytes to clients, with no translation or filtering
+
+	       // shuttle the raw slice stream bytes to clients, with no translation or filtering
 	       queueSerialBytesToClients(bytes, numSerialBytesRead);
-#endif	       
 	    }
 	 } while (numSerialBytesRead == sizeof(bytes));
       }
@@ -779,7 +790,7 @@ void IoConnections::serviceConnections()
 //	    std::cout << "numrecv = " << numrecv << std::endl;
 	    if (numrecv <= 0)
 	    {
-	       std::cerr << "Client disconnected!" << std::endl;
+	       // std::cerr << "Client disconnected!" << std::endl;
 	       it->disconnect();
 	       it = connections.erase(it);
 	    }
