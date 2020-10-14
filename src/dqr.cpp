@@ -7205,6 +7205,120 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 	return status;
 }
 
+ObjFile::ObjFile(char *ef_name)
+{
+	elfReader = nullptr;
+//	symtab = nullptr;
+	disassembler = nullptr;
+
+	if (ef_name == nullptr) {
+		printf("Error: ObjFile::ObjFile(): null of_name argument\n");
+
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+	elfReader = new (std::nothrow) ElfReader(ef_name);
+
+	assert(elfReader != nullptr);
+
+	if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
+		delete elfReader;
+		elfReader = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+	bfd *abfd;
+	abfd = elfReader->get_bfd();
+
+	disassembler = new (std::nothrow) Disassembler(abfd);
+
+	assert(disassembler != nullptr);
+
+	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		if (elfReader != nullptr) {
+			delete elfReader;
+			elfReader = nullptr;
+		}
+
+		delete disassembler;
+		disassembler = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+    // get symbol table
+
+//    symtab = elfReader->getSymtab();
+//    if (symtab == nullptr) {
+//    	delete elfReader;
+//    	elfReader = nullptr;
+//
+//    	delete disassembler;
+//    	disassembler = nullptr;
+//
+//    	status = TraceDqr::DQERR_ERR;
+//
+//    	return;
+//    }
+}
+
+ObjFile::~ObjFile()
+{
+	cleanUp();
+}
+
+void ObjFile::cleanUp()
+{
+	if (elfReader != nullptr) {
+		delete elfReader;
+		elfReader = nullptr;
+	}
+
+	if (disassembler != nullptr) {
+		delete disassembler;
+		disassembler = nullptr;
+	}
+}
+
+TraceDqr::DQErr ObjFile::sourceInfo(TraceDqr::ADDRESS addr,Source &srcInfo)
+{
+	TraceDqr:: DQErr s;
+
+	assert(disassembler != nullptr);
+
+	disassembler->Disassemble(addr);
+
+	s = disassembler->getStatus();
+	if (s != TraceDqr::DQERR_OK) {
+		status = s;
+		return s;
+	}
+
+//	instructionInfo = disassembler->getInstructionInfo();
+	srcInfo = disassembler->getSourceInfo();
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr ObjFile::setPathType(TraceDqr::pathType pt)
+{
+	if (disassembler != nullptr) {
+		disassembler->setPathType(pt);
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	return TraceDqr::DQERR_ERR;
+}
+
+
 Disassembler::Disassembler(bfd *abfd)
 {
 	assert(abfd != nullptr);

@@ -437,7 +437,7 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 
 //    printf("ef_name:%s\n",ef_name);
 
-     elfReader = new (std::nothrow) ElfReader(ef_name);
+    elfReader = new (std::nothrow) ElfReader(ef_name);
 
     assert(elfReader != nullptr);
 
