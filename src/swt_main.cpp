@@ -43,7 +43,21 @@ bool openSerialDevice(const std::string &dev, int &fd, uint32_t requestedBaud);
 int main(int argc, char *argv[])
 {
    Args args;
+#ifdef WINDOWS
+   WORD wVersionRequested;
+   WSADATA wsaData;
+   int err;
 
+   wVersionRequested = MAKEWORD(2, 2);
+
+   err = WSAStartup(wVersionRequested, &wsaData);
+   if (err != 0) {
+	/* Tell the user that we could not find a usable */
+	/* Winsock DLL.                                  */
+	   printf("WSAStartup failed with error: %d\n", err);
+	   return -1;
+   }   
+#endif   
    args.parse(argc, argv);
 
    if (args.help)
@@ -331,6 +345,13 @@ bool openSerialDevice(const std::string &dev, int &fd, uint32_t requestedBaud)
       setDeviceBaud(fd, baud);
    }
 
+#if 0  // on Windows, this call returns correct data with target in calibration mode, but also on Windows,
+   // when select() gets
+   // called, it never unblocks!  Need to continue investigating this!
+   // TEMP SCAFFOLDING
+   char tempbytes[1024];
+   volatile int temp = read(fd, tempbytes, sizeof(tempbytes));
+#endif   
       
    return fd != -1;
 }

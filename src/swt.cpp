@@ -616,8 +616,8 @@ IoConnections::IoConnections(int port, int srcbits, int serialFd, bool dumpNexus
    int opt = 1; 
    
    // Creating socket file descriptor 
-   if ((serverSocketFd = socket(AF_INET, SOCK_STREAM, 0)) == 0) 
-   { 
+   if ((serverSocketFd = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
+   {
       std::cerr << "Attempt to create server socket failed" << std::endl;
       exit(-1);
    } 
