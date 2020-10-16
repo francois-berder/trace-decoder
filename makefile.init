@@ -70,6 +70,7 @@ ifeq ($(OS),Windows_NT)
     PICLIBFLAGS :=
     LNFLAGS = -static
     LIBS := -lbfd -lopcodes -lintl -liberty -lz
+    SWTLIBS := -lws2_32
     EXECUTABLE := dqr.exe
     SWTEXECUTABLE := swt.exe
 else

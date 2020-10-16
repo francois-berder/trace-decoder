@@ -41,7 +41,7 @@ $(SWIGLIB): $(SWIGLIBOBJS)
 $(SWTEXECUTABLE): $(SWTOBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	$(CROSSPREFIX)g++ -L$(LIBPATH) $(LNFLAGS) -o $(SWTEXECUTABLE) $(SWTOBJS)
+	$(CROSSPREFIX)g++ -L$(LIBPATH) $(LNFLAGS) -o $(SWTEXECUTABLE) $(SWTOBJS) $(SWTLIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

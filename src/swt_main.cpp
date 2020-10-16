@@ -2,10 +2,14 @@
 #include <iostream>
 #include <cstdio>
 #include <string.h>
+#if defined(LINUX) || defined(OSX)
 #include <termios.h>
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <time.h>
+
 
 struct Args
 {
@@ -149,7 +153,7 @@ void Args::parse(int argc, char *argv[])
    }
 }
 
-
+#if defined(LINUX) || defined(OSX)
 speed_t nearestBaudRate(uint32_t baud)
 {
    speed_t retval;
@@ -301,6 +305,20 @@ speed_t setDeviceBaud(int fd, speed_t baud)
       return -1;
    }
 }
+#endif
+
+#ifdef WINDOWS
+// stubbed out
+typedef int speed_t;
+speed_t nearestBaudRate(uint32_t baud)
+{
+	return 0;
+}
+speed_t setDeviceBaud(int fd, speed_t baud)
+{
+	return 0;
+}
+#endif
 
 bool openSerialDevice(const std::string &dev, int &fd, uint32_t requestedBaud)
 {

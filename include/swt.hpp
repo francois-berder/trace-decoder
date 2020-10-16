@@ -2,7 +2,11 @@
 #include <list>
 #include <string>
 #include <stdint.h>
+#if defined(LINUX) || defined(OSX)
 #include <netinet/in.h>
+#elif defined(WINDOWS)
+#include <winsock2.h>
+#endif
 
 // A neutral abstraction of a stream of bytes
 class SwtByteStream

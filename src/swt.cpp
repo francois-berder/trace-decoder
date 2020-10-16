@@ -8,15 +8,20 @@
 #include <queue>
 
 #include <time.h>
+#if defined(LINUX) || defined(OSX)
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#endif
 #include <fcntl.h>
 #include <unistd.h>
 
+#ifdef WINDOWS
+typedef int socklen_t;
+#endif
 
 // Internal debug scaffolding
 // #define SWT_CPP_TEST 1
@@ -619,7 +624,7 @@ IoConnections::IoConnections(int port, int srcbits, int serialFd, bool dumpNexus
        
    // Allow reuse of binding address
    if (setsockopt(serverSocketFd, SOL_SOCKET, SO_REUSEADDR /* | SO_REUSEPORT */, 
-		  &opt, sizeof(opt))) 
+		  (const char *)&opt, sizeof(opt))) 
    {
       int err = errno;
       (void)err;  // quash compile warning, but being able to see err in debugger would be nice.
@@ -783,7 +788,8 @@ void IoConnections::serviceConnections()
       std::list<IoConnection>::iterator it = connections.begin();
       while (it != connections.end())
       {
-	 uint8_t buf[1024];
+	 // uint8_t buf[1024];
+	 char buf[1024];  // Windows wants this to be char instead of uint_8
 	 if (FD_ISSET(it->fd, &readfds))
 	 {
 	    int numrecv = recv(it->fd, buf, sizeof(buf), 0);
