@@ -484,6 +484,57 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
+		else if (strcmp("-r",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: option -r requires an address\n");
+				return 1;
+			}
+
+			uint32_t addr;
+			char *endptr;
+
+			addr = strtoul(argv[i],&endptr,0);
+
+			if (endptr[0] != 0) {
+				printf("Error: option -r requires a valid address\n");
+				return 1;
+			}
+
+			if (ef_name == nullptr) {
+				printf("option -r requires first specifing the elffile name (with the -e flag)\n");
+				return 1;
+			}
+
+			ObjFile *of;
+			TraceDqr::DQErr rc;
+
+			of = new ObjFile(ef_name);
+			rc = of->getStatus();
+			if (rc != TraceDqr::DQERR_OK) {
+				printf("Error: cannot create ObjFile object\n");
+				return 1;
+			}
+
+			Instruction instInfo;
+			Source srcInfo;
+
+			rc = of->sourceInfo(addr,instInfo,srcInfo);
+			if (rc != TraceDqr::DQERR_OK) {
+				printf("Error: cannot get sourceInfo for address 0x%08x\n");
+			}
+
+			//foodog
+
+			printf("For address 0x%08x\n",addr);
+			printf("File: %s:%d\n",srcInfo.sourceFile,srcInfo.sourceLineNum);
+			printf("Function: %s\n",srcInfo.sourceFunction);
+			printf("Src: %s\n",srcInfo.sourceLine);
+
+			printf("Label: %s+0x%08x\n",instInfo.addressLabel,instInfo.addressLabelOffset);
+
+			return 0;
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;

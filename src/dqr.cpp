@@ -562,6 +562,96 @@ const char *Source::stripPath(const char *path)
 
 std::string Source::sourceFileToString(std::string path)
 {
+	// foodog
+
+	if (sourceFile != nullptr) {
+		// check for garbage in path/file name
+
+		const char *sf = stripPath(path.c_str());
+		if (sf == nullptr) {
+			printf("Error: sourceFileToString(): stripPath() returned nullptr\n");
+		}
+		else {
+			for (int i = 0; sf[i] != 0; i++) {
+				switch (sf[i]) {
+				case 'a':
+				case 'b':
+				case 'c':
+				case 'd':
+				case 'e':
+				case 'f':
+				case 'g':
+				case 'h':
+				case 'i':
+				case 'j':
+				case 'k':
+				case 'l':
+				case 'm':
+				case 'n':
+				case 'o':
+				case 'p':
+				case 'q':
+				case 'r':
+				case 's':
+				case 't':
+				case 'u':
+				case 'v':
+				case 'w':
+				case 'x':
+				case 'y':
+				case 'z':
+				case 'A':
+				case 'B':
+				case 'C':
+				case 'D':
+				case 'E':
+				case 'F':
+				case 'G':
+				case 'H':
+				case 'I':
+				case 'J':
+				case 'K':
+				case 'L':
+				case 'M':
+				case 'N':
+				case 'O':
+				case 'P':
+				case 'Q':
+				case 'R':
+				case 'S':
+				case 'T':
+				case 'U':
+				case 'V':
+				case 'W':
+				case 'X':
+				case 'Y':
+				case 'Z':
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				case '5':
+				case '6':
+				case '7':
+				case '8':
+				case '9':
+				case '/':
+				case '\\':
+				case '.':
+				case '_':
+				case '-':
+				case '+':
+				case ':':
+					break;
+				default:
+					printf("Error: source::srouceFileToSTring(): File name '%s' contains bogus char (0x%02x) in position %d!\n",sf,sf[i],i);
+					break;
+				}
+			}
+		}
+	}
+
 	if (sourceFile != nullptr) {
 
 		const char *sf = stripPath(path.c_str());
@@ -7253,6 +7343,8 @@ ObjFile::ObjFile(char *ef_name)
 		return;
 	}
 
+	status = TraceDqr::DQERR_OK;
+
     // get symbol table
 
 //    symtab = elfReader->getSymtab();
@@ -7287,7 +7379,7 @@ void ObjFile::cleanUp()
 	}
 }
 
-TraceDqr::DQErr ObjFile::sourceInfo(TraceDqr::ADDRESS addr,Source &srcInfo)
+TraceDqr::DQErr ObjFile::sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo,Source &srcInfo)
 {
 	TraceDqr:: DQErr s;
 
@@ -7303,6 +7395,7 @@ TraceDqr::DQErr ObjFile::sourceInfo(TraceDqr::ADDRESS addr,Source &srcInfo)
 
 //	instructionInfo = disassembler->getInstructionInfo();
 	srcInfo = disassembler->getSourceInfo();
+	instInfo = disassembler->getInstructionInfo();
 
 	return TraceDqr::DQERR_OK;
 }
@@ -8753,6 +8846,20 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 		return 0;
 	}
 
+	// bfd_find_nearest_line_discriminator() does not always return the correct function name. Use the lookup_symbol_by_address()
+	// function and see if we get a hit. If we do, use that. Otherwise, use what bfd_find_nearest_line_discriminator() returned
+
+	int rc;
+	int index;
+	int offset;
+
+	rc = lookup_symbol_by_address(addr,BSF_FUNCTION,&index,&offset);
+	if (rc != 0) {
+		// found symbol
+
+		function = sorted_syms[index]->name;
+	}
+
 	*linenumber = line;
 
 	if (file == nullptr) {
@@ -8781,7 +8888,7 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 	*filename = fl->name;
 
 	// save function name and line src in function list struct so it will be saved for reuse, or later use throughout the
-	// life of the object. Won't be overwritten.
+	// life of the object. Won't be overwritten. This is not caching.
 
 	if (function != nullptr) {
 		// find the function name in fncList
@@ -8817,8 +8924,94 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 	}
 
 	if (sane != fprime) {
-		delete sane;
+		delete [] sane;
 		sane = nullptr;
+	}
+
+	{
+		// foodog
+		// check for garbage in path/file name
+
+		if (*filename != nullptr) {
+			const char *cp = *filename;
+			for (int i = 0; cp[i] != 0; i++) {
+				switch (cp[i]) {
+				case 'a':
+				case 'b':
+				case 'c':
+				case 'd':
+				case 'e':
+				case 'f':
+				case 'g':
+				case 'h':
+				case 'i':
+				case 'j':
+				case 'k':
+				case 'l':
+				case 'm':
+				case 'n':
+				case 'o':
+				case 'p':
+				case 'q':
+				case 'r':
+				case 's':
+				case 't':
+				case 'u':
+				case 'v':
+				case 'w':
+				case 'x':
+				case 'y':
+				case 'z':
+				case 'A':
+				case 'B':
+				case 'C':
+				case 'D':
+				case 'E':
+				case 'F':
+				case 'G':
+				case 'H':
+				case 'I':
+				case 'J':
+				case 'K':
+				case 'L':
+				case 'M':
+				case 'N':
+				case 'O':
+				case 'P':
+				case 'Q':
+				case 'R':
+				case 'S':
+				case 'T':
+				case 'U':
+				case 'V':
+				case 'W':
+				case 'X':
+				case 'Y':
+				case 'Z':
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				case '5':
+				case '6':
+				case '7':
+				case '8':
+				case '9':
+				case '/':
+				case '\\':
+				case '.':
+				case '_':
+				case '-':
+				case '+':
+				case ':':
+					break;
+				default:
+					printf("Error: getSrcLines(): File name '%s' contains bogus char (0x%02x) in position %d!\n",cp,cp[i],i);
+					break;
+				}
+			}
+		}
 	}
 
 	return 1;

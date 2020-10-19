@@ -639,15 +639,13 @@ public:
 	void cleanUp();
 
 	TraceDqr::DQErr getStatus() {return status;}
-	TraceDqr::DQErr sourceInfo(TraceDqr::ADDRESS addr,Source &srcInfo);
+	TraceDqr::DQErr sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo,Source &srcInfo);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 
 private:
 	TraceDqr::DQErr        status;
-//	bfd *abfd;
 
 	class ElfReader       *elfReader;
-//	class Symtab          *symtab;
 	class Disassembler    *disassembler;
 };
 // class Trace: high level class that performs the raw trace data to dissasemble and decorated instruction trace
