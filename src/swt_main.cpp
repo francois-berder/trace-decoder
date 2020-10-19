@@ -85,6 +85,11 @@ int main(int argc, char *argv[])
       {
 	 ioConnections.serviceConnections();
       }
+      // The call below seems to hose things.  It would be good ideally to
+      //  know why, but since it happens right before process exit(), and exit()
+      // will clean up everything, I'm commenting out the call.
+      
+      // ioConnections.closeResources();  
    }
    else
    {

@@ -167,6 +167,21 @@ struct IoConnection
 };
 
 
+struct PthreadModeData
+{
+   bool exitThreadRequested;
+   bool selectRequested;   
+   int selectResultVolatile;  // this can get updated by select thread at pretty much any time
+   int selectResultWaitSnapshot;  // this is a snapshot of the selectResult taken at the time of the last WaitForIo call
+   std::string serialLookahead;
+   pthread_mutex_t mutex;
+   pthread_t selectThread;   
+   pthread_t serialThread;
+   pthread_cond_t conditionSomethingChanged;  // some state may have changed (callers waiting need to check their predicate and wait again if needed)
+
+   PthreadModeData();
+};
+
 // Class that represents/manages all I/O descriptors (those that are server related, and all client connections too).
 class IoConnections
 {
@@ -175,27 +190,41 @@ public:
    IoConnections(int port, int srcbits, int serialFd, bool dumpNexusMessagesToStdout);
    int serialReadBytes(uint8_t *bytes, size_t numbytes);
    bool waitForIoActivity();
-   bool isSerialIoReadable();
    bool hasClientCountDecreasedToZero();
    void queueMessageToClients(NexusDataAcquisitionMessage &msg);
    void queueSerialBytesToClients(uint8_t *bytes, uint32_t numbytes);
    void serviceConnections();
+   void closeResources();
 private:
    enum {SERIAL_BUFFER_NUMBYTES=1024*4};
    NexusStream ns;   
    int serverSocketFd;
    int serialFd;
    std::list<IoConnection> connections;
-   std::list<IoConnection>::size_type numClientsHighWater;   
+   std::list<IoConnection>::size_type numClientsHighWater;
+   
+   bool pthreadSynchronizationMode;
+   PthreadModeData pthreadModeData;
+   static void *ThreadFuncSerial(void *arg);
+   static void *ThreadFuncSelect(void *arg);   
+   
    fd_set readfds;
    fd_set writefds;
    fd_set exceptfds;
+
    bool warnedAboutSerialDeviceClosed;
    bool dumpNexusMessagesToStdout;
 
+   int callSelect(bool includeSerialDevice);
+   bool doWaitForIoActivity();   
    bool waitUsingSelectForAllIo();
    bool waitUsingThreadsAndConditionVar();   
-   bool isItcFilterCommand(const std::string& str, uint32_t& filterMask);   
+   bool isItcFilterCommand(const std::string& str, uint32_t& filterMask);
+
+   bool isSocketReadable(int fd);
+   bool isSocketWritable(int fd);
+   bool isSocketExcept(int fd);
+   bool isSerialReadable();
 
    // temp scaffolding before we have serial cable... dummy data
    SwtMessageStreamBuilder sb;

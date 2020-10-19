@@ -70,7 +70,7 @@ ifeq ($(OS),Windows_NT)
     PICLIBFLAGS :=
     LNFLAGS = -static
     LIBS := -lbfd -lopcodes -lintl -liberty -lz
-    SWTLIBS := -lws2_32
+    SWTLIBS := -lws2_32 -lpthread
     EXECUTABLE := dqr.exe
     SWTEXECUTABLE := swt.exe
 else
@@ -231,6 +231,7 @@ else
             SWIGCFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
             LIBPATH = ../lib/linux
             LIBS := -lbfd -lopcodes -liberty -lz -ldl
+            SWTLIBS := -lpthread
             PICLIBFLAGS := -L$(LIBPATH)/picbfd -L$(LIBPATH)/picopcodes -L$(LIBPATH)/picliberty
             LNFLAGS :=
             EXECUTABLE := dqr
@@ -257,6 +258,7 @@ else
                 PICLIBFLAGS :=
                 LNFLAGS = -static
                 LIBS := -lbfd -lopcodes -lintl -liberty -lz
+                SWTLIBS := -lws2_32 -lpthread
                 EXECUTABLE := dqr.exe
                 SWTEXECUTABLE := swt.exe
                 LIBSEARCHPATH := $(shell $(CROSSPREFIX)gcc -print-search-dirs | grep -i "libraries: =" 2> /dev/null)
@@ -273,6 +275,7 @@ else
                 LIBPATH = ../lib/linux
                 PICLIBFLAGS := -L$(LIBPATH)/picbfd -L$(LIBPATH)/picopcodes -L$(LIBPATH)/picliberty
                 LIBS := -lbfd -lopcodes -liberty -lz -ldl
+                SWTLIBS := -lpthread		
                 LNFLAGS = -static
                 EXECUTABLE := dqr
 		SWTEXECUTABLE := swt
@@ -329,6 +332,7 @@ else
         LIBPATH = ../lib/macos
         PICLIBFLAGS :=
         LIBS := -lbfd -lopcodes -liberty -lz -lintl -liconv
+        SWTLIBS := -lpthread
         LNFLAGS =
         EXECUTABLE := dqr
 	SWTEXECUTABLE := swt
