@@ -193,7 +193,8 @@ private:
    bool warnedAboutSerialDeviceClosed;
    bool dumpNexusMessagesToStdout;
 
-   bool doWaitForIoActivity();
+   bool waitUsingSelectForAllIo();
+   bool waitUsingThreadsAndConditionVar();   
    bool isItcFilterCommand(const std::string& str, uint32_t& filterMask);   
 
    // temp scaffolding before we have serial cable... dummy data

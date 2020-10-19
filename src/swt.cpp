@@ -18,6 +18,7 @@
 #endif
 #include <fcntl.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #ifdef WINDOWS
 typedef int socklen_t;
@@ -37,6 +38,8 @@ bool useSimulatedSerialData;
 
 
 // non-forward declarations
+
+
 
 
 
@@ -613,7 +616,8 @@ IoConnections::IoConnections(int port, int srcbits, int serialFd, bool dumpNexus
      dumpNexusMessagesToStdout(dumpNexusMessagesToStdout)
 {
    struct sockaddr_in address = {0}; 
-   int opt = 1; 
+   int opt = 1;
+
    
    // Creating socket file descriptor 
    if ((serverSocketFd = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
@@ -918,25 +922,21 @@ int IoConnections::simulatedSerialReadBytes(uint8_t *bytes, size_t numbytes)
    return offset;
 }
 
+
 bool IoConnections::waitForIoActivity()
 {
-   // for now, we'll poll, just because I'm not sure yet whether the serial port will be
-   // accessible via a descriptor that can be used in select().  When I find out, will come
-   // up with some solution that doesn't involve busy polling.
-   for (;;)
-   {
-      if (doWaitForIoActivity())
-      {
-	 return true;
-      }
-   }
+#if defined(LINUX) || defined(OSX)
+	return waitUsingSelectForAllIo();  // these platforms support mixing sockets and non-socket descriptors in select()
+#else
+	return waitUsingThreadsAndConditionVar();
+#endif	
 }
-   
-bool IoConnections::doWaitForIoActivity()
+
+
+bool IoConnections::waitUsingSelectForAllIo()
 {
    int nfds = 0;
-   // struct timeval timeout = {0}; // RESOLVE TO ACTUALLY WAIT RATHER THAN POLL!!
-   struct timeval *ptimeout = NULL;
+   struct timeval *ptimeout = NULL;  // no timeout, for now (no current reason to use a timeout)
    
    FD_ZERO(&readfds);
    FD_ZERO(&writefds);
@@ -963,6 +963,11 @@ bool IoConnections::doWaitForIoActivity()
    }
    int selectResult = select(nfds+1, &readfds, &writefds, &exceptfds, ptimeout);
    return selectResult > 0;
+}
+
+bool IoConnections::waitUsingThreadsAndConditionVar()
+{
+	return waitUsingSelectForAllIo();  // TODO - RESOLVE!  SWITCH THIS TO USING THREADS AND CONDITION VARIABLE!!
 }
 
 
