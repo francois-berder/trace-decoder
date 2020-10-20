@@ -491,16 +491,6 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 
-			uint32_t addr;
-			char *endptr;
-
-			addr = strtoul(argv[i],&endptr,0);
-
-			if (endptr[0] != 0) {
-				printf("Error: option -r requires a valid address\n");
-				return 1;
-			}
-
 			if (ef_name == nullptr) {
 				printf("option -r requires first specifing the elffile name (with the -e flag)\n");
 				return 1;
@@ -516,22 +506,35 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 
-			Instruction instInfo;
-			Source srcInfo;
+			while (i < argc) {
+				uint32_t addr;
+				char *endptr;
 
-			rc = of->sourceInfo(addr,instInfo,srcInfo);
-			if (rc != TraceDqr::DQERR_OK) {
-				printf("Error: cannot get sourceInfo for address 0x%08x\n");
+				addr = strtoul(argv[i],&endptr,0);
+				if (endptr[0] != 0) {
+					printf("Error: option -r requires a valid address\n");
+					return 1;
+				}
+
+				Instruction instInfo;
+				Source srcInfo;
+
+				rc = of->sourceInfo(addr,instInfo,srcInfo);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: cannot get sourceInfo for address 0x%08x\n");
+				}
+
+				//foodog
+
+				printf("For address 0x%08x\n",addr);
+				printf("File: %s:%d\n",srcInfo.sourceFile,srcInfo.sourceLineNum);
+				printf("Function: %s\n",srcInfo.sourceFunction);
+				printf("Src: %s\n",srcInfo.sourceLine);
+
+				printf("Label: %s+0x%08x\n",instInfo.addressLabel,instInfo.addressLabelOffset);
+
+				i += 1;
 			}
-
-			//foodog
-
-			printf("For address 0x%08x\n",addr);
-			printf("File: %s:%d\n",srcInfo.sourceFile,srcInfo.sourceLineNum);
-			printf("Function: %s\n",srcInfo.sourceFunction);
-			printf("Src: %s\n",srcInfo.sourceLine);
-
-			printf("Label: %s+0x%08x\n",instInfo.addressLabel,instInfo.addressLabelOffset);
 
 			return 0;
 		}

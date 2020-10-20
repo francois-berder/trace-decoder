@@ -7480,6 +7480,19 @@ Disassembler::Disassembler(bfd *abfd)
     		for (int i = 0; i < number_of_syms; i++) {
 				func_info[i].sym_flags = sorted_syms[i]->flags;
 
+				//foodog
+#ifdef foodog
+				if (sorted_syms[i]->flags & BSF_FUNCTION) {
+					printf("sym[%d]: 0x%08x %s BSF_FUNCTION\n",i,bfd_asymbol_value(sorted_syms[i]),sorted_syms[i]->name);
+				}
+				else if (sorted_syms[i]->flags & BSF_OBJECT) {
+					printf("sym[%d]: 0x%08x %s BSF_OBJECT\n",i,bfd_asymbol_value(sorted_syms[i]),sorted_syms[i]->name);
+				}
+				else {
+					printf("sym[%d]: 0x%08x %s OTHER\n",i,bfd_asymbol_value(sorted_syms[i]),sorted_syms[i]->name);
+				}
+#endif // foodog
+
 				if ((sorted_syms[i]->flags & (BSF_FUNCTION | BSF_OBJECT)) != 0) {
 
     				// set func_vma to the base+offset address, not just the offest
@@ -8846,6 +8859,7 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 		return 0;
 	}
 
+#ifdef foodog
 	// bfd_find_nearest_line_discriminator() does not always return the correct function name. Use the lookup_symbol_by_address()
 	// function and see if we get a hit. If we do, use that. Otherwise, use what bfd_find_nearest_line_discriminator() returned
 
@@ -8859,6 +8873,7 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 
 		function = sorted_syms[index]->name;
 	}
+#endif // foodog
 
 	*linenumber = line;
 
