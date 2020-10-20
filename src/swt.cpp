@@ -597,7 +597,9 @@ void *IoConnections::ThreadFuncSerial(void *arg)
       else if (numread > 0)
       {
 	 // append to buffered serial data
+#ifdef DEBUG_PRINT	 
 	 std::cout << "Appending " << numread << " bytes to lookahead" << std::endl;
+#endif	 
 	    
 	 io->pthreadModeData.serialLookahead.append((const char*)bytes, numread);
       }
@@ -646,13 +648,8 @@ void *IoConnections::ThreadFuncSelect(void *arg)
       {
 	 break;
       }
-      else
-      {
-	 // This implies a select has been requested
-	 // Clear the selected flag to consume it, then act on the request
-	 io->pthreadModeData.selectRequested = false;
-      }
-      
+
+      io->pthreadModeData.selectInProgress = true;
 
       pthread_result = pthread_mutex_unlock(&io->pthreadModeData.mutex);  // release mutex so that the select() call can block without holding the mutex
       mutexLocked = false;      
@@ -660,16 +657,21 @@ void *IoConnections::ThreadFuncSelect(void *arg)
       // call select here
       selectResult = io->callSelect(false, &readfds, &writefds, &exceptfds);  // omit serial port in select() call for this particular mode; it's being handled differently
 
+
+
       // update the thread synchronized state
       pthread_result = pthread_mutex_lock(&io->pthreadModeData.mutex);
       mutexLocked = true;
-	 
+
+      io->pthreadModeData.selectInProgress = false;      
+      io->pthreadModeData.selectRequested = false;      // clear the request, so the wait logic works correctly on the next iteration
+      
       // update the thread state with the select result and copies of the fd_sets
-      io->pthreadModeData.selectResultVolatile = selectResult;
-      io->pthreadModeData.selectResultReadSetVolatile = readfds; 
-      io->pthreadModeData.selectResultWriteSetVolatile = writefds;
-      io->pthreadModeData.selectResultExceptSetVolatile = exceptfds;
-      io->pthreadModeData.selectFulfilledVolatile = true;
+      io->pthreadModeData.selectResult = selectResult;
+      io->pthreadModeData.selectResultReadSet = readfds; 
+      io->pthreadModeData.selectResultWriteSet = writefds;
+      io->pthreadModeData.selectResultExceptSet = exceptfds;
+      io->pthreadModeData.selectFulfilled = true;
 
       // wake up any waiters
       pthread_result = pthread_cond_broadcast(&io->pthreadModeData.conditionSomethingChanged);  // so threads can see the exit request after wait() unblocks
@@ -847,17 +849,19 @@ bool IoConnections::isSocketReadable(int fd)
    {
       pthread_result = pthread_mutex_lock(&pthreadModeData.mutex);
 
-      result = pthreadModeData.selectFulfilledSnapshot && FD_ISSET(fd, &pthreadModeData.selectResultReadSetSnapshot);
+      result = pthreadModeData.selectFulfilled && FD_ISSET(fd, &pthreadModeData.selectResultReadSet);
       
       pthread_result = pthread_mutex_unlock(&pthreadModeData.mutex);
       (void)pthread_result;
    }
    else
    {
-      result = pthreadModeData.selectResultWaitSnapshot != -1 && FD_ISSET(fd, &readfds);
+      result = pthreadModeData.selectResult && FD_ISSET(fd, &readfds);
    }
 
+#ifdef DEBUG_PRINT	    
    std::cout << "isSocketReadable(" << fd << ") returned " << result << std::endl;
+#endif   
    return result;
 }
 
@@ -870,17 +874,19 @@ bool IoConnections::isSocketWritable(int fd)
    {
       pthread_result = pthread_mutex_lock(&pthreadModeData.mutex);
 
-      result = pthreadModeData.selectFulfilledSnapshot && FD_ISSET(fd, &pthreadModeData.selectResultWriteSetSnapshot);
+      result = pthreadModeData.selectFulfilled && FD_ISSET(fd, &pthreadModeData.selectResultWriteSet);
       
       pthread_result = pthread_mutex_unlock(&pthreadModeData.mutex);
       (void)pthread_result;
    }
    else
    {
-      result = pthreadModeData.selectResultWaitSnapshot != -1 && FD_ISSET(fd, &writefds);
+      result = pthreadModeData.selectResult != -1 && FD_ISSET(fd, &writefds);
    }
 
-   std::cout << "isSocketWritable(" << fd << ") returned " << result << std::endl;   
+#ifdef DEBUG_PRINT
+   std::cout << "isSocketWritable(" << fd << ") returned " << result << std::endl;
+#endif   
    return result;
 }
 
@@ -893,17 +899,19 @@ bool IoConnections::isSocketExcept(int fd)
    {
       pthread_result = pthread_mutex_lock(&pthreadModeData.mutex);
 
-      result = pthreadModeData.selectFulfilledSnapshot && FD_ISSET(fd, &pthreadModeData.selectResultExceptSetSnapshot);
+      result = pthreadModeData.selectFulfilled && FD_ISSET(fd, &pthreadModeData.selectResultExceptSet);
       
       pthread_result = pthread_mutex_unlock(&pthreadModeData.mutex);
       (void)pthread_result;
    }
    else
    {
-      result = pthreadModeData.selectResultWaitSnapshot != -1 && FD_ISSET(fd, &exceptfds);
+      result = pthreadModeData.selectResult != -1 && FD_ISSET(fd, &exceptfds);
    }
 
-   std::cout << "isSocketExcept(" << fd << ") returned " << result << std::endl;      
+#ifdef DEBUG_PRINT
+   std::cout << "isSocketExcept(" << fd << ") returned " << result << std::endl;
+#endif   
    return result;
 }
 
@@ -921,10 +929,12 @@ bool IoConnections::isSerialReadable()
    }
    else
    {
-      result = pthreadModeData.selectResultWaitSnapshot != -1 && FD_ISSET(serialFd, &readfds);
+      result = pthreadModeData.selectResult != -1 && FD_ISSET(serialFd, &readfds);
    }
 
+#ifdef DEBUG_PRINT   
    std::cout << "isSerialReadable() returned " << result << std::endl;
+#endif   
    return result;
 }
 
@@ -937,14 +947,18 @@ void IoConnections::serviceConnections()
       // check for new connection (see if server socket is readable)
       if (isSocketReadable(serverSocketFd))
       {
-	 std::cout << "Server socket is readable!" << std::endl;	 
+#ifdef DEBUG_PRINT	 
+	 std::cout << "Server socket is readable!" << std::endl;
+#endif	 
 	 // Accept the data packet from client and verification
 	 struct sockaddr_in clientAddr;
 	 socklen_t len = sizeof(clientAddr);	 
 	 int fd = accept(serverSocketFd, (struct sockaddr *)&clientAddr, &len);
 	 if (fd >= 0)
 	 {
+#ifdef DEBUG_PRINT	    
 	    std::cout << "accept() returned a new connection!" << std::endl;
+#endif	    
 	    IoConnection connection(fd);
 	    connections.push_back(std::move(connection));
 	    numClientsHighWater = std::max(numClientsHighWater, connections.size());
@@ -970,8 +984,8 @@ void IoConnections::serviceConnections()
 
 	    if (dumpNexusMessagesToStdout)
 	    {
-	       std::cout << "num bytes read: " << numSerialBytesRead << std::endl;
-	       std::cout << "raw bytes: ";
+	       std::cout << "num bytes read from serial device: " << numSerialBytesRead << std::endl;
+	       std::cout << "raw bytes from serial device: ";
 	       buf_dump(bytes, numSerialBytesRead*8);
 	    }
 
@@ -1150,19 +1164,27 @@ int IoConnections::serialReadBytes(uint8_t *bytes, size_t numbytes)
       int pthread_result;
       int numread = 0;
 
+#ifdef DEBUG_PRINT      
       std::cout << "waiting for mutex in serial read bytes" << std::endl;
+#endif      
       pthread_result = pthread_mutex_lock(&pthreadModeData.mutex);
+      
+#ifdef DEBUG_PRINT            
       std::cout << "got mutex serial read bytes" << std::endl;      
-
+#endif
       numread = std::min(pthreadModeData.serialLookahead.size(), numbytes);
       memcpy(bytes, pthreadModeData.serialLookahead.data(), numread);
 
       pthreadModeData.serialLookahead.erase(0, numread);
-      std::cout << "Erasing " << numread << " bytes from start of lookahead" << std::endl;      
+#ifdef DEBUG_PRINT      
+      std::cout << "Erasing " << numread << " bytes from start of lookahead" << std::endl;
+#endif      
 
       pthread_result = pthread_cond_broadcast(&pthreadModeData.conditionSomethingChanged); // in case other thread was waiting for our buffer to get drained; if not, then any waiters will check their predicate condition and wait again
 
-      std::cout << "releasing mutex in serial read bytes" << std::endl;      
+#ifdef DEBUG_PRINT            
+      std::cout << "releasing mutex in serial read bytes" << std::endl;
+#endif      
       pthread_result = pthread_mutex_unlock(&pthreadModeData.mutex);
       (void)pthread_result;
       
@@ -1218,7 +1240,9 @@ int IoConnections::simulatedSerialReadBytes(uint8_t *bytes, size_t numbytes)
 bool IoConnections::waitForIoActivity()
 {
    bool result = doWaitForIoActivity();  // was calling this in a loop, but no need
+#ifdef DEBUG_PRINT   
    std::cout << "waitForIoActivity returned " << result << std::endl;
+#endif   
    return result;
 }
 
@@ -1265,8 +1289,8 @@ int IoConnections::callSelect(bool includeSerialDevice, fd_set *readfds, fd_set 
       nfds = std::max(nfds, it->fd);
    }
    int selectResult = select(nfds+1, readfds, writefds, exceptfds, ptimeout);
+#ifdef DEBUG_PRINT   
    std::cout << "select() returned " << selectResult << std::endl;
-#if 1
    if (FD_ISSET(serverSocketFd, readfds))
    {
       std::cout << "server socket is readable" << std::endl;
@@ -1298,39 +1322,8 @@ int IoConnections::callSelect(bool includeSerialDevice, fd_set *readfds, fd_set 
 
 bool IoConnections::waitUsingSelectForAllIo()
 {
-#if OLD_CODE   
-   int nfds = 0;
-   struct timeval *ptimeout = NULL;  // no timeout, for now (no current reason to use a timeout)
-   
-   FD_ZERO(&readfds);
-   FD_ZERO(&writefds);
-   FD_ZERO(&exceptfds);
-
-   // always include server socket in read set; that's how we'll know when a new socket connection is being made
-   FD_SET(serverSocketFd, &readfds);
-   FD_SET(serverSocketFd, &exceptfds);
-   nfds = serverSocketFd;
-
-   // serial port device, which, in our particular case,  is readable only
-   if (serialFd != -1)
-   {
-      FD_SET(serialFd, &readfds);
-   }
-   
-   for (std::list<IoConnection>::iterator it = connections.begin(); it != connections.end(); it++)
-   {
-      // we'll add the client sockets to the read set, write set, and except set
-      FD_SET(it->fd, &readfds);
-      FD_SET(it->fd, &writefds);
-      FD_SET(it->fd, &exceptfds);            
-      nfds = std::max(nfds, it->fd);
-   }
-   pthreadModeData.selectResult = select(nfds+1, &readfds, &writefds, &exceptfds, ptimeout);
-   return pthreadModeData.selectResult > 0;
-#endif
-   
-   pthreadModeData.selectResultWaitSnapshot = callSelect(true, &readfds, &writefds, &exceptfds);
-   return pthreadModeData.selectResultWaitSnapshot > 0;   
+   pthreadModeData.selectResult = callSelect(true, &readfds, &writefds, &exceptfds);
+   return pthreadModeData.selectResult > 0;   
 }
 
 bool IoConnections::waitUsingThreadsAndConditionVar()
@@ -1339,48 +1332,29 @@ bool IoConnections::waitUsingThreadsAndConditionVar()
    
    pthread_result = pthread_mutex_lock(&pthreadModeData.mutex);
 
+#ifdef DEBUG_PRINT   
    std::cout << "in waitUsingThreadsAndConditionVar()" << std::endl;
+#endif   
 
    // invalidate stable copy of select result   
-   pthreadModeData.selectResultWaitSnapshot = -1;  
-   pthreadModeData.selectFulfilledSnapshot = false;
+   pthreadModeData.selectFulfilled = false;
+#ifdef DEBUG_PRINT      
    std::cout << "just set selectFulfilledSnapshot to false" << std::endl;
+#endif   
    
-   while (! (pthreadModeData.selectFulfilledVolatile || pthreadModeData.serialLookahead.size() > 0) )
+   while (! (pthreadModeData.selectFulfilled || pthreadModeData.serialLookahead.size() > 0) )
    {
-      if (!pthreadModeData.selectRequested)
+      if (!pthreadModeData.selectFulfilled && !pthreadModeData.selectRequested)
       {
+#ifdef DEBUG_PRINT
 	 std::cout << "setting selectRequested" << std::endl;
+#endif	 
 	 pthreadModeData.selectRequested = true;
 	 // Select thread might be waiting for this transition
 	 pthread_result = pthread_cond_broadcast(&pthreadModeData.conditionSomethingChanged);
       }
-      else
-      {
-	 std::cout << "selectRequested is already set; not setting it or notifying other threads" << std::endl;
-      }
       
       pthread_cond_wait(&pthreadModeData.conditionSomethingChanged, &pthreadModeData.mutex);
-   }
-
-   if (pthreadModeData.selectFulfilledVolatile)
-   {
-      // make a stable copy of the select result for reference in "is X readable?" calls, consuming the select result immediately available
-      pthreadModeData.selectResultWaitSnapshot = pthreadModeData.selectResultVolatile;
-      pthreadModeData.selectResultReadSetSnapshot = pthreadModeData.selectResultReadSetVolatile;
-      pthreadModeData.selectResultWriteSetSnapshot = pthreadModeData.selectResultWriteSetVolatile;
-      pthreadModeData.selectResultExceptSetSnapshot = pthreadModeData.selectResultExceptSetVolatile;            
-      std::cout << "Set selectResultWaitSnapshot to " << pthreadModeData.selectResultWaitSnapshot << std::endl;
-      pthreadModeData.selectFulfilledSnapshot = true;
-      pthreadModeData.selectFulfilledVolatile = false;  // acknowledge consumption of select result
-#if 0      
-      pthread_result = pthread_cond_broadcast(&pthreadModeData.conditionSomethingChanged);
-#endif      
-   }
-   else
-   {
-      // must have serial data, caller can check that and consume the data
-      std::cout << "Select thread hasn't returned from current iteration of select()" << std::endl;      
    }
 
    pthread_result = pthread_mutex_unlock(&pthreadModeData.mutex);
@@ -1471,7 +1445,7 @@ void IoConnections::queueMessageToClients(NexusDataAcquisitionMessage &msg)
 
 
 PthreadModeData::PthreadModeData()
-   : exitThreadRequested(false), selectRequested(false), selectFulfilledVolatile(false), selectResultVolatile(-1), selectResultWaitSnapshot(-1), selectFulfilledSnapshot(false)
+   : exitThreadRequested(false), selectRequested(false), selectInProgress(false), selectFulfilled(false), selectResult(-1) 
 {
    // TODO: initialize anything that needs initializing right now
 }

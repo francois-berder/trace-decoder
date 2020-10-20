@@ -170,18 +170,18 @@ struct IoConnection
 struct PthreadModeData
 {
    bool exitThreadRequested;
+   
    bool selectRequested;
-   bool selectFulfilledVolatile;
-   int selectResultVolatile;  // this can get updated by select thread at pretty much any time, along with the fd_set copies
-   fd_set selectResultReadSetVolatile;
-   fd_set selectResultWriteSetVolatile;
-   fd_set selectResultExceptSetVolatile; 
-   bool selectFulfilledSnapshot;
-   int selectResultWaitSnapshot;  // this is a snapshot of the selectResult taken at the time of the last WaitForIo call
-   fd_set selectResultReadSetSnapshot;
-   fd_set selectResultWriteSetSnapshot;
-   fd_set selectResultExceptSetSnapshot;
+
+   bool selectInProgress;   
+   bool selectFulfilled;
+   int selectResult;
+   fd_set selectResultReadSet;
+   fd_set selectResultWriteSet;
+   fd_set selectResultExceptSet;
+   
    std::string serialLookahead;
+   
    pthread_mutex_t mutex;
    pthread_t selectThread;   
    pthread_t serialThread;

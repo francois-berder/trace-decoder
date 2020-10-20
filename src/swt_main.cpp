@@ -5,6 +5,9 @@
 #if defined(LINUX) || defined(OSX)
 #include <termios.h>
 #endif
+#if defined(LINUX)
+#include <signal.h>
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -39,6 +42,11 @@ struct Args
 void usage(void);
 bool openSerialDevice(const std::string &dev, int &fd, uint32_t requestedBaud);
 
+void signal_null_handler(int signum){
+   // do nothing
+}
+
+
 // the main program
 int main(int argc, char *argv[])
 {
@@ -56,7 +64,12 @@ int main(int argc, char *argv[])
 	/* Winsock DLL.                                  */
 	   printf("WSAStartup failed with error: %d\n", err);
 	   return -1;
-   }   
+   }
+   
+#endif
+#ifdef LINUX
+   // default for SIGPIPE is to terminate program; we don't want that
+   signal(SIGPIPE, signal_null_handler);
 #endif   
    args.parse(argc, argv);
 
