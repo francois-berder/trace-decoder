@@ -195,7 +195,7 @@ class IoConnections
 {
    // manage all external IOs
 public:
-   IoConnections(int port, int srcbits, int serialFd, bool dumpNexusMessagesToStdout);
+   IoConnections(int port, int srcbits, int serialFd, bool dumpNexusMessagesToStdout, bool pthreadSynchronizationMode);
    int serialReadBytes(uint8_t *bytes, size_t numbytes);
    bool waitForIoActivity();
    bool hasClientCountDecreasedToZero();

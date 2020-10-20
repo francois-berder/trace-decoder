@@ -89,10 +89,17 @@ int main(int argc, char *argv[])
    NexusDataAcquisitionMessage msg;   
    NexusStream ns(args.srcbits);
    int serialFd;
+   bool pthreadSynchronizationMode;
+
+#ifdef WINDOWS
+   pthreadSynchronizationMode = true;  // This is necessary for correct operation
+#else
+   pthreadSynchronizationMode = false;   // Can be either true or false, but there's probably no reason for it to be true on Linux or Mac
+#endif   
 
    if (openSerialDevice(args.serialdev, serialFd, args.baud))
    {
-      IoConnections ioConnections(args.port, args.srcbits, serialFd, args.debug);
+      IoConnections ioConnections(args.port, args.srcbits, serialFd, args.debug, pthreadSynchronizationMode);
       
       while (! (args.autoexit && ioConnections.hasClientCountDecreasedToZero()) )
       {

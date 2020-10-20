@@ -725,9 +725,9 @@ int IoConnection::getQueueLength()
 
 // IoConnections (plural!) method definitions
 
-IoConnections::IoConnections(int port, int srcbits, int serialFd, bool dumpNexusMessagesToStdout)
+IoConnections::IoConnections(int port, int srcbits, int serialFd, bool dumpNexusMessagesToStdout, bool pthreadSynchronizationMode)
    : ns(srcbits), serialFd(serialFd), numClientsHighWater(0),
-     pthreadSynchronizationMode(true), // TODO: should ultimately make this false for Linux and OSX, true for Windows (but it's OK for it to be true on non-Windows during development)
+     pthreadSynchronizationMode(pthreadSynchronizationMode),  // this mode is only necessary for Windows; on POSIX-based OSes there's no reason to use this except for testing perhaps
      warnedAboutSerialDeviceClosed(false),
      dumpNexusMessagesToStdout(dumpNexusMessagesToStdout)
 {
