@@ -7452,20 +7452,12 @@ Disassembler::Disassembler(bfd *abfd)
 
     			section = symbol_table[i]->section;
 
-//    			printf("sym %d, section flags: %08x, name: %s, flags: %08x, value: %08x, base:%08x (%08x)\n",i,section->flags,symbol_table[i]->name,symbol_table[i]->flags,symbol_table[i]->value,section->vma,section->vma+symbol_table[i]->value);
-
-    			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags == BSF_GLOBAL))) {
+    			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))) {
     				symbol_table[i]->flags |= BSF_FUNCTION;
     			}
 
     			sorted_syms[i] = symbol_table[i];
     		}
-
-    		// could probably use C++ template sort here, but this works for now
-
-//    		for (int i = 0; i < number_of_syms; i++) {
-//    			printf("symbol[%d]:%s, addr:%08x, flags:%08x\n",i,sorted_syms[i]->name,bfd_asymbol_value(sorted_syms[i]),sorted_syms[i]->flags);
-//    		}
 
     		// note: qsort does not preserver order on equal items!
 
@@ -7479,19 +7471,6 @@ Disassembler::Disassembler(bfd *abfd)
 
     		for (int i = 0; i < number_of_syms; i++) {
 				func_info[i].sym_flags = sorted_syms[i]->flags;
-
-				//foodog
-#ifdef foodog
-				if (sorted_syms[i]->flags & BSF_FUNCTION) {
-					printf("sym[%d]: 0x%08x %s BSF_FUNCTION\n",i,bfd_asymbol_value(sorted_syms[i]),sorted_syms[i]->name);
-				}
-				else if (sorted_syms[i]->flags & BSF_OBJECT) {
-					printf("sym[%d]: 0x%08x %s BSF_OBJECT\n",i,bfd_asymbol_value(sorted_syms[i]),sorted_syms[i]->name);
-				}
-				else {
-					printf("sym[%d]: 0x%08x %s OTHER\n",i,bfd_asymbol_value(sorted_syms[i]),sorted_syms[i]->name);
-				}
-#endif // foodog
 
 				if ((sorted_syms[i]->flags & (BSF_FUNCTION | BSF_OBJECT)) != 0) {
 
@@ -7745,7 +7724,7 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 	//syms = sorted_syms;
 
 	for (i = 0; i < number_of_syms; i++) {
-		if ((func_info[i].sym_flags & (BSF_FUNCTION | BSF_OBJECT)) != 0) {
+		if ((func_info[i].sym_flags & flags) != 0) {
 
 			// note: func_vma already has the base+offset address in it
 
@@ -7756,7 +7735,7 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 //				printf("\n->vma:%08x size: %d, i=%d, name: %s\n",vma,func_info[i].func_size,i,sorted_syms[i]->name);
 
 				for (int j = i+1; j < number_of_syms; j++) {
-					if ((func_info[j].sym_flags & (BSF_FUNCTION | BSF_OBJECT)) != 0) {
+					if ((func_info[j].sym_flags & flags) != 0) {
 						if (func_info[i].func_vma == func_info[j].func_vma) {
 							i = j;
 						}
@@ -7817,7 +7796,7 @@ void Disassembler::overridePrintAddress(bfd_vma addr, struct disassemble_info *i
 	int offset;
 	int rc;
 
-	rc = lookup_symbol_by_address(addr,BSF_FUNCTION,&index,&offset);
+	rc = lookup_symbol_by_address(addr,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
 
 	if (rc != 0) {
 		// found symbol
@@ -7853,7 +7832,7 @@ void Disassembler::print_address(bfd_vma vma)
 	int offset;
 	int rc;
 
-	rc = lookup_symbol_by_address(vma,BSF_FUNCTION,&index,&offset);
+	rc = lookup_symbol_by_address(vma,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
 	if (rc != 0) {
 		// found symbol
 
@@ -7933,7 +7912,7 @@ void Disassembler::getAddressSyms(bfd_vma vma)
 	int offset;
 	int rc;
 
-	rc = lookup_symbol_by_address(vma,BSF_FUNCTION,&index,&offset);
+	rc = lookup_symbol_by_address(vma,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
 	if (rc == 0) {
 		// did not find symbol
 
@@ -7966,7 +7945,7 @@ void Disassembler::setInstructionAddress(bfd_vma vma)
 
 	lookupInstructionByAddress(vma,&instruction.instruction,&instruction.instSize);
 
-	rc = lookup_symbol_by_address(vma,BSF_FUNCTION,&index,&offset);
+	rc = lookup_symbol_by_address(vma,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
 	if (rc == 0) {
 		// did not find symbol
 
@@ -8859,21 +8838,20 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 		return 0;
 	}
 
-#ifdef foodog
-	// bfd_find_nearest_line_discriminator() does not always return the correct function name. Use the lookup_symbol_by_address()
-	// function and see if we get a hit. If we do, use that. Otherwise, use what bfd_find_nearest_line_discriminator() returned
+	// bfd_find_nearest_line_discriminator() does not always return the correct function name (or at least the one we want). Use
+	// the lookup_symbol_by_address() function and see if we get a hit. If we do, use that. Otherwise, use what
+	// bfd_find_nearest_line_discriminator() returned
 
 	int rc;
 	int index;
 	int offset;
 
-	rc = lookup_symbol_by_address(addr,BSF_FUNCTION,&index,&offset);
+	rc = lookup_symbol_by_address(addr,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
 	if (rc != 0) {
 		// found symbol
 
 		function = sorted_syms[index]->name;
 	}
-#endif // foodog
 
 	*linenumber = line;
 

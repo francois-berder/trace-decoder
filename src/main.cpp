@@ -524,8 +524,6 @@ int main(int argc, char *argv[])
 					printf("Error: cannot get sourceInfo for address 0x%08x\n");
 				}
 
-				//foodog
-
 				printf("For address 0x%08x\n",addr);
 				printf("File: %s:%d\n",srcInfo.sourceFile,srcInfo.sourceLineNum);
 				printf("Function: %s\n",srcInfo.sourceFunction);
