@@ -44,7 +44,7 @@
 
 //#define DO_TIMES	1
 
-#define DQR_MAXCORES	8
+#define DQR_MAXCORES	16
 
 extern const char * const DQR_VERSION;
 
@@ -641,6 +641,7 @@ public:
 	TraceDqr::DQErr getStatus() {return status;}
 	TraceDqr::DQErr sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo,Source &srcInfo);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
+	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
 private:
 	TraceDqr::DQErr        status;
@@ -648,6 +649,7 @@ private:
 	class ElfReader       *elfReader;
 	class Disassembler    *disassembler;
 };
+
 // class Trace: high level class that performs the raw trace data to dissasemble and decorated instruction trace
 
 #ifdef SWIG
@@ -661,7 +663,7 @@ private:
 
 class Trace {
 public:
-    Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
+    Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
     ~Trace();
     void cleanUp();
     static const char *version();
@@ -670,6 +672,8 @@ public:
 	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setCATraceFile(char *caf_name);
+
+	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
 	enum TraceFlags {
 		TF_INSTRUCTION = 0x01,
@@ -810,6 +814,7 @@ public:
 
 	void analyticsToText(char *dst,int dst_len,int detailLevel) {/*analytics.toText(dst,dst_len,detailLevel);*/ }
 //	std::string analyticsToString(int detailLevel) { /* return analytics.toString(detailLevel);*/ }
+	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
 private:
 	TraceDqr::DQErr status;

@@ -220,7 +220,7 @@ private:
 // class SliceFileParser: Class to parse binary or ascii nexus messages into a NexusMessage object
 class SliceFileParser {
 public:
-             SliceFileParser(char *filename, bool binary, int srcBits);
+             SliceFileParser(char *filename,int srcBits);
              ~SliceFileParser();
   TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
   TraceDqr::DQErr getFileOffset(int &size,int &offset);
@@ -233,7 +233,6 @@ private:
 
   // add other counts for each message type
 
-  bool          binary;
   int           srcbits;
   std::ifstream tf;
   int           tfSize;
@@ -245,7 +244,6 @@ private:
 
   TraceDqr::DQErr readBinaryMsg();
   TraceDqr::DQErr readNextByte(uint8_t *byte);
-  TraceDqr::DQErr readAscMsg();
   TraceDqr::DQErr parseVarField(uint64_t *val,int *width);
   TraceDqr::DQErr parseFixedField(int width, uint64_t *val);
   TraceDqr::DQErr parseDirectBranch(NexusMessage &nm,Analytics &analytics);
@@ -269,7 +267,7 @@ private:
 
 class Disassembler {
 public:
-	      Disassembler(bfd *abfd);
+	      Disassembler(bfd *abfd,bool labelsAreFunctionsls);
 	      ~Disassembler();
 	int   Disassemble(TraceDqr::ADDRESS addr);
 

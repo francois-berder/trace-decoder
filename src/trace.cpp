@@ -397,7 +397,7 @@ int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstT
 	return disassembler->decodeInstruction(instruction,getArchSize(),inst_size,inst_type,rs1,rd,immediate,is_branch);
 }
 
-Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
+Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
 {
   sfp          = nullptr;
   elfReader    = nullptr;
@@ -418,7 +418,7 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 
   analytics.setSrcBits(srcBits);
 
-  sfp = new (std::nothrow) SliceFileParser(tf_name,binaryFlag,srcbits);
+  sfp = new (std::nothrow) SliceFileParser(tf_name,srcbits);
 
   assert(sfp != nullptr);
 
@@ -460,7 +460,7 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
     bfd *abfd;
     abfd = elfReader->get_bfd();
 
-	disassembler = new (std::nothrow) Disassembler(abfd);
+	disassembler = new (std::nothrow) Disassembler(abfd,true);
 
 	assert(disassembler != nullptr);
 
@@ -726,6 +726,44 @@ TraceDqr::DQErr Trace::setTSSize(int size)
 	tsSize = size;
 
 	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Trace::setLabelMode(bool labelsAreFuncs)
+{
+	if (elfReader == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+
+	bfd *abfd;
+	abfd = elfReader->get_bfd();
+
+	if (disassembler != nullptr) {
+		delete disassembler;
+		disassembler = nullptr;
+	}
+
+	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
+
+	assert(disassembler != nullptr);
+
+	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		if (elfReader != nullptr) {
+			delete elfReader;
+			elfReader = nullptr;
+		}
+
+		delete disassembler;
+		disassembler = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	status = TraceDqr::DQERR_OK;
+
+	return status;
 }
 
 TraceDqr::TIMESTAMP Trace::adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs)

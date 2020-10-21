@@ -88,8 +88,10 @@ static void usage(char *name)
 	printf("-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'\n");
 	printf("-noaddrsep:   Do not add a separator for addresses greater than 32 bit between the upper bits and the lower 32 bits\n");
 	printf("              (default).\n");
-	printf("-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables\n");
+	printf("-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 16. Setting srcbits to 0 disables\n");
 	printf("              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.\n");
+	printf("-labels:      Treat labels as functions for source information and disassembly. On by default.\n");
+	printf("-nolables:    Do not use local labels as function names when returning source information or instruction location information.\n");
 	printf("-analytics:   Compute and display detail level 1 trace analytics.\n");
 	printf("-analytics=n: Specify the detail level for trace analytics display. N sets the level to either 0 (no analytics display)\n");
 	printf("              1 (sort system totals), or 2 (display analytics by core).\n");
@@ -156,7 +158,6 @@ static const char *stripPath(const char *prefix,const char *srcpath)
 
 int main(int argc, char *argv[])
 {
-	bool binary_flag = true;
 	char *tf_name = nullptr;
 	char *base_name = nullptr;
 	char *ef_name = nullptr;
@@ -187,6 +188,7 @@ int main(int argc, char *argv[])
 	TraceDqr::pathType pt = TraceDqr::PATH_TO_UNIX;
 	int archSize = 32;
 	int msgLevel = 2;
+	bool labelFlag = true;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -237,12 +239,6 @@ int main(int argc, char *argv[])
 			}
 
 			ca_name = argv[i];
-		}
-		else if (strcmp("-binary",argv[i]) == 0) {
-			binary_flag = true;
-		}
-		else if (strcmp("-text",argv[i]) == 0) {
-			binary_flag = false;
 		}
 		else if (strcmp("-start",argv[i]) == 0) {
 			i += 1;
@@ -506,6 +502,8 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 
+			of->setLabelMode(labelFlag);
+
 			while (i < argc) {
 				uint32_t addr;
 				char *endptr;
@@ -535,6 +533,12 @@ int main(int argc, char *argv[])
 			}
 
 			return 0;
+		}
+		else if (strcmp("-labels",argv[i]) == 0) {
+			labelFlag = true;
+		}
+		else if (strcmp("-nolabels",argv[i]) == 0) {
+			labelFlag = false;
 		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
@@ -593,9 +597,11 @@ int main(int argc, char *argv[])
 
 			return 1;
 		}
+
+		sim->setLabelMode(labelFlag);
 	}
 	else {
-		trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
+		trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
 		assert(trace != nullptr);
 
@@ -624,6 +630,8 @@ int main(int argc, char *argv[])
 		if (itcprint_flag) {
 			trace->setITCPrintOptions(4096,itcprint_channel);
 		}
+
+		trace->setLabelMode(labelFlag);
 	}
 
 	TraceDqr::DQErr ec;

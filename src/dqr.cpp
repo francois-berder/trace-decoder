@@ -35,7 +35,7 @@
 
 //#define DQR_MAXCORES	8
 
-const char * const DQR_VERSION = "0.9.4";
+const char * const DQR_VERSION = "0.9.41";
 
 // static C type helper functions
 
@@ -5192,7 +5192,7 @@ void Count::dumpCounts(int core)
 	printf("Count::dumpCounts(): core: %d, i_cnt: %d, history: 0x%08llx, histBit: %d, takenCount: %d, notTakenCount: %d\n",core,i_cnt[core],history[core],histBit[core],takenCount[core],notTakenCount[core]);
 }
 
-SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
+SliceFileParser::SliceFileParser(char *filename,int srcBits)
 {
 	assert(filename != nullptr);
 
@@ -5201,17 +5201,9 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 	msgSlices      = 0;
 	bitIndex       = 0;
 
-	this->binary = binary;
-
 	tfSize = 0;
 
-	if (binary) {
-		tf.open(filename, std::ios::in | std::ios::binary);
-	}
-	else {
-		tf.open(filename, std::ios::in);
-	}
-
+	tf.open(filename, std::ios::in | std::ios::binary);
 	if (!tf) {
 		printf("Error: SliceFileParder(): could not open file %s for input\n",filename);
 		status = TraceDqr::DQERR_OPEN;
@@ -7084,63 +7076,6 @@ TraceDqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readAscMsg()
-{
-	std::cout << "Error: SliceFileP{arser::readAscMsg(): not implemented" << std::endl;
-	status = TraceDqr::DQERR_ERR;
-
-	return TraceDqr::DQERR_ERR;
-
-	// strip off idle bytes
-
-	do {
-		if (readNextByte(&msg[0]) != TraceDqr::DQERR_OK) {
-			return status;
-		}
-	} while ((msg[0] & 0x3) == TraceDqr::MSEO_END);
-
-	// make sure this is start of nexus message
-
-	if ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) {
-		status = TraceDqr::DQERR_ERR;
-
-		std::cout << "Error: SliceFileParser::readAscMsg(): expected start of message; got" << std::hex << static_cast<uint8_t>(msg[0] & 0x3) << std::dec << std::endl;
-
-		return TraceDqr::DQERR_ERR;
-	}
-
-	// now get bytes
-
-	bool done = false;
-
-	for (int i = 1; !done; i++) {
-		if (i >= (int)(sizeof msg / sizeof msg[0])) {
-			tf.close();
-
-			std::cout << "Error: SliceFileParser::readAscMsg(): msg buffer overflow" << std::endl;
-
-			status = TraceDqr::DQERR_ERR;
-
-			return TraceDqr::DQERR_ERR;
-		}
-
-		if (readNextByte(&msg[i]) != TraceDqr::DQERR_OK) {
-			return status;
-		}
-
-		if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
-			done = true;
-			msgSlices = i+1;
-		}
-	}
-
-	eom = false;
-
-	bitIndex = 0;
-
-	return TraceDqr::DQERR_OK;
-}
-
 TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics)	// generator to read trace messages one at a time
 {
 	if (status != TraceDqr::DQERR_OK) {
@@ -7158,32 +7093,18 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 
 		// read from file, store in object, compute and fill out full fields, such as address and more later
 
-		if (binary) {
-			rc = readBinaryMsg();
-			if (rc != TraceDqr::DQERR_OK) {
+		rc = readBinaryMsg();
+		if (rc != TraceDqr::DQERR_OK) {
 
-				// all errors from readBinaryMsg() are non-recoverable.
+			// all errors from readBinaryMsg() are non-recoverable.
 
-				if (rc != TraceDqr::DQERR_EOF) {
-					std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
-				}
-
-				status = rc;
-
-				return status;
+			if (rc != TraceDqr::DQERR_EOF) {
+				std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
 			}
-		}
-		else {	// text trace messages
-			rc = readAscMsg();
-			if (rc != TraceDqr::DQERR_OK) {
-				if (rc != TraceDqr::DQERR_EOF) {
-					std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
-				}
 
-				status = rc;
+			status = rc;
 
-				return status;
-			}
+			return status;
 		}
 
 		nm.offset = msgOffset;
@@ -7325,7 +7246,7 @@ ObjFile::ObjFile(char *ef_name)
 	bfd *abfd;
 	abfd = elfReader->get_bfd();
 
-	disassembler = new (std::nothrow) Disassembler(abfd);
+	disassembler = new (std::nothrow) Disassembler(abfd,true);
 
 	assert(disassembler != nullptr);
 
@@ -7411,8 +7332,45 @@ TraceDqr::DQErr ObjFile::setPathType(TraceDqr::pathType pt)
 	return TraceDqr::DQERR_ERR;
 }
 
+TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
+{
+	if (elfReader == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
 
-Disassembler::Disassembler(bfd *abfd)
+	bfd *abfd;
+	abfd = elfReader->get_bfd();
+
+	if (disassembler != nullptr) {
+		delete disassembler;
+		disassembler = nullptr;
+	}
+
+	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
+
+	assert(disassembler != nullptr);
+
+	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		if (elfReader != nullptr) {
+			delete elfReader;
+			elfReader = nullptr;
+		}
+
+		delete disassembler;
+		disassembler = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	status = TraceDqr::DQERR_OK;
+
+	return status;
+}
+
+Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
 {
 	assert(abfd != nullptr);
 
@@ -7452,8 +7410,15 @@ Disassembler::Disassembler(bfd *abfd)
 
     			section = symbol_table[i]->section;
 
-    			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))) {
-    				symbol_table[i]->flags |= BSF_FUNCTION;
+    			if (labelsAreFunctions) {
+        			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))) {
+        				symbol_table[i]->flags |= BSF_FUNCTION;
+        			}
+    			}
+    			else {
+        			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL))) {
+        				symbol_table[i]->flags |= BSF_FUNCTION;
+        			}
     			}
 
     			sorted_syms[i] = symbol_table[i];
@@ -7703,6 +7668,9 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 
 	// find the function closest to the address. Address should either be start of function, or in body
 	// of function.
+
+//	lookup symbol by address needs to select between function names and locals+function names
+//	do we build two array and use the correct one?
 
 	if ( vma == 0) {
 		return 0;
@@ -9269,7 +9237,7 @@ Simulator::Simulator(char *f_name,char *e_name)
     bfd *abfd;
     abfd = elfReader->get_bfd();
 
-	disassembler = new (std::nothrow) Disassembler(abfd);
+	disassembler = new (std::nothrow) Disassembler(abfd,true);
 
 	assert(disassembler != nullptr);
 
@@ -9335,6 +9303,44 @@ void Simulator::cleanUp()
 		delete disassembler;
 		disassembler = nullptr;
 	}
+}
+
+TraceDqr::DQErr Simulator::setLabelMode(bool labelsAreFuncs)
+{
+	if (elfReader == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+
+	bfd *abfd;
+	abfd = elfReader->get_bfd();
+
+	if (disassembler != nullptr) {
+		delete disassembler;
+		disassembler = nullptr;
+	}
+
+	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
+
+	assert(disassembler != nullptr);
+
+	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		if (elfReader != nullptr) {
+			delete elfReader;
+			elfReader = nullptr;
+		}
+
+		delete disassembler;
+		disassembler = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	status = TraceDqr::DQERR_OK;
+
+	return status;
 }
 
 TraceDqr::DQErr Simulator::readFile(char *file)
