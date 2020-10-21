@@ -1284,7 +1284,11 @@ int IoConnections::callSelect(bool includeSerialDevice, fd_set *readfds, fd_set 
    {
       // we'll add the client sockets to the read set, write set, and except set
       FD_SET(it->fd, readfds);
-      FD_SET(it->fd, writefds);
+      // for the write set, if we only add sockets that we know we have data ready to send, that might reduce frequent early returns from select()
+      if (it->getQueueLength() > 0)
+      {
+	 FD_SET(it->fd, writefds);	 
+      }
       FD_SET(it->fd, exceptfds);            
       nfds = std::max(nfds, it->fd);
    }

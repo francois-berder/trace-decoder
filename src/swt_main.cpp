@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
+#include <unistd.h>
 
 
 struct Args
@@ -312,6 +313,10 @@ speed_t setDeviceBaud(int fd, speed_t baud)
    struct termios options;
    speed_t readback;
    int result;
+
+
+   // This is how minicom seems to successfully set up the device (and it works after that); we'll try to do the same
+   // ioctl(3, TCGETS, {c_iflags=0x1, c_oflags=0, c_cflags=0x1cb2, c_lflags=0, c_line=0, c_cc[VMIN]=1, c_cc[VTIME]=5, c_cc="\x03\x1c\x7f\x15\x04\x05\x01\x00\x11\x13\x1a\x00\x12\x0f\x17\x16\x00\x00\x00"}) = 0
    
    // attempt to set baud rate to requested, return the actual baud rate read back
    // from device after the attempt
@@ -320,6 +325,34 @@ speed_t setDeviceBaud(int fd, speed_t baud)
    {
       result = cfsetispeed(&options, baud);  // no need to set output speed because we're only using the input channel
    }
+   if (result == 0)
+   {
+      options.c_iflag &= ~(ICRNL | IXON);
+      options.c_iflag |= IGNBRK;
+
+      options.c_oflag &= ~(OPOST | ONLCR);
+
+      options.c_lflag &= ~ICANON;  // turning off ICANON seems to be critical; the others I'm just trying to match what works for minicom
+      options.c_lflag &= ~ISIG;  // not sure if this needs to be turned off, but minicom turns it off
+      options.c_lflag &= ~ECHO;  // not sure if this needs to be turned off, but minicom turns it off
+      options.c_lflag &= ~ECHOE;  // not sure if this needs to be turned off, but minicom turns it off
+      options.c_lflag &= ~ECHOK;  // not sure if this needs to be turned off, but minicom turns it off
+      options.c_lflag &= ~ECHONL;  // not sure if this needs to be turned off, but minicom turns it off
+      options.c_lflag &= ~NOFLSH;  // not sure if this needs to be turned off, but minicom turns it off
+      options.c_lflag &= ~TOSTOP;  // not sure if this needs to be turned off, but minicom turns it off
+
+      options.c_lflag &= ~ECHOCTL;  // not sure if this needs to be turned off, but minicom turns it off
+      options.c_lflag &= ~ECHOKE;  // not sure if this needs to be turned off, but minicom turns it off
+      options.c_lflag &= ~ECHOPRT;  // not sure if this needs to be turned off, but minicom turns it off
+      options.c_lflag &= ~IEXTEN;  // not sure if this needs to be turned off, but minicom turns it off                  
+      
+      options.c_cflag &= ~PARENB;
+      options.c_cflag &= ~CSTOPB;
+      options.c_cflag &= ~CSIZE;
+      options.c_cflag |= CS8;
+      options.c_cflag  |= (CLOCAL | CREAD);   
+   }
+
    if (result == 0)
    {
       result = tcsetattr(fd, TCSANOW, &options);
@@ -363,21 +396,13 @@ bool openSerialDevice(const std::string &dev, int &fd, uint32_t requestedBaud)
 {
    speed_t baud = nearestBaudRate(requestedBaud);
       
-   fd = open(dev.c_str(), O_RDONLY);
+   fd = open(dev.c_str(), O_RDONLY);   
 
    if (fd != -1)
    {
       setDeviceBaud(fd, baud);
    }
 
-#if 0  // on Windows, this call returns correct data with target in calibration mode, but also on Windows,
-   // when select() gets
-   // called, it never unblocks!  Need to continue investigating this!
-   // TEMP SCAFFOLDING
-   char tempbytes[1024];
-   volatile int temp = read(fd, tempbytes, sizeof(tempbytes));
-#endif   
-      
    return fd != -1;
 }
 
