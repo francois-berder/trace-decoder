@@ -170,12 +170,12 @@ struct IoConnection
 struct PthreadModeData
 {
    bool exitThreadRequested;
-   
-   bool selectRequested;
 
-   bool selectInProgress;   
-   bool selectFulfilled;
-   int selectResult;
+   // state used for synchronization between WaitForIo and helper threads (if pthread sync mode is on... e.g. for Windows)
+   bool selectRequestValid;  // WaitForIo sets this, select thread synchronizes on it
+   bool selectResponseValid; // select thread sets this, WaitForIo listens for it to get set (but doesn't always wait), WaitForIo clears it on next iteration
+   bool selectResponseAck; // WaitForIo sets this, select thread listens for this to become true before starting its next iteration
+   int selectResult;  // select thread sets this, along with the socket sets below, before setting selectResponseValid to true
    fd_set selectResultReadSet;
    fd_set selectResultWriteSet;
    fd_set selectResultExceptSet;
