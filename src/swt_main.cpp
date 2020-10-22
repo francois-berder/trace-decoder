@@ -14,6 +14,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef WINDOWS
+#include <windows.h>
+#endif
 
 struct Args
 {
@@ -380,15 +383,47 @@ speed_t setDeviceBaud(int fd, speed_t baud)
 #endif
 
 #ifdef WINDOWS
-// stubbed out
-typedef int speed_t;
+// for Windows let's just treat speed_t as the literal non-quantized uint-represented baud rate
+typedef uint32_t speed_t;
 speed_t nearestBaudRate(uint32_t baud)
 {
-	return 0;
+	// no quantization or translation, at all
+	return baud;
 }
 speed_t setDeviceBaud(int fd, speed_t baud)
 {
-	return 0;
+   DCB dcb;
+   BOOL result;
+   HANDLE h = (HANDLE)_get_osfhandle(fd);
+   // std::cout << "_get_osfhandle returned " << h << std::endl;      
+   result = GetCommState(h, &dcb);
+   if (result)
+   {
+      // std::cout << "GetCommState returned success" << std::endl;
+      char buf[256];
+      sprintf(buf, "baud=%d parity=N data=8 stop=1", baud);
+      result = BuildCommDCBA(buf, &dcb);
+   }
+   if (result)
+   {
+      // std::cout << "BuildCommDCBA returned success" << std::endl;      
+      result = SetCommState(h, &dcb);
+   }
+   if (result)
+   {
+      result = GetCommState(h, &dcb);
+   }
+   if (result)
+   {
+      // std::cout << "GetCommState returned success, baud rate readback is: " << dcb.BaudRate << std::endl;      
+      return dcb.BaudRate;
+   }
+   else
+   {
+      std::cerr << "There was an error trying to set the baud rate" << std::endl;
+      exit(-1);
+      return -1;
+   }
 }
 #endif
 
