@@ -685,9 +685,14 @@ void *IoConnections::ThreadFuncSelect(void *arg)
       CHECK_PTHREAD_RESULT();
 
       // wait for response to be acked
-      while (!io->pthreadModeData.selectResponseAck)
+      while (! (io->pthreadModeData.selectResponseAck || io->pthreadModeData.exitThreadRequested) )
       {
 	 pthread_cond_wait(&io->pthreadModeData.conditionSomethingChanged, &io->pthreadModeData.mutex);
+      }
+
+      if (io->pthreadModeData.exitThreadRequested)
+      {
+	 break;
       }
       
       pthread_result = pthread_mutex_unlock(&io->pthreadModeData.mutex);
@@ -889,24 +894,7 @@ bool IoConnections::isSocketWritable(int fd)
 {
    bool result;
 
-#if OLD_CODE
-   int pthread_result = -1;   
-   if (pthreadSynchronizationMode)
-   {
-      pthread_result = pthread_mutex_lock(&pthreadModeData.mutex);
-      CHECK_PTHREAD_RESULT();      
-
-      result = pthreadModeData.selectResponseValid && FD_ISSET(fd, &pthreadModeData.selectResultWriteSet);
-      
-      pthread_result = pthread_mutex_unlock(&pthreadModeData.mutex);
-      CHECK_PTHREAD_RESULT();
-   }
-   else
-   {
-      result = pthreadModeData.selectResult != -1 && FD_ISSET(fd, &writefds);
-   }
-#else
-      // immediate poll in this case      
+   // immediate poll, because we don't include writability checks in the main wait (because writability would cause main select to unblock constantly)
    fd_set writefds;
    int nfds;
    struct timeval zerotimeout = {0};
@@ -917,7 +905,6 @@ bool IoConnections::isSocketWritable(int fd)
    nfds = fd;
    selectResult = select(nfds+1, NULL, &writefds, NULL, &zerotimeout);
    result = (selectResult > 0 && FD_ISSET(fd, &writefds));
-#endif      
 
 #ifdef DEBUG_PRINT
    std::cout << "isSocketWritable(" << fd << ") returned " << result << std::endl;
@@ -1062,7 +1049,7 @@ void IoConnections::serviceConnections()
       }
 
       std::list<IoConnection>::iterator it;
-#if 0
+
       // Service all readable clients, in case they have disconnected
       it = connections.begin();
       while (it != connections.end())
@@ -1081,6 +1068,7 @@ void IoConnections::serviceConnections()
 	    }
 	    else
 	    {
+#if OLD_CODE_KEEPING_HERE_IN_CASE_PROTOCOL_IS_CHANGED_TO_BE_BIDIRECTIONAL_SOMEHOW
 	       // append chunk of input to per-connection input buffer,
 	       // run through the per-connection buffer to find newline-terminated segments,
 	       // act on them or reject them.  If there are more than, say, 256 characters without
@@ -1108,7 +1096,10 @@ void IoConnections::serviceConnections()
 		  // std::cout << "Clearing bytes received" << std::endl;
 		  it->bytesReceived.clear();
 	       }
-	       
+#else
+	       // Nothing really to do except drop whatever was read; we don't act on incoming socket traffic;
+	       //  we really just want to detect EOF so we can react to the dropped connection
+#endif	       
 	       it++;
 	    }
 	 }
@@ -1118,7 +1109,7 @@ void IoConnections::serviceConnections()
 	    it++;
 	 }
       }
-#endif      
+
 
       it = connections.begin();      
       // For all connections that we have data to send, and if socket is writable, then try to send all remaning queued bytes but be prepared that socket may only accept some of the bytes
@@ -1327,35 +1318,29 @@ int IoConnections::callSelect(bool includeSerialDevice, fd_set *readfds, fd_set 
    FD_SET(serverSocketFd, exceptfds);
    nfds = serverSocketFd;
 
+   // std::cout << "added server socket to sets" << std::endl;
+
    // serial port device, which, in our particular case,  is readable only
    if (includeSerialDevice && serialFd != -1)
    {
       FD_SET(serialFd, readfds);
-      nfds = std::max(nfds, serialFd);      
+      nfds = std::max(nfds, serialFd);
+      // std::cout << "added serial descriptor to sets" << std::endl;      
    }
 
-#if OLD_CODE // the code used to handle some incoming protocol elements, but was redesigned.
-   // Also, we'll  find out when client has disconnected when a send() call returns an error status.
+   // We do want to find out in a timely manner when a connection has dropped, so let's add any client
+   //  sockets to the read set and except set (not the write set, that would cause select() to almost always
+   //  return immediately even if there isn't any data to move, which defeats the purpose of the efficient wait).
    for (std::list<IoConnection>::iterator it = connections.begin(); it != connections.end(); it++)
    {
-      // we'll add the client sockets to the read set, write set, and except set
       FD_SET(it->fd, readfds);
-      // for the write set, if we only add sockets that we know we have data ready to send, that might reduce frequent early returns from select()
-      if (it->getQueueLength() > 0)
-      {
-	 FD_SET(it->fd, writefds);	 
-      }
-      else
-      {
-	 std::cout << "Omitting socket from write set" << std::endl;
-      }
       FD_SET(it->fd, exceptfds);            
       nfds = std::max(nfds, it->fd);
    }
-#endif
+
    
    int selectResult = select(nfds+1, readfds, NULL, exceptfds, ptimeout);  // trying not unblocking for writable
-   
+
 #ifdef DEBUG_PRINT   
    std::cout << "select() returned " << selectResult << std::endl;
    if (FD_ISSET(serverSocketFd, readfds))
