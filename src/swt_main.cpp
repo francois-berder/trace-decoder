@@ -26,6 +26,7 @@ struct Args
    bool help;
    bool autoexit;
    bool debug;
+   bool pthread;
    uint32_t baud;
 
    Args()
@@ -37,6 +38,11 @@ struct Args
       autoexit = false; // overridden by -autoexit option
       debug = false; // overridden by -debug option
       baud = 115200; // overridden by -baud option
+#ifdef WINDOWS
+      pthread = true;  // shouldn't be overridden
+#else
+      pthread = false;  // Can be overridden by -pthread, however this would generally only be valuable for internal maintenance
+#endif      
    }
 
    void parse(int argc, char *argv[]);
@@ -93,17 +99,10 @@ int main(int argc, char *argv[])
    NexusDataAcquisitionMessage msg;   
    NexusStream ns(args.srcbits);
    int serialFd;
-   bool pthreadSynchronizationMode;
-
-#ifdef WINDOWS
-   pthreadSynchronizationMode = true;  // This is necessary for correct operation
-#else
-   pthreadSynchronizationMode = false;   // Can be either true or false, but there's probably no reason for it to be true on Linux or Mac
-#endif   
 
    if (openSerialDevice(args.serialdev, serialFd, args.baud))
    {
-      IoConnections ioConnections(args.port, args.srcbits, serialFd, args.debug, pthreadSynchronizationMode);
+      IoConnections ioConnections(args.port, args.srcbits, serialFd, args.debug, args.pthread);
       
       while (! (args.autoexit && ioConnections.hasClientCountDecreasedToZero()) )
       {
@@ -171,6 +170,13 @@ void Args::parse(int argc, char *argv[])
 	 else if (strcmp(argv[i], "-baud") == 0)
 	 {
 	    state = IN_BAUD;
+	 }
+	 else if (strcmp(argv[i], "-pthread") == 0)
+	 {
+#ifndef WINDOWS	    
+	    pthread = true;
+#endif
+	    // no change in state
 	 }
 	 else if (strcmp(argv[i], "-d") == 0)
 	 {
@@ -451,6 +457,7 @@ void usage(void)
 	printf("-srcbits n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables\n");
 	printf("              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.\n");
 	printf("-autoexit:    This option causes the process to exit when the number of socket clients decreases from non-zero to zero\n");
-	printf("-d:           Dump to standard output (for troubleshooting) the raw serial byte stream and reconstructed messages.\n");	
+	printf("-d:           Dump to standard output (for troubleshooting) the raw serial byte stream and reconstructed messages.\n");
+	printf("-pthread:     This is for developer use (and for troubleshooting).  Not recommended unless you have a specific reason for using it.\n");
 	printf("-h:           Display this usage information.\n");
 }
