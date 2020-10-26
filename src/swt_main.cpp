@@ -231,30 +231,57 @@ speed_t nearestBaudRate(uint32_t baud)
       retval = B115200;
    else if (baud <= 230400)
       retval = B230400;
+#ifdef B460800
    else if (baud <= 460800)
       retval = B460800;
+#endif
+#ifdef B500000   
    else if (baud <= 500000)
       retval = B500000;
+#endif
+#ifdef B576000
    else if (baud <= 576000)
       retval = B576000;
+#endif
+#ifdef B921600   
    else if (baud <= 921600)
       retval = B921600;
+#endif
+#ifdef B1000000   
    else if (baud <= 1000000)
       retval = B1000000;
+#endif
+#ifdef B1152000   
    else if (baud <= 1152000)
       retval = B1152000;
+#endif
+#ifdef B1500000   
    else if (baud <= 1500000)
       retval = B1500000;
+#endif
+#ifdef B2000000   
    else if (baud <= 2000000)
       retval = B2000000;
+#endif
+#ifdef B2500000      
    else if (baud <= 2500000)
       retval = B2500000;
+#endif
+#ifdef B3000000   
    else if (baud <= 3000000)
       retval = B3000000;
+#endif
+#ifdef B3500000   
    else if (baud <= 3500000)
       retval = B3500000;
+#endif
+#ifdef B4000000   
    else
       retval = B4000000;
+#else
+   else
+      retval = B115200;
+#endif   
    
    return retval;
 }
@@ -288,30 +315,54 @@ uint32_t speedToInteger(speed_t speed)
 	 return 115200;
       case B230400:
 	 return 230400;
+#ifdef B460800	 
       case B460800:
 	 return 460800;
+#endif
+#ifdef B500000	 
       case B500000:
 	 return 500000;
+#endif
+#ifdef B576000	 
       case B576000:
 	 return 576000;
+#endif
+#ifdef B921600	 
       case B921600:
 	 return 921600;
+#endif
+#ifdef B1000000	 
       case B1000000:
 	 return 1000000;
+#endif
+#ifdef B1152000	 
       case B1152000:
 	 return 1152000;
+#endif
+#ifdef B1500000	 
       case B1500000:
 	 return 1500000;
+#endif
+#ifdef B2000000	 
       case B2000000:
 	 return 2000000;
+#endif
+#ifdef B2500000	 
       case B2500000:
 	 return 2500000;
+#endif
+#ifdef B3000000	 
       case B3000000:
 	 return 3000000;
+#endif
+#ifdef B3500000	 
       case B3500000:
 	 return 3500000;
+#endif
+#ifdef B4000000	 
       case B4000000:
 	 return 4000000;
+#endif	 
       default:
 	 return -1;
    }
