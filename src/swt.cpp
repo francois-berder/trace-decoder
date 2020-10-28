@@ -74,8 +74,24 @@ bool SwtTestMessageStream::nextByte(uint8_t & ch)
 
 // Utility routines
 
+void bytes_dump(uint8_t *buf, int numbits)
+{
+   // simple byte wise dump, from lower to higher addresses
+   // not the same as bytes_dump; this one is a little endian view rather than a byte wise view
+   char temp[50];
+   int numbytes = (numbits+7)/8;
+   for (int i = 0; i < numbytes; i++)
+   {
+      sprintf(temp, "%02X", (int)buf[i]);
+      std::cout << temp;
+   }
+   std::cout << std::endl;
+   
+}
+
 void buf_dump(uint8_t *buf, int numbits)
 {
+   // not the same as bytes_dump; this one is a little endian view rather than a byte wise view
    int numbytes = (numbits+7)/8;
    std::cout << std::hex;
    for (int i = numbytes-1; i >= 0; i--)
@@ -1012,7 +1028,7 @@ void IoConnections::serviceConnections()
 	    {
 	       std::cout << "num bytes read from serial device: " << numSerialBytesRead << std::endl;
 	       std::cout << "raw bytes from serial device: ";
-	       buf_dump(bytes, numSerialBytesRead*8);
+	       bytes_dump(bytes, numSerialBytesRead*8);
 	    }
 
 	    if (numSerialBytesRead < 0)
