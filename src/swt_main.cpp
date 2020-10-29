@@ -387,6 +387,13 @@ speed_t setDeviceBaud(int fd, speed_t baud)
    }
    if (result == 0)
    {
+      // We're only using the input channel, but on MacOS, failing to specify both
+      // input and output speed (identically) seems to result in an invalid
+      // argument error from the subsequent tcsetattr() call.        
+      result = cfsetospeed(&options, baud);
+   }
+   if (result == 0)
+   {
       options.c_iflag &= ~(ICRNL | IXON);
       options.c_iflag |= IGNBRK;
 
@@ -425,6 +432,7 @@ speed_t setDeviceBaud(int fd, speed_t baud)
    {
       readback = cfgetispeed(&options);
       result = (readback == baud ? 0 : -1);
+      // std::cerr << "baud rate readback is " << readback << std::endl;      
    }
    
    if (result == 0)
