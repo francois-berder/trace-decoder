@@ -18,6 +18,9 @@
 #include <windows.h>
 #endif
 
+#define USE_CLOSE_AND_REOPEN_HACK 1  // This is an interim workaround to avoid an issue with bogus all-zero data emerging from
+// a PL2303 based adapter on the initial open() but not on subsequent open()/close() calls.
+
 struct Args
 {
    std::string serialdev;
@@ -368,7 +371,7 @@ uint32_t speedToInteger(speed_t speed)
    }
 }
 
-speed_t setDeviceBaud(int fd, speed_t baud)
+speed_t initSerialDevice(int fd, speed_t baud)
 {
    struct termios options;
    speed_t readback;
@@ -426,6 +429,10 @@ speed_t setDeviceBaud(int fd, speed_t baud)
    }
    if (result == 0)
    {
+      result = tcflush(fd, TCIOFLUSH);
+   }
+   if (result == 0)
+   {
       result = tcgetattr(fd, &options);
    }
    if (result == 0)
@@ -455,7 +462,7 @@ speed_t nearestBaudRate(uint32_t baud)
 	// no quantization or translation, at all
 	return baud;
 }
-speed_t setDeviceBaud(int fd, speed_t baud)
+speed_t initSerialDevice(int fd, speed_t baud)
 {
    DCB dcb;
    BOOL result;
@@ -500,8 +507,26 @@ bool openSerialDevice(const std::string &dev, int &fd, uint32_t requestedBaud)
 
    if (fd != -1)
    {
-      setDeviceBaud(fd, baud);
+      initSerialDevice(fd, baud);
    }
+
+#if defined(LINUX) && defined(USE_CLOSE_AND_REOPEN_HACK)
+   // This is a total hack that seems to mask an issue on a PL2303-based adapter that on the first "open" after
+   //  connecting it to USB, read() calls come back as all zeroes.  But on subsequent runs of the program, good data
+   //  emerges instead.  Comparing tcgetattr() outputs in both cases, the termios settings are identical, so it's unclear
+   //  what the root cause is, or why closing and reopening is a workaround.  If we ever find a root cause, and fix it, then
+   //  this hack should be removed.
+   if (fd != -1)
+   {
+      // close, reopen, re-init
+      close(fd);
+      fd = open(dev.c_str(), O_RDONLY);   
+      if (fd != -1)
+      {
+	 initSerialDevice(fd, baud);
+      }
+   }
+#endif   
 
    return fd != -1;
 }
