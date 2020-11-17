@@ -180,6 +180,10 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
     	return;
     }
   }
+  else {
+	  elfReader = nullptr;
+	  disassembler = nullptr;
+  }
 
   for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++ ) {
 	lastFaddr[i] = 0;
@@ -218,6 +222,9 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 
   if (numAddrBits != 0 ) {
 	  instructionInfo.addrSize = numAddrBits;
+  }
+  else if (elfReader == nullptr) {
+	  instructionInfo.addrSize = 0;
   }
   else {
 	  instructionInfo.addrSize = elfReader->getBitsPerAddress();
@@ -396,6 +403,24 @@ TraceDqr::TIMESTAMP Trace::adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TI
 TraceDqr::DQErr Trace::getTraceFileOffset(int &size,int &offset)
 {
 	return sfp->getFileOffset(size,offset);
+}
+
+int Trace::getITCPrintMask()
+{
+	if (itcPrint == nullptr) {
+		return 0;
+	}
+
+	return itcPrint->getITCPrintMask();
+}
+
+int Trace::getITCFlushMask()
+{
+	if (itcPrint == nullptr) {
+		return 0;
+	}
+
+	return itcPrint->getITCFlushMask();
 }
 
 TraceDqr::ADDRESS Trace::computeAddress()

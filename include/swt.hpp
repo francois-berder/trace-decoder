@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #elif defined(WINDOWS)
 #include <winsock2.h>
+typedef int socketlen_t;
 #endif
 
 // A neutral abstraction of a stream of bytes

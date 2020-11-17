@@ -489,10 +489,13 @@ int main(int argc, char *argv[])
 	}
 
 	if ((sf_name == nullptr) && (tf_name == nullptr) && (base_name == nullptr)) {
-		printf("Error: must specify either simulator file, trace file, or base name\n");
+		printf("Error: must specify either simulator file, trace file, trace server, or base name\n");
 		usage(argv[0]);
 		return 1;
 	}
+
+	Trace *trace = nullptr;
+	Simulator *sim = nullptr;
 
 	if (base_name != nullptr) {
 		tf_name = &buff[buff_index];
@@ -505,9 +508,6 @@ int main(int argc, char *argv[])
 		strcat(ef_name,".elf");
 		buff_index += strlen(ef_name) + 1;
 	}
-
-	Trace *trace = nullptr;
-	Simulator *sim = nullptr;
 
 	// might want to include some path info!
 
@@ -524,7 +524,6 @@ int main(int argc, char *argv[])
 		if (sim->getStatus() != TraceDqr::DQERR_OK) {
 			delete sim;
 			sim = nullptr;
-
 			printf("Error: new Simulator(%s,%d) failed\n",sf_name,archSize);
 
 			return 1;
@@ -750,55 +749,59 @@ int main(int argc, char *argv[])
 				firstPrint = false;
 			}
 
-			if ((trace != nullptr) && (trace_flag || itcprint_flag) && (msgInfo != nullptr)) {
+			if ((trace != nullptr) && trace_flag & (msgInfo != nullptr)) {
 				// got the goods! Get to it!
-
-				core_mask |= 1 << msgInfo->coreId;
 
 				msgInfo->messageToText(dst,sizeof dst,msgLevel);
 
-				if (trace_flag) {
-					if (firstPrint == false) {
-						printf("\n");
-					}
-
-					if (srcbits > 0) {
-						printf("[%d] ",msgInfo->coreId);
-					}
-
-					printf("Trace: %s",dst);
-
+				if (firstPrint == false) {
 					printf("\n");
-
-					firstPrint = false;
 				}
 
-				if (itcprint_flag) {
-					std::string s;
-					bool haveStr;
+				if (srcbits > 0) {
+					printf("[%d] ",msgInfo->coreId);
+				}
 
-					s = trace->getITCPrintStr(msgInfo->coreId,haveStr,startTime,endTime);
-					while (haveStr != false) {
-						if (firstPrint == false) {
-							printf("\n");
+				printf("Trace: %s",dst);
+
+				printf("\n");
+
+				firstPrint = false;
+			}
+
+			if ((trace != nullptr) && itcprint_flag){
+				std::string s;
+				bool haveStr;
+
+				core_mask = trace->getITCPrintMask();
+
+				for (int core = 0; core_mask != 0; core++) {
+					if (core_mask & 1) {
+						s = trace->getITCPrintStr(core,haveStr,startTime,endTime);
+						while (haveStr != false) {
+							if (firstPrint == false) {
+								printf("\n");
+							}
+
+							if (srcbits > 0) {
+								printf("[%d] ",core);
+							}
+
+							std::cout << "ITC Print: ";
+
+							if ((startTime != 0) || (endTime != 0)) {
+								std::cout << "Msg Tics: <" << startTime << "-" << endTime << "> ";
+							}
+
+							std::cout << s;
+
+							firstPrint = false;
+
+							s = trace->getITCPrintStr(core,haveStr,startTime,endTime);
 						}
-
-						if (srcbits > 0) {
-							printf("[%d] ",msgInfo->coreId);
-						}
-
-						std::cout << "ITC Print: ";
-
-						if ((startTime != 0) || (endTime != 0)) {
-							std::cout << "Msg Tics: <" << startTime << "-" << endTime << "> ";
-						}
-
-						std::cout << s;
-
-						firstPrint = false;
-
-						s = trace->getITCPrintStr(msgInfo->coreId,haveStr,startTime,endTime);
 					}
+
+					core_mask >>= 1;
 				}
 			}
 		}
@@ -812,9 +815,11 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if ((trace != nullptr) && itcprint_flag) {
-		std::string s = "";
+	if ((trace != nullptr) && itcprint_flag){
+		std::string s;
 		bool haveStr;
+
+		core_mask = trace->getITCFlushMask();
 
 		for (int core = 0; core_mask != 0; core++) {
 			if (core_mask & 1) {
@@ -841,6 +846,7 @@ int main(int argc, char *argv[])
 					s = trace->flushITCPrintStr(core,haveStr,startTime,endTime);
 				}
 			}
+
 			core_mask >>= 1;
 		}
 	}
