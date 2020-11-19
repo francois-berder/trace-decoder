@@ -21,6 +21,7 @@ set xto_control_offset     0x54
 set wp_control_offset      0x58
 set itc_traceenable_offset 0x60
 set itc_trigenable_offset  0x64
+set pib_control_offset     0xf00
 
 set ca_control_offset   0x00
 set ca_impl_offset      0x04
@@ -880,6 +881,66 @@ proc getMaxBTM {core} {
     set t [expr $t >> 16]
 
     return $t
+}
+
+proc setPibMode {core mode} {
+    global traceBaseAddrArray
+    global pib_control_offset
+
+    switch $mode {
+		"off"               { set intmode 0 }
+		"swt_manchester"    { set intmode 4 }
+		"swt_uart"          { set intmode 5 }
+		"tref_plus_1_tdata" { set intmode 8 }
+		"tref_plus_1_tdata" { set intmode 9 }
+		"tref_plus_1_tdata" { set intmode 10 }
+		"tref_plus_1_tdata" { set intmode 11 }				
+		default             { set intmode 0 }
+    }
+
+    set t [word [expr $traceBaseAddrArray($core) + $pib_control_offset]]
+    set t [expr $t & ~0x000000F0]
+    set t [expr $t | ($intmode << 4)]
+    mww [expr $traceBaseAddrArray($core) + $pib_control_offset] $t
+}
+
+proc getPibMode {core} {
+    global traceBaseAddrArray
+    global pib_control_offset
+
+    set t [word [expr $traceBaseAddrArray($core) + $pib_control_offset]]
+    set t [expr ($t >> 4) & 0xF]
+
+    switch $t {
+		0       { return "off" }
+		4       { return "swt_manchester"  }
+		5       { return "swt_uart" }
+		8       { return "tref_plus_1_tdata" }
+		9       { return "tref_plus_2_tdata" }
+		10      { return "tref_plus_4_tdata" }
+		11      { return "tref_plus_8_tdata" }		
+		default { return "reserved" }
+    }
+}
+
+proc getPibDivider {core} {
+    global traceBaseAddrArray
+    global pib_control_offset
+
+    set t [word [expr $traceBaseAddrArray($core) + $pib_control_offset]]
+    set t [expr ($t >> 16) & 0x1FFF]
+
+    return $t
+}
+
+proc setPibDivider {core val} {
+    global traceBaseAddrArray
+    global pib_control_offset
+
+    set t [word [expr $traceBaseAddrArray($core) + $pib_control_offset]]
+    set t [expr $t & ~0x1FFF0000]    
+    set t [expr $t | ((($val & 0x1FFF)) << 16)]
+    mww [expr $traceBaseAddrArray($core) + $pib_control_offset] $t
 }
 
 # helper functions used during debugging ot script
