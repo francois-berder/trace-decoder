@@ -200,6 +200,8 @@ public:
 	bool flushITCPrintMsg(uint8_t core, char *dst, int dstLen, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime);
 	bool getITCPrintStr(uint8_t core, std::string &s, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime);
 	bool flushITCPrintStr(uint8_t core, std::string &s, TraceDqr::TIMESTAMP &starTime, TraceDqr::TIMESTAMP &endTime);
+	int  getITCPrintMask();
+	int  getITCFlushMask();
 
 private:
 	int  roomInITCPrintQ(uint8_t core);
@@ -236,13 +238,19 @@ private:
   int           srcbits;
   std::ifstream tf;
   int           tfSize;
+  int			SWTsock;
   int           bitIndex;
   int           msgSlices;
   uint32_t      msgOffset;
   uint8_t       msg[64];
   bool          eom = false;
 
+  int           bufferInIndex;
+  int           bufferOutIndex;
+  uint8_t       sockBuffer[2048];
+
   TraceDqr::DQErr readBinaryMsg();
+  TraceDqr::DQErr bufferSWT();
   TraceDqr::DQErr readNextByte(uint8_t *byte);
   TraceDqr::DQErr parseVarField(uint64_t *val,int *width);
   TraceDqr::DQErr parseFixedField(int width, uint64_t *val);

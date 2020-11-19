@@ -498,6 +498,10 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
     	return;
     }
   }
+  else {
+	  elfReader = nullptr;
+	  disassembler = nullptr;
+  }
 
   for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++ ) {
 	lastFaddr[i] = 0;
@@ -544,6 +548,9 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 
   if (numAddrBits != 0 ) {
 	  instructionInfo.addrSize = numAddrBits;
+  }
+  else if (elfReader == nullptr) {
+	  instructionInfo.addrSize = 0;
   }
   else {
 	  instructionInfo.addrSize = elfReader->getBitsPerAddress();
@@ -788,6 +795,24 @@ TraceDqr::TIMESTAMP Trace::adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TI
 TraceDqr::DQErr Trace::getTraceFileOffset(int &size,int &offset)
 {
 	return sfp->getFileOffset(size,offset);
+}
+
+int Trace::getITCPrintMask()
+{
+	if (itcPrint == nullptr) {
+		return 0;
+	}
+
+	return itcPrint->getITCPrintMask();
+}
+
+int Trace::getITCFlushMask()
+{
+	if (itcPrint == nullptr) {
+		return 0;
+	}
+
+	return itcPrint->getITCFlushMask();
 }
 
 TraceDqr::ADDRESS Trace::computeAddress()
@@ -1556,6 +1581,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 //		pc = faddr;
 		// don't reset call/return stack for this message - not a normal sync!
 		break;
+
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
 	case TraceDqr::TCODE_DATA_WRITE:
@@ -1653,6 +1679,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	assert(sfp != nullptr);
 
 	TraceDqr::DQErr rc;
+	TraceDqr::ADDRESS addr;
 	int crFlag;
 	TraceDqr::BranchFlags brFlags;
 	int numConsumed;
@@ -2007,7 +2034,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 						state[currentCore] = TRACE_STATE_ERROR;
 
-						printf("Error: cannot start at trace message %d because no preceding sync\n",startMessageNum);
+						printf("Error: cannot start at trace message %d because no preceeding sync\n",startMessageNum);
 
 						status = TraceDqr::DQERR_ERR;
 
@@ -2703,8 +2730,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// Should always be able to process instruction at addr and compute next addr when we get here.
 			// After processing next addr, if there are no more counts, retire trace message and get another
 
-			TraceDqr::ADDRESS addr;
-
 			addr = currentAddress[currentCore];
 
 			uint32_t inst;
@@ -2850,7 +2875,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					(*instInfo)->timestamp = lastTime[currentCore];
 				}
 			}
-
 
 //			lastCycle[currentCore] = cycles;
 

@@ -1,62 +1,12 @@
-/* Copyright 2019 SiFive, Inc */
+/* Copyright 2020 SiFive, Inc */
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
-#include <metal/machine/platform.h>
-
-#ifndef METAL_SIFIVE_TRACE_0_BASE_ADDRESS
-#error METAL_SIFIVE_TRACE_0_BASE_ADDRESS is not defined.  Does this target have trace?
-#endif
-#define baseAddress METAL_SIFIVE_TRACE_0_BASE_ADDRESS
 
 #include "itc_utils.h"
-
-// Register Offsets
-
-#define Offset_teControl		0x0000
-#define Offset_teImpl			0x0004
-#define	Offset_teSinkBase		0x0010
-#define Offset_teSinkBaseHigh	0x0014
-#define Offset_teSinkLimit		0x0018
-#define Offset_teSinkWP			0x001c
-#define Offset_teSinkRP			0x0020
-#define	Offset_teSinkData		0x0024
-#define	Offset_tsControl		0x0040
-#define Offset_tsLower			0x0044
-#define Offset_tsUpper			0x0048
-#define Offset_xtiControl		0x0050
-#define	Offset_xtoControl		0x0054
-#define	Offset_wpControl		0x0058
-#define Offset_itcTraceEnable	0x0060
-#define	Offset_itcTrigEnable	0x0064
-#define	Offset_itcStimulus		0x0080
-#define	Offset_atbSink			0x0e00
-#define Offset_pibSink			0x0f00
-
-// Register Address and types
-
-#define teControl		((uint32_t*)(baseAddress+Offset_teControl))
-#define teImpl			((uint32_t*)(baseAddress+Offset_teImpl))
-#define	teSinkBase		((uint32_t*)(baseAddress+Offset_teSinkBase))
-#define teSinkBaseHigh	((uint32_t*)(baseAddress+Offset_teSinkBaseHigh))
-#define teSinkLimit		((uint32_t*)(baseAddress+Offset_teSinkLimit))
-#define teSinkWP		((uint32_t*)(baseAddress+Offset_teSinkWP))
-#define teSinkRP		((uint32_t*)(baseAddress+Offset_teSinkRP))
-#define	teSinkData		((uint32_t*)(baseAddress+Offset_teSinkData))
-#define	tsControl		((uint32_t*)(baseAddress+Offset_tsControl))
-#define tsLower			((uint32_t*)(baseAddress+Offset_tsLower))
-#define tsUpper			((uint32_t*)(baseAddress+Offset_tsUpper))
-#define xtiControl		((uint32_t*)(baseAddress+Offset_xtiCtonrol))
-#define	xtoControl		((uint32_t*)(baseAddress+Offset_xtoCtonrol))
-#define	wpControl		((uint32_t*)(baseAddress+Offset_wpControl))
-#define itcTraceEnable	((uint32_t*)(baseAddress+Offset_itcTraceEnable))
-#define	itcTrigEnable	((uint32_t*)(baseAddress+Offset_itcTrigEnable))
-#define	itcStimulus		((uint32_t*)(baseAddress+Offset_itcStimulus))
-#define	atbSink			((uint32_t*)(baseAddress+Offset_atbSink))
-#define pibSink			((uint32_t*)(baseAddress+Offset_pibSink))
 
 /*
  * Default to channel 0.
@@ -86,8 +36,6 @@ int itc_disable(int channel)
 	return 0;
 }
 
-
-
 static inline void _disable_inst_trace()
 {
 	_trace_config = *teControl;
@@ -101,9 +49,152 @@ static inline void _restore_inst_trace()
 	int tmp = *teControl;
 }
 
+void resetTraceAll()
+{
+	   // put everything in reset
+
+	   *teControl = 0;
+	   *tsControl = 0;
+	   *xtiControl = 0;
+	   *pcControl = 0;
+	   *pibControl = 0;
+
+	   // everything out of reset, tracing halted
+
+	   *teControl = TE_ACTIVE;
+	   *tsControl = TS_ACTIVE;
+	   *pibControl = PIB_ACTIVE;
+
+	   // clear some itc stuff
+
+	   *itcTrigEnable = 0;
+	   *itcTraceEnable = 0;
+//	   *itcTraceEnable = 0x00000001;
+}
+
+void enableTeTrace()
+{
+	*teControl |= TE_TRACING;
+}
+
+void disableTeTrace()
+{
+	*teControl &= ~TE_ENABLE;
+}
+
+void enablePib()
+{
+	*pibControl |= PIB_ENABLE;
+}
+
+void disablePib()
+{
+	*pibControl |= ~PIB_ENABLE;
+}
+
+void enableTs()
+{
+	*tsControl |= TS_ENABLE;
+}
+
+void disableTs()
+{
+	*tsControl |= TS_ENABLE;
+}
+
+void setItcChannels(uint32_t channel_mask)
+{
+	*itcTraceEnable = channel_mask;
+}
+
+void setTeControl(uint32_t instruction,uint32_t instrumentation,bool stall,bool src,uint32_t sink)
+{
+	uint32_t mask;
+
+	*teControl = TE_ACTIVE;
+
+	mask = sink | instrumentation | instruction | TE_ENABLE | TE_ACTIVE;
+
+	if (stall == true) {
+		mask |= TE_STALL;
+	}
+
+	if (src == true) {
+		mask |= TE_STOPONWRAP;
+	}
+
+	*teControl = mask;
+}
+
+uint32_t getTeControl()
+{
+	return *teControl;
+}
+
+void setTsControl(bool count_runs,bool debug,bool add_to_ITC,bool add_to_ownership)
+{
+	uint32_t mask;
+
+	*tsControl = TS_ACTIVE;
+
+	mask = TS_ACTIVE;
+
+	if (count_runs != false) {
+		mask |= TS_COUNT;
+	}
+
+	if (debug != false) {
+		mask |= TS_DEBUG;
+	}
+
+	if (add_to_ITC != false) {
+		mask |= TS_INSTRUMENTATION;
+	}
+
+	if (add_to_ownership != false) {
+		mask |= TS_OWNERSHIP;
+	}
+
+	*tsControl = mask;
+}
+
+uint32_t getTsControl()
+{
+	return *tsControl;
+}
+
+void setPibControl(uint16_t divisor,uint8_t mode,bool refCounter,bool refCalibrate)
+{
+	uint32_t mask;
+
+	*pibControl = PIB_ACTIVE; // make sure pibEnable is 0
+
+	mask = (divisor << 16) | mode | PIB_ACTIVE;
+
+	if (refCounter == true) {
+		mask |= PIB_REFCENTER;
+	}
+
+	if (refCalibrate == true) {
+		mask |= PIB_REFCALIBRATE;
+	}
+
+	*pibControl = mask;
+}
+
+uint32_t getPibControl()
+{
+	return *pibControl;
+}
+
+uint32_t getTeImpl()
+{
+	return *teImpl;
+}
+
 static inline void _itc_print_write_uint32(uint32_t data)
 {
-	uint32_t *stimulus = &itcStimulus[itc_print_channel];
+	volatile uint32_t *stimulus = &itcStimulus[itc_print_channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -112,7 +203,7 @@ static inline void _itc_print_write_uint32(uint32_t data)
 
 static inline void _itc_print_write_uint8(uint8_t data)
 {
-	uint32_t *stimulus = &itcStimulus[itc_print_channel];
+	volatile uint32_t *stimulus = &itcStimulus[itc_print_channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -122,7 +213,7 @@ static inline void _itc_print_write_uint8(uint8_t data)
 
 static inline void _itc_print_write_uint16(uint16_t data)
 {
-	uint32_t *stimulus = &itcStimulus[itc_print_channel];
+	volatile uint32_t *stimulus = &itcStimulus[itc_print_channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -238,7 +329,7 @@ int itc_printf(const char *f, ... )
 
 inline void itc_write_uint32(int channel, uint32_t data)
 {
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -247,7 +338,7 @@ inline void itc_write_uint32(int channel, uint32_t data)
 
 inline void itc_write_uint8(int channel, uint8_t data)
 {
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -257,7 +348,7 @@ inline void itc_write_uint8(int channel, uint8_t data)
 
 inline void itc_write_uint16(int channel, uint16_t data)
 {
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 

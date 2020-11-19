@@ -19,9 +19,9 @@ CFLAGS += -DDECODER_VERSION=\"$(TRACE_DECODER_VERSION)\" -O0 -g3 -Wall -Wformat=
 SWIGCFLAGS += -DDECODER_VERSION=\"$(TRACE_DECODER_VERSION)\" -O0 -g3 -Wall -Wformat=0
 
 # All Target
-all: $(EXECUTABLE) $(SWIGLIB)
-debug: $(EXECUTABLE) $(SWIGLIB)
-Debug: $(EXECUTABLE) $(SWIGLIB)
+all: $(EXECUTABLE) $(SWIGLIB) $(SWTEXECUTABLE)
+debug: $(EXECUTABLE) $(SWIGLIB) $(SWTEXECUTABLE)
+Debug: $(EXECUTABLE) $(SWIGLIB) $(SWTEXECUTABLE)
 
 # Tool invocations
 
@@ -37,6 +37,13 @@ $(SWIGLIB): $(SWIGLIBOBJS)
 	@echo 'Invoking: GCC C++ Linker'
 	$(CROSSPREFIX)g++ -shared $(PICLIBFLAGS) -L$(LIBPATH) $(SWIGLIBOBJS) $(LIBS) -o $(SWIGLIB)
 	@echo 'Finished building swig library: $@'
+	@echo ' '
+
+$(SWTEXECUTABLE): $(SWTOBJS)
+	@echo 'Building target: $@'
+	@echo 'Invoking: GCC C++ Linker'
+	$(CROSSPREFIX)g++ -L$(LIBPATH) $(LNFLAGS) -o $(SWTEXECUTABLE) $(SWTOBJS) $(SWTLIBS)
+	@echo 'Finished building target: $@'
 	@echo ' '
 
 $(SWIGOBJ): $(SWIGCPP)
@@ -57,7 +64,7 @@ $(SWIGCPP): $(INCLUDES) $(SWIGINCLUDES)
 
 # Other Targets
 clean:
-	-$(RM) *.d $(OBJS) $(EXECUTABLE) $(SWIGCPP) $(SWIGOBJ) $(SWIGLIB) com/sifive/trace/*.java com/sifive/trace/*.class TraceDecoder.jar
+	-$(RM) *.d $(OBJS) $(EXECUTABLE) $(SWIGCPP) $(SWIGOBJ) $(SWIGLIB) $(SWTEXECUTABLE) $(SWTOBJS) com/sifive/trace/*.java com/sifive/trace/*.class TraceDecoder.jar
 	-@echo ' '
 
 install:

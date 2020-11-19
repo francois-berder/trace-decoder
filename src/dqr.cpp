@@ -30,32 +30,17 @@
 #include <cstdint>
 #include <cassert>
 
+#include <unistd.h>
+#include <fcntl.h>
+
 #include "dqr.hpp"
 #include "trace.hpp"
-
-//#define DQR_MAXCORES	8
+#include "swt.hpp"
 
 // DECODER_VERSION is passed in from the Makefile, from version.mk in the root.
 const char *const DQR_VERSION = DECODER_VERSION;
 
 // static C type helper functions
-
-static int atoh(char a)
-{
-	if (a >= '0' && a <= '9') {
-		return a-'0';
-	}
-
-	if (a >= 'a' && a <= 'f') {
-		return a-'a'+10;
-	}
-
-	if (a >= 'A' && a <= 'F') {
-		return a-'A'+10;
-	}
-
-	return -1;
-}
 
 static void override_print_address(bfd_vma addr, struct disassemble_info *info)
 {
@@ -563,96 +548,6 @@ const char *Source::stripPath(const char *path)
 
 std::string Source::sourceFileToString(std::string path)
 {
-	// foodog
-
-	if (sourceFile != nullptr) {
-		// check for garbage in path/file name
-
-		const char *sf = stripPath(path.c_str());
-		if (sf == nullptr) {
-			printf("Error: sourceFileToString(): stripPath() returned nullptr\n");
-		}
-		else {
-			for (int i = 0; sf[i] != 0; i++) {
-				switch (sf[i]) {
-				case 'a':
-				case 'b':
-				case 'c':
-				case 'd':
-				case 'e':
-				case 'f':
-				case 'g':
-				case 'h':
-				case 'i':
-				case 'j':
-				case 'k':
-				case 'l':
-				case 'm':
-				case 'n':
-				case 'o':
-				case 'p':
-				case 'q':
-				case 'r':
-				case 's':
-				case 't':
-				case 'u':
-				case 'v':
-				case 'w':
-				case 'x':
-				case 'y':
-				case 'z':
-				case 'A':
-				case 'B':
-				case 'C':
-				case 'D':
-				case 'E':
-				case 'F':
-				case 'G':
-				case 'H':
-				case 'I':
-				case 'J':
-				case 'K':
-				case 'L':
-				case 'M':
-				case 'N':
-				case 'O':
-				case 'P':
-				case 'Q':
-				case 'R':
-				case 'S':
-				case 'T':
-				case 'U':
-				case 'V':
-				case 'W':
-				case 'X':
-				case 'Y':
-				case 'Z':
-				case '0':
-				case '1':
-				case '2':
-				case '3':
-				case '4':
-				case '5':
-				case '6':
-				case '7':
-				case '8':
-				case '9':
-				case '/':
-				case '\\':
-				case '.':
-				case '_':
-				case '-':
-				case '+':
-				case ':':
-					break;
-				default:
-					printf("Error: source::srouceFileToSTring(): File name '%s' contains bogus char (0x%02x) in position %d!\n",sf,sf[i],i);
-					break;
-				}
-			}
-		}
-	}
-
 	if (sourceFile != nullptr) {
 
 		const char *sf = stripPath(path.c_str());
@@ -1328,7 +1223,7 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
     if ((tlp == nullptr) || tlp->terminated == true) {
 		// see if there is one on the free list before making a new one
 
-		if(freeList != nullptr) {
+    	if (freeList != nullptr) {
 			workingtlp = freeList;
 			freeList = workingtlp->next;
 
@@ -1400,9 +1295,41 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 		}
 	}
 
+	// returning true means it was an itc print msg and has been processed
+	// false means it was not, and should be handled normally
+
 	pbuff[core][pbi[core]] = 0; // make sure always null terminated. This may be a temporary null termination
 
 	return true;
+}
+
+int ITCPrint::getITCPrintMask()
+{
+	int mask = 0;
+
+	for (int core = 0; core < DQR_MAXCORES; core++) {
+		if (numMsgs[core] != 0) {
+			mask |= 1 << core;
+		}
+	}
+
+	return mask;
+}
+
+int ITCPrint::getITCFlushMask()
+{
+	int mask = 0;
+
+	for (int core = 0; core < DQR_MAXCORES; core++) {
+		if (numMsgs[core] > 0) {
+			mask |= 1 << core;
+		}
+		else if (pbo[core] != pbi[core]) {
+			mask |= 1 << core;
+		}
+	}
+
+	return mask;
 }
 
 void ITCPrint::haveITCPrintData(int numMsgs[], bool havePrintData[])
@@ -3443,7 +3370,6 @@ NexusMessage::NexusMessage()
 	timestamp      = 0;
 	currentAddress = 0;
 	time = 0;
-
 	offset = 0;
 	for (int i = 0; (size_t)i < sizeof rawData/sizeof rawData[0]; i++) {
 		rawData[i] = 0xff;
@@ -5203,33 +5129,134 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 	bitIndex       = 0;
 
 	tfSize = 0;
+	bufferInIndex = 0;
+	bufferOutIndex = 0;
 
-	tf.open(filename, std::ios::in | std::ios::binary);
-	if (!tf) {
-		printf("Error: SliceFileParder(): could not open file %s for input\n",filename);
-		status = TraceDqr::DQERR_OPEN;
+	int i;
+	for (i = 0; (filename[i] != 0) && (filename[i] != ':'); i++) { /* empty */ }
+
+	if (filename[i] == ':') {
+		// have a server:port address
+
+		int rc;
+		char *sn = nullptr;
+		int port = 0;
+
+		sn = new char[i];
+		strncpy(sn,filename,i);
+		sn[i] = 0;
+
+		port = atoi(&filename[i+1]);
+
+		// create socket
+
+#ifdef WINDOWS
+		WORD wVersionRequested;
+		WSADATA wsaData;
+
+		wVersionRequested = MAKEWORD(2,2);
+		rc = WSAStartup(wVersionRequested,&wsaData);
+		if (rc != 0) {
+			printf("WSAStart() failed with error %d\n",rc);
+			delete sn;
+			sn = nullptr;
+			status = TraceDqr::DQERR_ERR;
+			return;
+		}
+#endif // WINDOWS
+
+		SWTsock = socket(AF_INET,SOCK_STREAM,0);
+		if (SWTsock < 0) {
+			printf("Error: SliceFileParser::SliceFileParser(): socket() failed\n");
+			delete sn;
+			sn = nullptr;
+			status = TraceDqr::DQERR_ERR;
+			return;
+		}
+
+		struct sockaddr_in serv_addr;
+		struct hostent *server;
+
+		server = gethostbyname(sn);
+
+		delete sn;
+		sn = nullptr;
+
+		memset((char*)&serv_addr,0,sizeof(serv_addr));
+		serv_addr.sin_family = AF_INET;
+		serv_addr.sin_port = htons(port);
+		memcpy((char*)&serv_addr.sin_addr.s_addr,(char*)server->h_addr,server->h_length);
+
+		rc = connect(SWTsock,(struct sockaddr*)&serv_addr,sizeof(serv_addr));
+		if (rc < 0) {
+			printf("Error: SliceFileParser::SliceFileParser(): connect() failed: %d\n",rc);
+
+#ifdef WINDOWS
+			closesocket(SWTsock);
+#else  // WINDOWS
+			close (SWTsock);
+#endif // WINDOWS
+
+			SWTsock = 0;
+
+			delete server;
+			server = nullptr;
+
+			status = TraceDqr::DQERR_ERR;
+
+			return;
+		}
+
+		// put socket in non-blocking mode
+#ifdef WINDOWS
+		unsigned long ul = 1;
+		rc = ioctlsocket(SWTsock,FIONBIO,&ul);
+		if (rc != NO_ERROR) {
+			printf("SliceFileParser::SliceFileParser(): Failed to put socket in non-blocking mode\n");
+			status = TraceDqr::DQERR_ERR;
+			return;
+		}
+#else  // WINDOWS
+		int mode;
+		mode = fcntl(SWTsock,F_GETFL);
+		rc = fcntl(SWTsock,mode | O_NONBLOCK);
+#endif // WINDOWS
+
+		tfSize = 0;
 	}
 	else {
-		status = TraceDqr::DQERR_OK;
+        	tf.open(filename, std::ios::in | std::ios::binary);
+		if (!tf) {
+			printf("Error: SliceFileParder(): could not open file %s for input\n",filename);
+			status = TraceDqr::DQERR_OPEN;
+		}
+
+		tf.seekg (0, tf.end);
+		tfSize = tf.tellg();
+		tf.seekg (0, tf.beg);
+
+		msgOffset = 0;
+
+		SWTsock = 0;
 	}
 
-	tf.seekg (0, tf.end);
-	tfSize = tf.tellg();
-	tf.seekg (0, tf.beg);
-
-	msgOffset = 0;
-
-#if	0
-	// read entire slice file, create multiple quese base on src field
-
-	readAllTraceMsgs();
-#endif
+	status = TraceDqr::DQERR_OK;
 }
 
 SliceFileParser::~SliceFileParser()
 {
 	if (tf.is_open()) {
 		tf.close();
+	}
+
+	if (SWTsock > 0) {
+#ifdef WINDOWS
+			closesocket(SWTsock);
+#else  // WINDOWS
+			close(SWTsock);
+#endif // WINDOWS
+
+		SWTsock = 0;
 	}
 }
 
@@ -6919,28 +6946,105 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr SliceFileParser::bufferSWT()
+{
+	int br;
+
+//	if (bufferInIndex != bufferOutIndex) {
+//		return TraceDqr::DQERR_OK;
+//	}
+
+	// compute room in buffer for read
+	if (bufferInIndex == bufferOutIndex) {
+		// buffer is empty
+		br = recv(SWTsock,(char*)sockBuffer,sizeof sockBuffer - 1,0);
+		if ( br > 0) {
+			bufferInIndex = br;
+			bufferOutIndex = 0;
+		}
+	}
+	else if (bufferInIndex < (bufferOutIndex-1)) {
+		// empty bytes is (bufferOutIndex - bufferInIndex) - 1
+		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,(bufferOutIndex - bufferInIndex) - 1,0);
+		if (br > 0) {
+			bufferInIndex += br;
+		}
+	}
+	else if (bufferInIndex > bufferOutIndex){
+		// empty bytes is bufferInIndex to end of buffer + bufferOutIndex - 1
+		// first read to end of buffer
+		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,sizeof sockBuffer - bufferInIndex,0);
+		if (br > 0) {
+			if ((size_t)br == sizeof sockBuffer - bufferInIndex) {
+				bufferInIndex = 0;
+				br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bufferOutIndex - 1,0);
+				if (br > 0) {
+					bufferInIndex = br ;
+				}
+			}
+			else {
+				bufferInIndex += br; ;
+			}
+		}
+	}
+
+	#ifdef WINDOWS
+	if ((br == -1) && (WSAGetLastError() != WSAEWOULDBLOCK)) {
+		printf("Error: bufferSWT(): read socket failed\n");
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+#else  // WINDOWS
+	if ((br == -1) && ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+		printf("Error: bufferSWT(): read socket failed\n");
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+#endif // WINDOWS
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 {
 	// start by stripping off end of message or end of var bytes. These would be here in the case
 	// of a wrapped buffer, or some kind of corruption
 
 	do {
-		tf.read((char*)&msg[0],sizeof msg[0]);
-		if (!tf) {
-			if (tf.eof()) {
-				status = TraceDqr::DQERR_EOF;
+		if (SWTsock != 0) {
+			// need a buffer to read from.
+
+			do {
+				status = bufferSWT();
+			} while ((bufferInIndex == bufferOutIndex) && (status == TraceDqr::DQERR_OK));
+
+			if (status != TraceDqr::DQERR_OK) {
+				return status;
 			}
-			else {
-				status = TraceDqr::DQERR_ERR;
 
-				std::cout << "Error reading trace file\n";
+			msg[0] = sockBuffer[bufferOutIndex];
+			bufferOutIndex += 1;
+			if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
+				bufferOutIndex = 0;
 			}
-
-			tf.close();
-
-			return status;
 		}
+		else {
+			tf.read((char*)&msg[0],sizeof msg[0]);
+			if (!tf) {
+				if (tf.eof()) {
+					status = TraceDqr::DQERR_EOF;
+				}
+				else {
+					status = TraceDqr::DQERR_ERR;
 
+					std::cout << "Error reading trace file\n";
+				}
+
+				tf.close();
+
+				return status;
+			}
+		}
 
 		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff)) {
 			printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
@@ -6953,8 +7057,18 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 
 	for (int i = 1; !done; i++) {
 		if (i >= (int)(sizeof msg / sizeof msg[0])) {
+			if (SWTsock > 0) {
+#ifdef WINDOWS
+				closesocket(SWTsock);
+#else  // WINDOWS
+				close(SWTsock);
+#endif // WINDOWS
 
-			tf.close();
+				SWTsock = 0;
+			}
+			else {
+				tf.close();
+			}
 
 			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
 
@@ -6963,20 +7077,37 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 			return TraceDqr::DQERR_ERR;
 		}
 
-		tf.read((char*)&msg[i],sizeof msg[0]);
-		if (!tf) {
-			if (tf.eof()) {
-				status = TraceDqr::DQERR_EOF;
-			}
-			else {
-				status = TraceDqr::DQERR_ERR;
+		if (SWTsock > 0) {
+			do {
+				status = bufferSWT();
+			} while ((bufferInIndex == bufferOutIndex) && (status == TraceDqr::DQERR_OK));
 
-				std::cout << "Error reading trace file\n";
+			if (status != TraceDqr::DQERR_OK) {
+				return status;
 			}
 
-			tf.close();
+			msg[i] = sockBuffer[bufferOutIndex];
+			bufferOutIndex += 1;
+			if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
+				bufferOutIndex = 0;
+			}
+		}
+		else {
+			tf.read((char*)&msg[i],sizeof msg[0]);
+			if (!tf) {
+				if (tf.eof()) {
+					status = TraceDqr::DQERR_EOF;
+				}
+				else {
+					status = TraceDqr::DQERR_ERR;
 
-			return status;
+					std::cout << "Error reading trace file\n";
+				}
+
+				tf.close();
+
+				return status;
+			}
 		}
 
 		if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
@@ -6987,92 +7118,6 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 
 	eom = false;
 	bitIndex = 0;
-
-	return TraceDqr::DQERR_OK;
-}
-
-TraceDqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
-{
-	char c;
-
-	// strip white space, comments, cr, and lf
-
-	enum {
-		STRIPPING_WHITESPACE,
-		STRIPPING_COMMENT,
-		STRIPPING_DONE
-	} ss = STRIPPING_WHITESPACE;
-
-	do {
-		tf.read((char*)&c,sizeof c);
-		if (!tf) {
-			tf.close();
-
-			status = TraceDqr::DQERR_EOF;
-
-			return TraceDqr::DQERR_EOF;
-		}
-
-		switch (ss) {
-		case STRIPPING_WHITESPACE:
-			switch (c) {
-			case '#':
-				ss = STRIPPING_COMMENT;
-				break;
-			case '\n':
-			case '\r':
-			case ' ':
-			case '\t':
-				break;
-			default:
-				ss = STRIPPING_DONE;
-			}
-			break;
-		case STRIPPING_COMMENT:
-			switch (c) {
-			case '\n':
-				ss = STRIPPING_WHITESPACE;
-				break;
-			}
-			break;
-		default:
-			break;
-		}
-	} while (ss != STRIPPING_DONE);
-
-	// now try to get two hex digits
-
-	tf.read((char*)&c,sizeof c);
-	if (!tf) {
-		tf.close();
-
-		status = TraceDqr::DQERR_EOF;
-
-		return TraceDqr::DQERR_EOF;
-	}
-
-	int hd;
-	uint8_t hn;
-
-	hd = atoh(c);
-	if (hd < 0) {
-		status = TraceDqr::DQERR_ERR;
-
-		return TraceDqr::DQERR_ERR;
-	}
-
-	hn = hd << 4;
-
-	hd = atoh(c);
-	if (hd < 0) {
-		status = TraceDqr::DQERR_ERR;
-
-		return TraceDqr::DQERR_ERR;
-	}
-
-	hn = hn | hd;
-
-	*byte = hn;
 
 	return TraceDqr::DQERR_OK;
 }
@@ -8888,92 +8933,6 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 	if (sane != fprime) {
 		delete [] sane;
 		sane = nullptr;
-	}
-
-	{
-		// foodog
-		// check for garbage in path/file name
-
-		if (*filename != nullptr) {
-			const char *cp = *filename;
-			for (int i = 0; cp[i] != 0; i++) {
-				switch (cp[i]) {
-				case 'a':
-				case 'b':
-				case 'c':
-				case 'd':
-				case 'e':
-				case 'f':
-				case 'g':
-				case 'h':
-				case 'i':
-				case 'j':
-				case 'k':
-				case 'l':
-				case 'm':
-				case 'n':
-				case 'o':
-				case 'p':
-				case 'q':
-				case 'r':
-				case 's':
-				case 't':
-				case 'u':
-				case 'v':
-				case 'w':
-				case 'x':
-				case 'y':
-				case 'z':
-				case 'A':
-				case 'B':
-				case 'C':
-				case 'D':
-				case 'E':
-				case 'F':
-				case 'G':
-				case 'H':
-				case 'I':
-				case 'J':
-				case 'K':
-				case 'L':
-				case 'M':
-				case 'N':
-				case 'O':
-				case 'P':
-				case 'Q':
-				case 'R':
-				case 'S':
-				case 'T':
-				case 'U':
-				case 'V':
-				case 'W':
-				case 'X':
-				case 'Y':
-				case 'Z':
-				case '0':
-				case '1':
-				case '2':
-				case '3':
-				case '4':
-				case '5':
-				case '6':
-				case '7':
-				case '8':
-				case '9':
-				case '/':
-				case '\\':
-				case '.':
-				case '_':
-				case '-':
-				case '+':
-				case ':':
-					break;
-				default:
-					printf("Error: getSrcLines(): File name '%s' contains bogus char (0x%02x) in position %d!\n",cp,cp[i],i);
-					break;
-				}
-			}
-		}
 	}
 
 	return 1;
