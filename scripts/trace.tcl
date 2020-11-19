@@ -5,9 +5,9 @@
 
 #set traceBaseAddresses {0x20007000 0x20008000}
 #set traceFunnelAddress 0x20009000
-set traceBaseAddresses 0x10000000
+#set traceBaseAddresses 0x10000000
 #set traceFunnelAddress 0x00000000
-set caBaseAddresses 0x1000f000
+#set caBaseAddresses 0x1000f000
 
 set te_control_offset      0x00
 set te_impl_offset         0x04
