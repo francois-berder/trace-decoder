@@ -1775,7 +1775,7 @@ proc computeStartEnd {wIdx buffSize wrap sow numWant start1 end1 start2 end2} {
 
                 set s1 0
                 set e1 $wIdx
-            } else if {$sow == "on"} {
+            } elseif {$sow == "on"} {
                 # want beginning of buffer (oldest)
 
                 set s1 0
