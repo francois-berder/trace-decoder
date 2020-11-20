@@ -32,6 +32,9 @@
 
 #include <unistd.h>
 #include <fcntl.h>
+#ifndef WINDOWS
+#include <netdb.h>
+#endif // WINDOWS
 
 #include "dqr.hpp"
 #include "trace.hpp"
@@ -6995,7 +6998,7 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 		return status;
 	}
 #else  // WINDOWS
-	if ((br == -1) && ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+	if ((br == -1) && ((errno != EAGAIN) && (errno != EWOULDBLOCK))) {
 		printf("Error: bufferSWT(): read socket failed\n");
 		status = TraceDqr::DQERR_ERR;
 		return status;
