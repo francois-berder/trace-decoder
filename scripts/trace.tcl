@@ -883,9 +883,31 @@ proc getMaxBTM {core} {
     return $t
 }
 
+proc setPibEnable {core bool_enable} {
+    global traceBaseAddrArray
+    global pib_control_offset
+
+    set t [word [expr $traceBaseAddrArray($core) + $pib_control_offset]]
+
+    # activate if not already
+    if { ($t & 0x1) == 0 } {
+	set t [expr $t | 0x1]
+	mww [expr $traceBaseAddrArray($core) + $pib_control_offset] $t	
+    }
+    
+    if { $bool_enable } {
+	set t [expr $t | 0x2]	
+    } else {
+	set t [expr $t & ~0x2]		
+    }
+    mww [expr $traceBaseAddrArray($core) + $pib_control_offset] $t
+}
+
 proc setPibMode {core mode} {
     global traceBaseAddrArray
     global pib_control_offset
+
+    setPibEnable $core 1
 
     switch $mode {
 		"off"               { set intmode 0 }
