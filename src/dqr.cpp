@@ -7065,6 +7065,8 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 				printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
 			}
 		} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
+
+		pendingMsgIndex = 1;
 	}
 
     if (SWTsock > 0) {
@@ -7076,7 +7078,7 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 
 	bool done = false;
 
-	for (pendingMsgIndex = 1; !done; pendingMsgIndex++) {
+	while (!done) {
 		if (pendingMsgIndex >= (int)(sizeof msg / sizeof msg[0])) {
 			if (SWTsock > 0) {
 #ifdef WINDOWS
@@ -7140,6 +7142,8 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 			done = true;
 			msgSlices = pendingMsgIndex+1;
 		}
+
+		pendingMsgIndex += 1;
 	}
 
 	eom = false;
