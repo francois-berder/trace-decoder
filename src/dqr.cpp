@@ -34,6 +34,7 @@
 #include <fcntl.h>
 #ifndef WINDOWS
 #include <netdb.h>
+#include <sys/ioctl.h>
 #endif // WINDOWS
 
 #include "dqr.hpp"
@@ -5214,17 +5215,21 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 		// put socket in non-blocking mode
 #ifdef WINDOWS
-		unsigned long ul = 1;
-		rc = ioctlsocket(SWTsock,FIONBIO,&ul);
+		unsigned long on = 1L;
+		rc = ioctlsocket(SWTsock,FIONBIO,&on);
 		if (rc != NO_ERROR) {
 			printf("SliceFileParser::SliceFileParser(): Failed to put socket in non-blocking mode\n");
 			status = TraceDqr::DQERR_ERR;
 			return;
 		}
 #else  // WINDOWS
-		int mode;
-		mode = fcntl(SWTsock,F_GETFL);
-		rc = fcntl(SWTsock,mode | O_NONBLOCK);
+		long on = 1L;
+		rc = ioctl(SWTsock,(int)FIONBIO,(char*)&on);
+		if (rc < 0) {
+			printf("SliceFileParser::SliceFileParser(): Failed to put socket in non-blocking mode\n");
+			status = TraceDqr::DQERR_ERR;
+			return;
+		}
 #endif // WINDOWS
 
 		tfSize = 0;
