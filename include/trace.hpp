@@ -224,7 +224,7 @@ class SliceFileParser {
 public:
              SliceFileParser(char *filename,int srcBits);
              ~SliceFileParser();
-  TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
+  TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics,bool &haveMsg);
   TraceDqr::DQErr getFileOffset(int &size,int &offset);
 
   TraceDqr::DQErr getErr() { return status; };
@@ -242,6 +242,7 @@ private:
   int           bitIndex;
   int           msgSlices;
   uint32_t      msgOffset;
+  int           pendingMsgIndex;
   uint8_t       msg[64];
   bool          eom = false;
 
@@ -249,7 +250,7 @@ private:
   int           bufferOutIndex;
   uint8_t       sockBuffer[2048];
 
-  TraceDqr::DQErr readBinaryMsg();
+  TraceDqr::DQErr readBinaryMsg(bool &haveMsg);
   TraceDqr::DQErr bufferSWT();
   TraceDqr::DQErr readNextByte(uint8_t *byte);
   TraceDqr::DQErr parseVarField(uint64_t *val,int *width);

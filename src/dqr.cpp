@@ -5131,6 +5131,8 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 	msgSlices      = 0;
 	bitIndex       = 0;
 
+	pendingMsgIndex = 0;
+
 	tfSize = 0;
 	bufferInIndex = 0;
 	bufferOutIndex = 0;
@@ -7008,58 +7010,69 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readBinaryMsg()
+TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 {
 	// start by stripping off end of message or end of var bytes. These would be here in the case
 	// of a wrapped buffer, or some kind of corruption
 
-	do {
-		if (SWTsock != 0) {
-			// need a buffer to read from.
+	haveMsg = false;
 
-			do {
+	if (pendingMsgIndex == 0) {
+		do {
+			if (SWTsock != 0) {
+				// need a buffer to read from.
+
 				status = bufferSWT();
-			} while ((bufferInIndex == bufferOutIndex) && (status == TraceDqr::DQERR_OK));
 
-			if (status != TraceDqr::DQERR_OK) {
-				return status;
-			}
-
-			msg[0] = sockBuffer[bufferOutIndex];
-			bufferOutIndex += 1;
-			if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
-				bufferOutIndex = 0;
-			}
-		}
-		else {
-			tf.read((char*)&msg[0],sizeof msg[0]);
-			if (!tf) {
-				if (tf.eof()) {
-					status = TraceDqr::DQERR_EOF;
-				}
-				else {
-					status = TraceDqr::DQERR_ERR;
-
-					std::cout << "Error reading trace file\n";
+				if (status != TraceDqr::DQERR_OK) {
+					return status;
 				}
 
-				tf.close();
+				if (bufferInIndex == bufferOutIndex) {
+					return status;
+				}
 
-				return status;
+				msg[0] = sockBuffer[bufferOutIndex];
+				bufferOutIndex += 1;
+				if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
+					bufferOutIndex = 0;
+				}
 			}
-		}
+			else {
+				tf.read((char*)&msg[0],sizeof msg[0]);
+				if (!tf) {
+					if (tf.eof()) {
+						status = TraceDqr::DQERR_EOF;
+					}
+					else {
+						status = TraceDqr::DQERR_ERR;
 
-		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff)) {
-			printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
-		}
-	} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
+						std::cout << "Error reading trace file\n";
+					}
 
-	msgOffset = ((uint32_t)tf.tellg())-1;
+					tf.close();
+
+					return status;
+				}
+			}
+
+			if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff)) {
+				printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
+			}
+		} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
+	}
+
+    if (SWTsock > 0) {
+    	msgOffset = 0;
+    }
+    else {
+    	msgOffset = ((uint32_t)tf.tellg())-1;
+    }
 
 	bool done = false;
 
-	for (int i = 1; !done; i++) {
-		if (i >= (int)(sizeof msg / sizeof msg[0])) {
+	for (pendingMsgIndex = 1; !done; pendingMsgIndex++) {
+		if (pendingMsgIndex >= (int)(sizeof msg / sizeof msg[0])) {
 			if (SWTsock > 0) {
 #ifdef WINDOWS
 				closesocket(SWTsock);
@@ -7075,28 +7088,33 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 
 			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
 
+			pendingMsgIndex = 0;
+
 			status = TraceDqr::DQERR_ERR;
 
 			return TraceDqr::DQERR_ERR;
 		}
 
 		if (SWTsock > 0) {
-			do {
-				status = bufferSWT();
-			} while ((bufferInIndex == bufferOutIndex) && (status == TraceDqr::DQERR_OK));
+			status = bufferSWT();
 
 			if (status != TraceDqr::DQERR_OK) {
 				return status;
 			}
 
-			msg[i] = sockBuffer[bufferOutIndex];
+			if (bufferInIndex == bufferOutIndex) {
+				return status;
+			}
+
+			msg[pendingMsgIndex] = sockBuffer[bufferOutIndex];
+
 			bufferOutIndex += 1;
 			if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
 				bufferOutIndex = 0;
 			}
 		}
 		else {
-			tf.read((char*)&msg[i],sizeof msg[0]);
+			tf.read((char*)&msg[pendingMsgIndex],sizeof msg[0]);
 			if (!tf) {
 				if (tf.eof()) {
 					status = TraceDqr::DQERR_EOF;
@@ -7113,20 +7131,25 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 			}
 		}
 
-		if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
+		if ((msg[pendingMsgIndex] & 0x03) == TraceDqr::MSEO_END) {
 			done = true;
-			msgSlices = i+1;
+			msgSlices = pendingMsgIndex+1;
 		}
 	}
 
 	eom = false;
 	bitIndex = 0;
 
+	haveMsg = true;
+	pendingMsgIndex = 0;
+
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics)	// generator to read trace messages one at a time
+TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics,bool &haveMsg)	// generator to read trace messages one at a time
 {
+	haveMsg = false;
+
 	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
@@ -7142,7 +7165,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 
 		// read from file, store in object, compute and fill out full fields, such as address and more later
 
-		rc = readBinaryMsg();
+		rc = readBinaryMsg(haveMsg);
 		if (rc != TraceDqr::DQERR_OK) {
 
 			// all errors from readBinaryMsg() are non-recoverable.
@@ -7154,6 +7177,10 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 			status = rc;
 
 			return status;
+		}
+
+		if (haveMsg == false) {
+			return TraceDqr::DQERR_OK;
 		}
 
 		nm.offset = msgOffset;

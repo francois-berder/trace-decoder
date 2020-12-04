@@ -1702,8 +1702,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //		need to set readNewTraceMessage where it is needed! That includes
 //		staying in the same state that expects to get another message!!
 
+		bool haveMsg;
+
 		if (readNewTraceMessage != false) {
-			rc = sfp->readNextTraceMsg(nm,analytics);
+			rc = sfp->readNextTraceMsg(nm,analytics,haveMsg);
 
 			if (rc != TraceDqr::DQERR_OK) {
 				// have an error. either eof, or error
@@ -1724,6 +1726,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					state[currentCore] = TRACE_STATE_ERROR;
 				}
 
+				return status;
+			}
+
+			if (haveMsg == false) {
 				return status;
 			}
 
