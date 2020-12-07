@@ -7061,10 +7061,10 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 				}
 			}
 
-			if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff)) {
+			if ((msg[0] == 0x00) || (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff))) {
 				printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
 			}
-		} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
+		} while ((msg[0] == 0x00) || ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL));
 
 		pendingMsgIndex = 1;
 	}
