@@ -5283,8 +5283,15 @@ SliceFileParser::~SliceFileParser()
 
 TraceDqr::DQErr SliceFileParser::getNumBytesInSWTQ(int &numBytes)
 {
+	TraceDqr::DQErr rc;
+
 	if (SWTsock < 0) {
 		return TraceDqr::DQERR_ERR;
+	}
+
+	rc = bufferSWT();
+	if (rc != TraceDqr::DQERR_OK) {
+		return rc;
 	}
 
 	if (bufferInIndex == bufferOutIndex) {
