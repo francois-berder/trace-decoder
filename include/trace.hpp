@@ -202,6 +202,7 @@ public:
 	bool flushITCPrintStr(uint8_t core, std::string &s, TraceDqr::TIMESTAMP &starTime, TraceDqr::TIMESTAMP &endTime);
 	int  getITCPrintMask();
 	int  getITCFlushMask();
+	bool haveITCPrintMsgs();
 
 private:
 	int  roomInITCPrintQ(uint8_t core);
@@ -229,6 +230,8 @@ public:
 
   TraceDqr::DQErr getErr() { return status; };
   void       dump();
+
+  TraceDqr::DQErr getNumBytesInSWTQ(int &numBytes);
 
 private:
   TraceDqr::DQErr status;

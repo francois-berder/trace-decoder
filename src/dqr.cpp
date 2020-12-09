@@ -1307,6 +1307,17 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 	return true;
 }
 
+bool ITCPrint::haveITCPrintMsgs()
+{
+	for (int core = 0; core < DQR_MAXCORES; core++) {
+		if (numMsgs[core] != 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 int ITCPrint::getITCPrintMask()
 {
 	int mask = 0;
@@ -5203,7 +5214,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 			close (SWTsock);
 #endif // WINDOWS
 
-			SWTsock = 0;
+			SWTsock = -1;
 
 			delete server;
 			server = nullptr;
@@ -5247,7 +5258,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 		msgOffset = 0;
 
-		SWTsock = 0;
+		SWTsock = -1;
 	}
 
 	status = TraceDqr::DQERR_OK;
@@ -5259,15 +5270,34 @@ SliceFileParser::~SliceFileParser()
 		tf.close();
 	}
 
-	if (SWTsock > 0) {
+	if (SWTsock >= 0) {
 #ifdef WINDOWS
 			closesocket(SWTsock);
 #else  // WINDOWS
 			close(SWTsock);
 #endif // WINDOWS
 
-		SWTsock = 0;
+		SWTsock = -1;
 	}
+}
+
+TraceDqr::DQErr SliceFileParser::getNumBytesInSWTQ(int &numBytes)
+{
+	if (SWTsock < 0) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	if (bufferInIndex == bufferOutIndex) {
+		numBytes = 0;
+	}
+	else if (bufferInIndex < bufferOutIndex) {
+		numBytes = (sizeof sockBuffer / sizeof sockBuffer[0]) - bufferOutIndex + bufferInIndex;
+	}
+	else { // bufferInIndex > bufferOutIndex
+		numBytes = bufferInIndex - bufferOutIndex;
+	}
+
+	return TraceDqr::DQERR_OK;
 }
 
 TraceDqr::DQErr SliceFileParser::getFileOffset(int &size,int &offset)

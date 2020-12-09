@@ -792,6 +792,15 @@ TraceDqr::TIMESTAMP Trace::adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TI
 	return ts;
 }
 
+TraceDqr::DQErr Trace::getNumBytesInSWTQ(int &numBytes)
+{
+	if (sfp == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return sfp->getNumBytesInSWTQ(numBytes);
+}
+
 TraceDqr::DQErr Trace::getTraceFileOffset(int &size,int &offset)
 {
 	return sfp->getFileOffset(size,offset);
@@ -1656,6 +1665,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgIn
 			if (srcInfop != nullptr) {
 				*srcInfo = *srcInfop;
 				*flags |= TraceDqr::TRACE_HAVE_SRCINFO;
+			}
+		}
+
+		if (itcPrint != nullptr) {
+			if (itcPrint->haveITCPrintMsgs() != false) {
+				*flags |= TraceDqr::TRACE_HAVE_ITCPRINTINFO;
 			}
 		}
 	}

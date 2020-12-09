@@ -60,6 +60,7 @@ public:
 	TRACE_HAVE_INSTINFO = 0x01,
 	TRACE_HAVE_SRCINFO  = 0x02,
 	TRACE_HAVE_MSGINFO  = 0x04,
+	TRACE_HAVE_ITCPRINTINFO = 0x08,
   };
 
   typedef enum {
@@ -707,6 +708,8 @@ public:
 	TraceDqr::TIMESTAMP adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
 	int			getITCPrintMask();
 	int         getITCFlushMask();
+
+	TraceDqr::DQErr getNumBytesInSWTQ(int &numBytes);
 
 private:
 	enum state {
