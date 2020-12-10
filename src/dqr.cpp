@@ -7061,7 +7061,7 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 
 	if (pendingMsgIndex == 0) {
 		do {
-			if (SWTsock != 0) {
+			if (SWTsock >= 0) {
 				// need a buffer to read from.
 
 				status = bufferSWT();
@@ -7106,7 +7106,7 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 		pendingMsgIndex = 1;
 	}
 
-    if (SWTsock > 0) {
+    if (SWTsock >= 0) {
     	msgOffset = 0;
     }
     else {
@@ -7117,14 +7117,14 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 
 	while (!done) {
 		if (pendingMsgIndex >= (int)(sizeof msg / sizeof msg[0])) {
-			if (SWTsock > 0) {
+			if (SWTsock >= 0) {
 #ifdef WINDOWS
 				closesocket(SWTsock);
 #else  // WINDOWS
 				close(SWTsock);
 #endif // WINDOWS
 
-				SWTsock = 0;
+				SWTsock = -1;
 			}
 			else {
 				tf.close();
@@ -7139,7 +7139,7 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 			return TraceDqr::DQERR_ERR;
 		}
 
-		if (SWTsock > 0) {
+		if (SWTsock >= 0) {
 			status = bufferSWT();
 
 			if (status != TraceDqr::DQERR_OK) {
