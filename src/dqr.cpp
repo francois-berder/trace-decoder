@@ -35,6 +35,7 @@
 #ifndef WINDOWS
 #include <netdb.h>
 #include <sys/ioctl.h>
+#include <errno.h>
 #endif // WINDOWS
 
 #include "dqr.hpp"
@@ -7009,6 +7010,12 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 		br = recv(SWTsock,(char*)sockBuffer,sizeof sockBuffer - 1,0);
 #else // WINDOWS
 		br = recv(SWTsock,(char*)sockBuffer,sizeof sockBuffer - 1,MSG_DONTWAIT);
+
+		if (br < 0) {
+			if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+				perror("SliceFaileParser::bufferSWT(): recv() error");
+			}
+		}
 #endif // WINDOWS
 
 		if ( br > 0) {
@@ -7023,6 +7030,12 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,(bufferOutIndex - bufferInIndex) - 1,0);
 #else // WINDOWS
 		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,(bufferOutIndex - bufferInIndex) - 1,MSG_DONTWAIT);
+
+		if (br < 0) {
+			if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+				perror("SliceFaileParser::bufferSWT(): recv() error");
+			}
+		}
 #endif // WINDOWS
 
 		if (br > 0) {
@@ -7037,6 +7050,12 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,sizeof sockBuffer - bufferInIndex,0);
 #else // WINDOWS
 		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,sizeof sockBuffer - bufferInIndex,MSG_DONTWAIT);
+
+		if (br < 0) {
+			if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+				perror("SliceFaileParser::bufferSWT(): recv() error");
+			}
+		}
 #endif // WINDOWS
 
 		if (br > 0) {
@@ -7047,6 +7066,12 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 				br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bufferOutIndex - 1,0);
 #else // WINDOWS
 				br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bufferOutIndex - 1,MSG_DONTWAIT);
+
+				if (br < 0) {
+					if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+						perror("SliceFaileParser::bufferSWT(): recv() error");
+					}
+				}
 #endif // WINDOWS
 
 				if (br > 0) {
