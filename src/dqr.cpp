@@ -5234,13 +5234,13 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 			return;
 		}
 #else  // WINDOWS
-		long on = 1L;
-		rc = ioctl(SWTsock,(int)FIONBIO,(char*)&on);
-		if (rc < 0) {
-			printf("SliceFileParser::SliceFileParser(): Failed to put socket in non-blocking mode\n");
-			status = TraceDqr::DQERR_ERR;
-			return;
-		}
+//		long on = 1L;
+//		rc = ioctl(SWTsock,(int)FIONBIO,(char*)&on);
+//		if (rc < 0) {
+//			printf("SliceFileParser::SliceFileParser(): Failed to put socket in non-blocking mode\n");
+//			status = TraceDqr::DQERR_ERR;
+//			return;
+//		}
 #endif // WINDOWS
 
 		tfSize = 0;
@@ -7004,7 +7004,13 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 	// compute room in buffer for read
 	if (bufferInIndex == bufferOutIndex) {
 		// buffer is empty
+
+#ifdef WINDOWS
 		br = recv(SWTsock,(char*)sockBuffer,sizeof sockBuffer - 1,0);
+#else // WINDOWS
+		br = recv(SWTsock,(char*)sockBuffer,sizeof sockBuffer - 1,MSG_DONTWAIT);
+#endif // WINDOWS
+
 		if ( br > 0) {
 			bufferInIndex = br;
 			bufferOutIndex = 0;
@@ -7012,7 +7018,13 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 	}
 	else if (bufferInIndex < (bufferOutIndex-1)) {
 		// empty bytes is (bufferOutIndex - bufferInIndex) - 1
+
+#ifdef WINDOWS
 		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,(bufferOutIndex - bufferInIndex) - 1,0);
+#else // WINDOWS
+		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,(bufferOutIndex - bufferInIndex) - 1,MSG_DONTWAIT);
+#endif // WINDOWS
+
 		if (br > 0) {
 			bufferInIndex += br;
 		}
@@ -7020,11 +7032,23 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 	else if (bufferInIndex > bufferOutIndex){
 		// empty bytes is bufferInIndex to end of buffer + bufferOutIndex - 1
 		// first read to end of buffer
+
+#ifdef WINDOWS
 		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,sizeof sockBuffer - bufferInIndex,0);
+#else // WINDOWS
+		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,sizeof sockBuffer - bufferInIndex,MSG_DONTWAIT);
+#endif // WINDOWS
+
 		if (br > 0) {
 			if ((size_t)br == sizeof sockBuffer - bufferInIndex) {
 				bufferInIndex = 0;
+
+#ifdef WINDOWS
 				br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bufferOutIndex - 1,0);
+#else // WINDOWS
+				br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bufferOutIndex - 1,MSG_DONTWAIT);
+#endif // WINDOWS
+
 				if (br > 0) {
 					bufferInIndex = br ;
 				}
