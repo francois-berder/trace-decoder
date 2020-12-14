@@ -1310,7 +1310,7 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 
 bool ITCPrint::haveITCPrintMsgs()
 {
-	for (int core = 0; core < DQR_MAXCORES; core++) {
+	for (int core = 0; core < numCores; core++) {
 		if (numMsgs[core] != 0) {
 			return true;
 		}
@@ -1323,7 +1323,7 @@ int ITCPrint::getITCPrintMask()
 {
 	int mask = 0;
 
-	for (int core = 0; core < DQR_MAXCORES; core++) {
+	for (int core = 0; core < numCores; core++) {
 		if (numMsgs[core] != 0) {
 			mask |= 1 << core;
 		}
@@ -1336,7 +1336,7 @@ int ITCPrint::getITCFlushMask()
 {
 	int mask = 0;
 
-	for (int core = 0; core < DQR_MAXCORES; core++) {
+	for (int core = 0; core < numCores; core++) {
 		if (numMsgs[core] > 0) {
 			mask |= 1 << core;
 		}
