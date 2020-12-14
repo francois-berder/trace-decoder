@@ -405,6 +405,8 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
   disassembler = nullptr;
   caTrace      = nullptr;
 
+  printf("Trace::Trace() contructor for object at %08x\n",this);
+
   syncCount = 0;
   caSyncAddr = (TraceDqr::ADDRESS)-1;
 
@@ -590,11 +592,15 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 
 Trace::~Trace()
 {
+	printf("Trace::~Trace() destructor for object at %08x\n",this);
+
 	cleanUp();
 }
 
 void Trace::cleanUp()
 {
+	printf("Trace::cleanUp() for object at %08x\n",this);
+
 	for (int i = 0; (size_t)i < (sizeof state / sizeof state[0]); i++) {
 		state[i] = TRACE_STATE_DONE;
 	}
