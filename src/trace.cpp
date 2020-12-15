@@ -594,27 +594,27 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 
 Trace::~Trace()
 {
-	printf("Trace::~Trace() destructor for object at %08x\n",this); fflush(stdout);
+//	printf("Trace::~Trace() destructor for object at %08x\n",this); fflush(stdout);
 
 	cleanUp();
 }
 
 void Trace::cleanUp()
 {
-	printf("Trace::cleanUp() for object at %08x\n",this); fflush(stdout);
+//	printf("Trace::cleanUp() for object at %08x\n",this); fflush(stdout);
 
 	for (int i = 0; (size_t)i < (sizeof state / sizeof state[0]); i++) {
 		state[i] = TRACE_STATE_DONE;
 	}
 
 	if (sfp != nullptr) {
-		printf("Trace::cleanUp(): deleting sfp at %08x\n",sfp);fflush(stdout);
+//		printf("Trace::cleanUp(): deleting sfp at %08x\n",sfp);fflush(stdout);
 		delete sfp;
 		sfp = nullptr;
 	}
 
 	if (elfReader != nullptr) {
-		printf("Trace::cleanUp(): deleting elfReader at %08x\n",elfReader);fflush(stdout);
+//		printf("Trace::cleanUp(): deleting elfReader at %08x\n",elfReader);fflush(stdout);
 		delete elfReader;
 		elfReader = nullptr;
 	}
@@ -623,39 +623,40 @@ void Trace::cleanUp()
 	// contains, and deleting the elfRead above will delete the symtab object below!
 
 	if (symtab != nullptr) {
-		printf("Trace::cleanUp(): NOT deleting symtab at %08x\n",symtab);fflush(stdout);
+//		printf("Trace::cleanUp(): NOT deleting symtab at %08x\n",symtab);fflush(stdout);
 //		delete symtab;
 		symtab = nullptr;
 	}
 
+	// foodog
 	if (itcPrint  != nullptr) {
-		printf("Trace::cleanUp(): deleting itcPrint at %08x\n",itcPrint);fflush(stdout);
+//		printf("Trace::cleanUp(): deleting itcPrint at %08x\n",itcPrint);fflush(stdout);
 		delete itcPrint;
 		itcPrint = nullptr;
 	}
 
 	if (counts != nullptr) {
-		printf("Trace::cleanUp(): deleting counts at %08x\n",counts);fflush(stdout);
+//		printf("Trace::cleanUp(): deleting counts at %08x\n",counts);fflush(stdout);
 		delete [] counts;
 		counts = nullptr;
 	}
 
 	if (disassembler != nullptr) {
-		printf("Trace::cleanUp(): deleting disassembler at %08x\n",disassembler);fflush(stdout);
+//		printf("Trace::cleanUp(): deleting disassembler at %08x\n",disassembler);fflush(stdout);
 		delete disassembler;
 		disassembler = nullptr;
 	}
 
 	for (int i = 0; (size_t)i < (sizeof messageSync / sizeof messageSync[0]); i++) {
 		if (messageSync[i] != nullptr) {
-			printf("Trace::cleanUp(): deleting messageSync[%d] at address %08x\n",i,messageSync[i]);fflush(stdout);
+//			printf("Trace::cleanUp(): deleting messageSync[%d] at address %08x\n",i,messageSync[i]);fflush(stdout);
 			delete messageSync[i];
 			messageSync[i] = nullptr;
 		}
 	}
 
 	if (caTrace != nullptr) {
-		printf("Trace::cleanUp(): delteting caTrace at address %08x\n",caTrace);fflush(stdout);
+//		printf("Trace::cleanUp(): delteting caTrace at address %08x\n",caTrace);fflush(stdout);
 		delete caTrace;
 		caTrace = nullptr;
 	}
