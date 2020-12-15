@@ -1193,13 +1193,16 @@ ITCPrint::~ITCPrint()
 		printf("~ITCPrint(): tsList not null: %08x\n",tsList);fflush(stdout);
 		for (int i = 0; i < numCores; i++) {
 			TsList *tl = tsList[i];
-			while (tl != nullptr) {
-				TsList *tln = tl->next;
-				printf("~ITCPrint()2: tl not null: deleting tl at %08x, next at %08x\n ",tl,tln);fflush(stdout);
-				delete tl;
-				tl = tln;
+			if (tl != nullptr) {
+				do {
+					printf("~ITCPrint(): tl not null: %08x\n",tl);fflush(stdout);
+					TsList *tln = tl->next;
+					delete tl;
+					tl = tln;
+				} while ((tl != tsList[i]) && (tl != nullptr));
 			}
 		}
+		delete [] tsList;
 		tsList = nullptr;
 	}
 }
@@ -1248,9 +1251,6 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
     	if (freeList != nullptr) {
 			workingtlp = freeList;
 			freeList = workingtlp->next;
-
-			workingtlp->terminated = false;
-			workingtlp->message = nullptr;
 		}
 		else {
 			workingtlp = new TsList();
@@ -1268,6 +1268,7 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 			workingtlp->prev->next = workingtlp;
 		}
 
+		workingtlp->terminated = false;
 		workingtlp->startTime = tstamp;
 		workingtlp->message = &pbuff[core][pbi[core]];
 
@@ -1411,6 +1412,7 @@ TsList *ITCPrint::consumeTerminatedTsList(int core)
 				}
 
 				tsl->next = freeList;
+				tsl->prev = nullptr;
 				freeList = tsl;
 			}
 		}
@@ -1448,6 +1450,7 @@ TsList *ITCPrint::consumeOldestTsList(int core)
 			}
 
 			tsl->next = freeList;
+			tsl->prev = nullptr;
 			freeList = tsl;
 		}
 	}
