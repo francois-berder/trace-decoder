@@ -1142,6 +1142,8 @@ ITCPrint::ITCPrint(int numCores, int buffSize,int channel)
 
 ITCPrint::~ITCPrint()
 {
+	return;
+
 	if (pbuff != nullptr) {
 		for (int i = 0; i < numCores; i++) {
 			if (pbuff[i] != nullptr) {
