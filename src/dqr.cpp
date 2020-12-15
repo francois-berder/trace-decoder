@@ -1142,47 +1142,47 @@ ITCPrint::ITCPrint(int numCores, int buffSize,int channel)
 
 ITCPrint::~ITCPrint()
 {
-	printf("ITCPrint::~ITCPrint() delete of object at %08x numCores: %d,buffSize: %d\n",this,numCores,buffSize);fflush(stdout);
+//	printf("ITCPrint::~ITCPrint() delete of object at %08x numCores: %d,buffSize: %d\n",this,numCores,buffSize);fflush(stdout);
 
 	if (pbuff != nullptr) {
-		printf("~ITCPrint(): pbuff not null: %08x\n",pbuff);fflush(stdout);
+//		printf("~ITCPrint(): pbuff not null: %08x\n",pbuff);fflush(stdout);
 		for (int i = 0; i < numCores; i++) {
 			if (pbuff[i] != nullptr) {
-				printf("~ITCPrint(): pbuff[%d]: %08x\n",i,pbuff[i]);fflush(stdout);
+//				printf("~ITCPrint(): pbuff[%d]: %08x\n",i,pbuff[i]);fflush(stdout);
 				delete [] pbuff[i];
 				pbuff[i] = nullptr;
 			}
 		}
 
-		printf("~ITCPrint(): deleting pbuff at %08x\n",pbuff);fflush(stdout);
+//		printf("~ITCPrint(): deleting pbuff at %08x\n",pbuff);fflush(stdout);
 		delete [] pbuff;
 		pbuff = nullptr;
 	}
 
 	if (numMsgs != nullptr) {
-		printf("~ITCPrint(): numMsgs not null. Deleteing: %08x\n",numMsgs);fflush(stdout);
+//		printf("~ITCPrint(): numMsgs not null. Deleteing: %08x\n",numMsgs);fflush(stdout);
 		delete [] numMsgs;
 		numMsgs = nullptr;
 	}
 
 	if (pbi != nullptr) {
-		printf("~ITCPrint(): pbi not null. Deleteing: %08x\n",pbi);fflush(stdout);
+//		printf("~ITCPrint(): pbi not null. Deleteing: %08x\n",pbi);fflush(stdout);
 		delete [] pbi;
 		pbi = nullptr;
 	}
 
 	if (pbo != nullptr) {
-		printf("~ITCPrint(): pbo not null: %08x\n",pbo);fflush(stdout);
+//		printf("~ITCPrint(): pbo not null: %08x\n",pbo);fflush(stdout);
 		delete [] pbo;
 		pbo = nullptr;
 	}
 
 	if (freeList != nullptr) {
-		printf("~ITCPrint(): freelist not null: %08x\n",freeList);fflush(stdout);
+//		printf("~ITCPrint(): freelist not null: %08x\n",freeList);fflush(stdout);
 		TsList *tl = freeList;
 		while (tl != nullptr) {
 			TsList *tln = tl->next;
-			printf("~ITCPrint(): tl not null: deleting tl at %08x, next: %08x\n",tl,tln);fflush(stdout);
+//			printf("~ITCPrint(): tl not null: deleting tl at %08x, next: %08x\n",tl,tln);fflush(stdout);
 			delete tl;
 			tl = tln;
 		}
@@ -1190,12 +1190,12 @@ ITCPrint::~ITCPrint()
 	}
 
 	if (tsList != nullptr) {
-		printf("~ITCPrint(): tsList not null: %08x\n",tsList);fflush(stdout);
+//		printf("~ITCPrint(): tsList not null: %08x\n",tsList);fflush(stdout);
 		for (int i = 0; i < numCores; i++) {
 			TsList *tl = tsList[i];
 			if (tl != nullptr) {
 				do {
-					printf("~ITCPrint(): tl not null: %08x\n",tl);fflush(stdout);
+//					printf("~ITCPrint(): tl not null: %08x\n",tl);fflush(stdout);
 					TsList *tln = tl->next;
 					delete tl;
 					tl = tln;
@@ -1213,19 +1213,19 @@ int ITCPrint::roomInITCPrintQ(uint8_t core)
 		return 0;
 	}
 
-	printf("roomInITCPrintQ(%d): pbi[%d]: %d, pbo[%d]: %d buffSize: %d\n",core,core,pbi[core],core,pbo[core],buffSize);fflush(stdout);
+//	printf("roomInITCPrintQ(%d): pbi[%d]: %d, pbo[%d]: %d buffSize: %d\n",core,core,pbi[core],core,pbo[core],buffSize);fflush(stdout);
 
 	if (pbi[core] > pbo[core]) {
-		printf("roomInITCPrintQ(%d): returning %d\n",core,buffSize - pbi[core]+pbo[core]-1);fflush(stdout);
+//		printf("roomInITCPrintQ(%d): returning %d\n",core,buffSize - pbi[core]+pbo[core]-1);fflush(stdout);
 		return buffSize - pbi[core] + pbo[core] - 1;
 	}
 
 	if (pbi[core] < pbo[core]) {
-		printf("roomInITCPrintQ(%d): returning %d\n",core,pbo[core]-pbi[core]-1);fflush(stdout);
+//		printf("roomInITCPrintQ(%d): returning %d\n",core,pbo[core]-pbi[core]-1);fflush(stdout);
 		return pbo[core] - pbi[core] - 1;
 	}
 
-	printf("roomInITCPrintQ(%d): returning %d\n",core,buffSize-1);fflush(stdout);
+//	printf("roomInITCPrintQ(%d): returning %d\n",core,buffSize-1);fflush(stdout);
 	return buffSize-1;
 }
 
