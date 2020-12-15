@@ -1142,6 +1142,7 @@ ITCPrint::ITCPrint(int numCores, int buffSize,int channel)
 
 ITCPrint::~ITCPrint()
 {
+	printf("ITCPrint::~ITCPrint() delete of object at %08x numCores: %d\n",this,numCores);fflush(stdout);
 	return;
 
 	if (pbuff != nullptr) {
