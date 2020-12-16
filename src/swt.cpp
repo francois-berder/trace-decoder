@@ -955,6 +955,17 @@ bool IoConnections::isSocketExcept(int fd)
    return result;
 }
 
+bool IoConnections::didSerialDisconnect()
+{
+   return serialFd == -1;
+}
+
+void IoConnections::setSerialDevice(int serialFd)
+{
+   this->serialFd = serialFd;
+   warnedAboutSerialDeviceClosed = false;
+}
+
 bool IoConnections::isSerialReadable()
 {
    int pthread_result = -1;
@@ -1024,26 +1035,25 @@ void IoConnections::serviceConnections()
 	 {
 	    numSerialBytesRead = serialReadBytes(bytes, sizeof(bytes));
 
-
-	    if (dumpNexusMessagesToStdout)
-	    {
-	       std::cout << "num bytes read from serial device: " << numSerialBytesRead << std::endl;
-	       std::cout << "raw bytes from serial device: ";
-	       bytes_dump(bytes, numSerialBytesRead*8);
-	    }
-
-	    if (numSerialBytesRead < 0)
+	    if (numSerialBytesRead <= 0)
 	    {
 	       if (!warnedAboutSerialDeviceClosed)
 	       {
 		  std::cerr << "Serial device was disconnected" << std::endl;
-		  warnedAboutSerialDeviceClosed = true;
-		  close(serialFd);
-		  serialFd = -1;
+		  warnedAboutSerialDeviceClosed = true;		  
 	       }
+	       close(serialFd);
+	       serialFd = -1;
 	    }
-	    if (numSerialBytesRead)
+	    if (numSerialBytesRead > 0)
 	    {
+	       if (dumpNexusMessagesToStdout)
+	       {
+		  std::cout << "num bytes read from serial device: " << numSerialBytesRead << std::endl;
+		  std::cout << "raw bytes from serial device: ";
+		  bytes_dump(bytes, numSerialBytesRead*8);
+	       }
+	       
 	       if (dumpNexusMessagesToStdout)
 	       {
 		  for (int i = 0; i < numSerialBytesRead; i++)
