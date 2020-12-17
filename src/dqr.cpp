@@ -5237,7 +5237,6 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 			SWTsock = -1;
 
-			delete server;
 			server = nullptr;
 
 			status = TraceDqr::DQERR_ERR;
