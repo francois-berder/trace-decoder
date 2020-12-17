@@ -1001,7 +1001,11 @@ void IoConnections::serviceConnections()
 	 {
 #ifdef DEBUG_PRINT	    
 	    std::cout << "accept() returned a new connection!" << std::endl;
-#endif	    
+#endif
+	    const int sendbufSize = 1024*1024;	    
+	    int result = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sendbufSize, sizeof(sendbufSize));
+	    if (result != 0)
+	       std::cerr << "setsockopt of SO_SNDBUF to " << sendbufSize << " returned " << result << std::endl;
 	    IoConnection connection(fd);
 	    connections.push_back(std::move(connection));
 	    numClientsHighWater = std::max(numClientsHighWater, connections.size());
