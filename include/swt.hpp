@@ -203,6 +203,8 @@ public:
    void queueMessageToClients(NexusDataAcquisitionMessage &msg);
    void queueSerialBytesToClients(uint8_t *bytes, uint32_t numbytes);
    void serviceConnections();
+   bool didSerialDisconnect();
+   void setSerialDevice(int serialFd);
    void closeResources();
 private:
    enum {SERIAL_BUFFER_NUMBYTES=1024*4};

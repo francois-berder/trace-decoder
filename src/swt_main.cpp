@@ -110,6 +110,26 @@ int main(int argc, char *argv[])
       while (! (args.autoexit && ioConnections.hasClientCountDecreasedToZero()) )
       {
 	 ioConnections.serviceConnections();
+	 if (ioConnections.didSerialDisconnect())
+	 {
+	    std::cerr << "Detected disconnect" << std::endl;	    	       	    
+	    // Keep trying to reconnect, and if successful, continue on	    
+	    for (;;)
+	    {
+	       std::cerr << "Attempting to reconnect to " << args.serialdev << std::endl;	    	       
+	       if (openSerialDevice(args.serialdev, serialFd, args.baud))
+	       {
+		  std::cerr << "Reconnected to " << args.serialdev << std::endl;	    	       		  		  
+		  ioConnections.setSerialDevice(serialFd);
+		  break;
+	       }
+	       else
+	       {
+		  sleep(2); // in this mode when we're trying to reconnect, it should be rare, but if it happens,
+		  	// it's probably best to spare the CPU when repeatedly trying to reconnect
+	       }
+	    }
+	 }
       }
       // The call below seems to hose things.  It would be good ideally to
       //  know why, but since it happens right before process exit(), and exit()
@@ -439,7 +459,7 @@ speed_t initSerialDevice(int fd, speed_t baud)
    {
       readback = cfgetispeed(&options);
       result = (readback == baud ? 0 : -1);
-      // std::cerr << "baud rate readback is " << readback << std::endl;      
+      // std::cerr << "baud rate readback is " << speedToInteger(readback) << std::endl;      
    }
    
    if (result == 0)
@@ -507,7 +527,10 @@ bool openSerialDevice(const std::string &dev, int &fd, uint32_t requestedBaud)
 
    if (fd != -1)
    {
-      initSerialDevice(fd, baud);
+      if (initSerialDevice(fd, baud) == (speed_t)-1)
+      {
+	 return false;
+      }
    }
 
 #if defined(LINUX) && defined(USE_CLOSE_AND_REOPEN_HACK)
@@ -523,7 +546,10 @@ bool openSerialDevice(const std::string &dev, int &fd, uint32_t requestedBaud)
       fd = open(dev.c_str(), O_RDONLY);   
       if (fd != -1)
       {
-	 initSerialDevice(fd, baud);
+	 if (initSerialDevice(fd, baud) == (speed_t)-1)
+	 {
+	    return false;
+	 }
       }
    }
 #endif   
