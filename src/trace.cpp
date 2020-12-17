@@ -406,8 +406,6 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
   caTrace      = nullptr;
   counts       = nullptr;
 
-  printf("Trace::Trace() contructor for object at %08x\n",this); fflush(stdout);
-
   syncCount = 0;
   caSyncAddr = (TraceDqr::ADDRESS)-1;
 
