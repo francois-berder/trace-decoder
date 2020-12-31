@@ -196,7 +196,7 @@ class IoConnections
 {
    // manage all external IOs
 public:
-   IoConnections(int port, int srcbits, int serialFd, bool dumpNexusMessagesToStdout, bool pthreadSynchronizationMode);
+   IoConnections(int port, int srcbits, int serialFd, bool userDebugOutput, bool pthreadSynchronizationMode);
    int serialReadBytes(uint8_t *bytes, size_t numbytes);
    bool waitForIoActivity();
    bool hasClientCountDecreasedToZero();
@@ -224,7 +224,7 @@ private:
    fd_set exceptfds;
 
    bool warnedAboutSerialDeviceClosed;
-   bool dumpNexusMessagesToStdout;
+   bool userDebugOutput;
 
    int callSelect(bool includeSerialDevice, fd_set *readfds, fd_set *writefds, fd_set *exceptfds);
    bool doWaitForIoActivity();   

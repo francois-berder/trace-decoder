@@ -762,11 +762,11 @@ int IoConnection::getQueueLength()
 
 // IoConnections (plural!) method definitions
 
-IoConnections::IoConnections(int port, int srcbits, int serialFd, bool dumpNexusMessagesToStdout, bool pthreadSynchronizationMode)
+IoConnections::IoConnections(int port, int srcbits, int serialFd, bool userDebugOutput, bool pthreadSynchronizationMode)
    : ns(srcbits), serialFd(serialFd), numClientsHighWater(0),
      pthreadSynchronizationMode(pthreadSynchronizationMode),  // this mode is only necessary for Windows; on POSIX-based OSes there's no reason to use this except for testing perhaps
      warnedAboutSerialDeviceClosed(false),
-     dumpNexusMessagesToStdout(dumpNexusMessagesToStdout)
+     userDebugOutput(userDebugOutput)
 {
    struct sockaddr_in address = {0}; 
    int opt = 1;
@@ -1010,9 +1010,9 @@ void IoConnections::serviceConnections()
 	 // std::cout << "accept() returned " << fd << std::endl;	 
 	 if (fd >= 0)
 	 {
-#ifdef DEBUG_PRINT	    
-	    std::cout << "accept() returned a new connection!" << std::endl;
-#endif
+	    if (userDebugOutput)
+	       std::cout << "accept() returned a new connection!" << std::endl;
+
 	    const int sendbufSize = 1024*1024;	    
 	    int result = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sendbufSize, sizeof(sendbufSize));
 	    if (result != 0)
@@ -1051,14 +1051,13 @@ void IoConnections::serviceConnections()
 	    }
 	    if (numSerialBytesRead > 0)
 	    {
-	       if (dumpNexusMessagesToStdout)
+	       if (userDebugOutput)
 	       {
-		  std::cout << "num bytes read from serial device: " << numSerialBytesRead << std::endl;
-		  std::cout << "raw bytes from serial device: ";
+		  std::cout << "Received " << numSerialBytesRead << " bytes from serial device: ";
 		  bytes_dump(bytes, numSerialBytesRead*8);
 	       }
 	       
-	       if (dumpNexusMessagesToStdout)
+	       if (userDebugOutput)
 	       {
 		  for (int i = 0; i < numSerialBytesRead; i++)
 		  {
@@ -1159,6 +1158,11 @@ void IoConnections::serviceConnections()
 	    else
 	    {
 	       // remove the sent bytes from the queue
+	       if (userDebugOutput)
+	       {
+		  std::cout << "Bytes sent to client over socket: ";
+		  bytes_dump((uint8_t*)data, numsent*8);
+	       }
 	       it->bytesToSend.erase(0, numsent);
 	       it++;
 	    }
