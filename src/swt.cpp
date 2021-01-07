@@ -1014,7 +1014,7 @@ void IoConnections::serviceConnections()
 	       std::cout << "accept() returned a new connection!" << std::endl;
 
 	    const int sendbufSize = 1024*1024;	    
-	    int result = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sendbufSize, sizeof(sendbufSize));
+	    int result = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (const char *)&sendbufSize, sizeof(sendbufSize));
 	    if (result != 0)
 	       std::cerr << "setsockopt of SO_SNDBUF to " << sendbufSize << " returned " << result << std::endl;
 	    IoConnection connection(fd);
