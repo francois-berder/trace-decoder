@@ -189,6 +189,7 @@ int main(int argc, char *argv[])
 	int archSize = 32;
 	int msgLevel = 2;
 	bool labelFlag = true;
+	TraceDqr::CATraceType caType = TraceDqr::CATRACE_NONE;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -546,6 +547,26 @@ int main(int argc, char *argv[])
 		else if (strcmp("-nodebug",argv[i]) == 0) {
 			globalDebugFlag = 0;
 		}
+		else if (strcmp("-catype",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: -catype flag requires a CA Trace type (none, instruction, or vector)\n");
+				return 1;
+			}
+			if (strcmp("none",argv[i]) == 0) {
+				caType = TraceDqr::CATRACE_NONE;
+				ca_name = nullptr;
+			} else if (strcmp("instruction",argv[i]) == 0) {
+				caType = TraceDqr::CATRACE_INSTRUCTION;
+			}
+			else if (strcmp("vector",argv[i]) == 0) {
+				caType = TraceDqr::CATRACE_VECTOR;
+			}
+			else {
+				printf("Error: CA Trace type must be either none, instruciton, or vector\n");
+				return 1;
+			}
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -622,7 +643,7 @@ int main(int argc, char *argv[])
 
 		if (ca_name != nullptr) {
 			TraceDqr::DQErr rc;
-			rc = trace->setCATraceFile(ca_name);
+			rc = trace->setCATraceFile(ca_name,caType);
 			if (rc != TraceDqr::DQERR_OK) {
 				printf("Error: Could not set cycle accurate trace file\n");
 				return 1;
@@ -762,9 +783,34 @@ int main(int argc, char *argv[])
 				if (((sim != nullptr) || (ca_name != nullptr)) && (instInfo->timestamp != 0)) {
 					n = printf("t:%d ",instInfo->timestamp);
 
-					n += printf("[%d] ",instInfo->cycles);
+					if (instInfo->caFlags & (TraceDqr::CAFLAG_PIPE0 | TraceDqr::CAFLAG_PIPE1)) {
+						if (instInfo->caFlags & TraceDqr::CAFLAG_PIPE0) {
+							n += printf("[0:%d",instInfo->pipeCycles);
+						}
+						else if (instInfo->caFlags & TraceDqr::CAFLAG_PIPE1) {
+							n += printf("[1:%d",instInfo->pipeCycles);
+						}
 
-					for (int i = n; i < 12; i++) {
+						if (instInfo->caFlags & TraceDqr::CAFLAG_VSTART) {
+							n += printf("-%d",instInfo->VIStartCycles);
+						}
+
+						if (instInfo->caFlags & TraceDqr::CAFLAG_VARITH) {
+							n += printf("-%d",instInfo->VIFinishCycles);
+						}
+
+						if (instInfo->caFlags & TraceDqr::CAFLAG_VLOAD) {
+							n += printf("-%d",instInfo->VIFinishCycles);
+						}
+
+						if (instInfo->caFlags & TraceDqr::CAFLAG_VSTORE) {
+							n += printf("-%d",instInfo->VIFinishCycles);
+						}
+
+						n += printf("] ");
+					}
+
+					for (int i = n; i < 14; i++) {
 						printf(" ");
 					}
 				}

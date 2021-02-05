@@ -73,6 +73,12 @@ double Timer::etime()
 
 // class CATrace methods
 
+CATraceRec::CATraceRec()
+{
+	offset = 0;
+	address = 0;
+}
+
 void CATraceRec::dump()
 {
 	printf("0x%08x\n",(uint32_t)address);
@@ -100,22 +106,59 @@ void CATraceRec::dumpWithCycle()
 	}
 }
 
-int CATraceRec::consume(int &pipe,uint32_t &cycles)
+int CATraceRec::consumeCAVector(uint32_t &record,uint32_t &cycles)
+{
+	int dataIndex;
+
+	// check if we have exhausted all bits in this record
+
+	// for vectors, offset and dataIndex are the array index for data[]
+
+	dataIndex = offset;
+
+	while (((size_t)dataIndex <= sizeof data / sizeof data[0]) && ((data[dataIndex] & 0x3fffffff) == 0)) {
+		dataIndex += 1;
+	}
+
+	if ((size_t)dataIndex >= sizeof data / sizeof data[0]) {
+		// out of records in the trace record. Signal caller to get more records
+
+		record = 0;
+		cycles = 0;
+
+		return 0;
+	}
+
+	record = data[dataIndex];
+	offset = dataIndex+1;
+
+	// cycle is the start cycle of the record returned relative to the start of the 32 word block.
+	// The record represents 5 cycles (5 cycles in each 32 bit record)
+
+	cycles = dataIndex * 5;
+
+	return 1;
+}
+
+int CATraceRec::consumeCAInstruction(uint32_t &pipe,uint32_t &cycles)
 {
 	int dataIndex;
 	int bitIndex;
 	bool found = false;
 
+	// this function looks for pipe finish bits in an instruction trace (non-vector trace)
+
 	// check if we have exhausted all bits in this record
 
 	if (offset >= 30 * 32) {
 		// this record is exhausted. Tell caller to read another record
+
 		return 0;
 	}
 
 	// find next non-zero bit field
 
-	dataIndex = offset / 30; // 30 bits of data in each data word
+	dataIndex = offset / 30; // 30 bits of data in each data word. dataIndex is data[] index
 	bitIndex = 29 - (offset % 30);  // 0 - 29 is the bit index to start looking at (29 oldest, 0 newest)
 
 	while (found == false) {
@@ -137,7 +180,9 @@ int CATraceRec::consume(int &pipe,uint32_t &cycles)
 		else {
 			// found a one
 
-			cycles = offset/2;
+			// cycle is the start cycle of the pipe bit relative to the start of the 32 word block.
+
+			cycles = dataIndex * 15 + offset/2;
 
 			// Bump past it
 			offset += 1;
@@ -146,20 +191,22 @@ int CATraceRec::consume(int &pipe,uint32_t &cycles)
 	}
 
 	if (bitIndex & 0x01) {
-		pipe = 0;
+		pipe = TraceDqr::CAFLAG_PIPE0;
 	}
 	else {
-		pipe = 1;
+		pipe = TraceDqr::CAFLAG_PIPE1;
 	}
 
 	return 1;	// success
 }
 
-CATrace::CATrace(char *caf_name)
+CATrace::CATrace(char *caf_name,TraceDqr::CATraceType catype)
 {
 	caBufferSize = 0;
 	caBuffer = nullptr;
 	caBufferIndex = 0;
+	blockRecNum = 0;
+
 	status = TraceDqr::DQERR_OK;
 
 	if (caf_name == nullptr) {
@@ -187,11 +234,36 @@ CATrace::CATrace(char *caf_name)
 
 	catf.close();
 
+	traceQOut = 0;
+	traceQIn = 0;
+
+	caType = catype;
+
+	switch (catype) {
+	case TraceDqr::CATRACE_VECTOR:
+		traceQSize = 512;
+
+		caTraceQ = new CATraceQItem[traceQSize];
+		break;
+	case TraceDqr::CATRACE_INSTRUCTION:
+
+		traceQSize = 0;
+		caTraceQ = nullptr;
+		break;
+	case TraceDqr::CATRACE_NONE:
+		traceQSize = 0;
+		caTraceQ = nullptr;
+		status = TraceDqr::DQERR_ERR;
+
+		printf("Error: CATrace::CATrace(): invalid trace type CATRACE_NONE\n");
+		return;
+	}
+
 	TraceDqr::DQErr rc;
 
 	rc = parseNextCATraceRec(catr);
 	if (rc != TraceDqr::DQERR_OK) {
-		printf("Error: CATRACE::CATrace(): Error parsing first CA trace record\n");
+		printf("Error: CATrace::CATrace(): Error parsing first CA trace record\n");
 		status = rc;
 	}
 	else {
@@ -199,7 +271,6 @@ CATrace::CATrace(char *caf_name)
 	}
 
 	startAddr = catr.address;
-	baseCycles = 0;
 };
 
 CATrace::~CATrace()
@@ -217,7 +288,12 @@ TraceDqr::DQErr CATrace::rewind()
 {
 	TraceDqr::DQErr rc;
 
+	// this function needs to work for both CA instruction and CA Vector
+
 	caBufferIndex = 0;
+
+	catr.offset = 0;
+	catr.address = 0;
 
 	rc = parseNextCATraceRec(catr);
 	if (rc != TraceDqr::DQERR_OK) {
@@ -229,7 +305,9 @@ TraceDqr::DQErr CATrace::rewind()
 	}
 
 	startAddr = catr.address;
-	baseCycles = 0;
+
+	traceQOut = 0;
+	traceQIn = 0;
 
 	return status;
 }
@@ -251,18 +329,159 @@ TraceDqr::DQErr CATrace::dumpCurrentCARecord(int level)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr CATrace::consume(int &numConsumed,int &pipe,uint32_t &cycles)
+TraceDqr::DQErr CATrace::packQ()
 {
-	TraceDqr::DQErr rc;
+	int src;
+	int dst;
 
-	if (status != TraceDqr::DQERR_OK) {
-		return status;
+	dst = traceQOut;
+	src = traceQOut;
+
+	while ((dst != traceQIn) && (src != traceQIn)) { // still have stuff in Q
+		// find next empty record
+
+		while ((dst != traceQIn) && (caTraceQ[dst].record != 0)) {
+			dst += 1;
+			if (dst >= traceQSize) {
+				dst = 0;
+			}
+		}
+
+		if (dst != traceQIn) {
+			// find next valid record
+
+			src = dst+1;
+			if (src >= traceQSize) {
+				src = 0;
+			}
+
+			while ((src != traceQIn) && (caTraceQ[src].record == 0)) {
+				src += 1;
+				if (src >= traceQSize) {
+					src = 0;
+				}
+			}
+
+			if (src != traceQIn) {
+				caTraceQ[dst] = caTraceQ[src];
+			}
+		}
 	}
 
+	// dst either points to traceQIn, or the last full record
+
+	if (dst != traceQIn) {
+		// update traceQin
+
+		dst += 1;
+		if (dst >= traceQSize) {
+			dst = 0;
+		}
+		traceQIn = dst;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+int CATrace::roomQ()
+{
+	if (traceQIn == traceQOut) {
+		return traceQSize - 1;
+	}
+
+	if (traceQIn < traceQOut) {
+		return traceQOut - traceQIn - 1;
+	}
+
+	return traceQSize - traceQIn + traceQOut - 1;
+}
+
+TraceDqr::DQErr CATrace::addQ(uint32_t data,uint32_t t)
+{
+	// first see if there is enough room in the Q for 5 new entries
+
+	int r;
+
+	r = roomQ();
+
+	if (r < 5) {
+		TraceDqr::DQErr rc;
+
+		rc = packQ();
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
+		}
+
+		r = roomQ();
+		if (r < 5) {
+			printf("Error: addQ(): caTraceQ[] full\n");
+
+			dumpCAQ();
+
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	for (int i = 0; i < 5; i++) {
+		caTraceQ[traceQIn].record = (uint8_t)(data >> (6*(4-i))) & 0x3f;
+
+		caTraceQ[traceQIn].cycle = t;
+		t += 1;
+		traceQIn += 1;
+		if (traceQIn >= traceQSize) {
+			traceQIn = 0;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CATrace::parseNextVectorRecord(int &newDataStart)
+{
+	uint32_t cycles;
+	uint32_t record;
+	TraceDqr::DQErr rc;
+
+	// get another CA Vector record (32 bits) from the catr object and add to traceQ
+
+	int numConsumed;
 	numConsumed = 0;
 
 	while (numConsumed == 0) {
-		numConsumed = catr.consume(pipe,cycles);
+		numConsumed = catr.consumeCAVector(record,cycles);
+		if (numConsumed == 0) {
+			// need to read another record
+
+			rc = parseNextCATraceRec(catr); // this will reload catr.data[]
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+		}
+	}
+
+	newDataStart = traceQIn;
+
+	cycles += blockRecNum * 5 * 32;
+
+	rc = addQ(record,cycles);
+
+	status = rc;
+
+	return rc;
+}
+
+TraceDqr::DQErr CATrace::consumeCAInstruction(uint32_t &pipe,uint32_t &cycles)
+{
+	// Consume next pipe flag. Reloads catr.data[] from caBuffer if needed
+
+	int numConsumed;
+	numConsumed = 0;
+
+	TraceDqr::DQErr rc;
+
+	while (numConsumed == 0) {
+		numConsumed = catr.consumeCAInstruction(pipe,cycles);
 		if (numConsumed == 0) {
 			// need to read another record
 
@@ -271,12 +490,405 @@ TraceDqr::DQErr CATrace::consume(int &numConsumed,int &pipe,uint32_t &cycles)
 				status = rc;
 				return rc;
 			}
-
-			baseCycles += (30*32)/2;
 		}
 	}
 
-	cycles += baseCycles;
+	cycles += blockRecNum * 15 * 32;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pipe)
+{
+	if (caTraceQ == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	// first look for pipe info in Q
+
+	// look in Q and see if record with matching type is found
+
+	int nextQ;
+
+	while (QStart != traceQIn) {
+		nextQ = QStart+1;
+		if (nextQ > traceQSize) {
+			nextQ = 0;
+		}
+
+		if ((caTraceQ[QStart].record & TraceDqr::CAVFLAG_V0) != 0) {
+			pipe = TraceDqr::CAFLAG_PIPE0;
+			cycles = caTraceQ[QStart].cycle;
+			caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V0;
+
+			QStart = nextQ;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		if ((caTraceQ[QStart].record & TraceDqr::CAVFLAG_V1) != 0) {
+			pipe = TraceDqr::CAFLAG_PIPE1;
+			cycles = caTraceQ[QStart].cycle;
+			caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V1;
+
+			QStart = nextQ;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		QStart += 1;
+
+		if (QStart >= traceQSize) {
+			QStart = 0;
+		}
+	}
+
+	// otherwise, start reading records and adding them to the Q until
+	// matching type is found
+
+	TraceDqr::DQErr rc;
+
+	for (;;) {
+		// get next record
+
+		rc = parseNextVectorRecord(QStart);	// reads a record and adds it to the Q (adds five entries to the Q. Packs the Q if needed
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return rc;
+		}
+
+		while (QStart != traceQIn) {
+			nextQ = QStart + 1;
+			if (nextQ >= traceQSize) {
+				nextQ = 0;
+			}
+
+			if ((caTraceQ[QStart].record & TraceDqr::CAVFLAG_V0) != 0) {
+				pipe = TraceDqr::CAFLAG_PIPE0;
+				cycles = caTraceQ[QStart].cycle;
+				caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V0;
+
+				QStart = nextQ;
+
+				return TraceDqr::DQERR_OK;
+			}
+
+			if ((caTraceQ[QStart].record & TraceDqr::CAVFLAG_V1) != 0) {
+				pipe = TraceDqr::CAFLAG_PIPE1;
+				cycles = caTraceQ[QStart].cycle;
+				caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V1;
+
+				nextQ = QStart;
+
+				return TraceDqr::DQERR_OK;
+			}
+
+			QStart += 1;
+
+			if (QStart >= traceQSize) {
+				QStart = 0;
+			}
+		}
+	}
+
+	return TraceDqr::DQERR_ERR;
+}
+
+TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlags type,uint32_t &cycles)
+{
+	if (caTraceQ == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	// first look for pipe info in Q
+
+	// look in Q and see if record with matching type is found
+
+	int nextQ;
+
+	while (QStart != traceQIn) {
+		nextQ = QStart+1;
+		if (nextQ > traceQSize) {
+			nextQ = 0;
+		}
+
+		if ((caTraceQ[QStart].record & type) != 0) {
+			cycles = caTraceQ[QStart].cycle;
+			caTraceQ[QStart].record &= ~type;
+
+			QStart = nextQ;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		QStart += 1;
+
+		if (QStart >= traceQSize) {
+			QStart = 0;
+		}
+	}
+
+
+	// otherwise, start reading records and adding them to the Q until
+	// matching type is found
+
+	TraceDqr::DQErr rc;
+
+	for (;;) {
+		// get next record
+
+		rc = parseNextVectorRecord(QStart);	// reads a record and adds it to the Q (adds five entries to the Q. Packs the Q if needed
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+
+			return rc;
+		}
+
+		while (QStart != traceQIn) {
+			nextQ = QStart + 1;
+			if (nextQ >= traceQSize) {
+				nextQ = 0;
+			}
+
+			if ((caTraceQ[QStart].record & type) != 0) {
+				cycles = caTraceQ[QStart].cycle;
+				caTraceQ[QStart].record &= ~type;
+
+				QStart = nextQ;
+
+				return TraceDqr::DQERR_OK;
+			}
+
+			QStart += 1;
+
+			if (QStart >= traceQSize) {
+				QStart = 0;
+			}
+		}
+	}
+
+	return TraceDqr::DQERR_ERR;
+}
+
+void CATrace::dumpCAQ()
+{
+	printf("dumpCAQ(): traceQSize: %d traceQOut: %d traceQIn: %d\n",traceQSize,traceQOut,traceQIn);
+
+	for (int i = traceQOut; i != traceQIn;) {
+		printf("Q[%d]: %4d %02x",i,caTraceQ[i].cycle,caTraceQ[i].record);
+
+		if (caTraceQ[i].record & TraceDqr::CAVFLAG_V0) {
+			printf(" V0");
+		}
+		else {
+			printf("   ");
+		}
+
+		if (caTraceQ[i].record & TraceDqr::CAVFLAG_V1) {
+			printf(" V1");
+		}
+		else {
+			printf("   ");
+		}
+
+		if (caTraceQ[i].record & TraceDqr::CAVFLAG_VISTART) {
+			printf(" VISTART");
+		}
+		else {
+			printf("        ");
+		}
+
+		if (caTraceQ[i].record & TraceDqr::CAVFLAG_VIARITH) {
+			printf(" VIARITH");
+		}
+		else {
+			printf("         ");
+		}
+
+		if (caTraceQ[i].record & TraceDqr::CAVFLAG_VISTORE) {
+			printf(" VSTORE");
+		}
+		else {
+			printf("       ");
+		}
+
+		if (caTraceQ[i].record & TraceDqr::CAVFLAG_VILOAD) {
+			printf(" VLOAD\n");
+		}
+		else {
+			printf("       \n");
+		}
+
+		i += 1;
+		if (i >= traceQSize) {
+			i = 0;
+		}
+	}
+}
+
+TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint32_t &pipeCycles,uint32_t &viStartCycles,uint32_t &viFinishCycles)
+{
+	int qStart;
+
+	TraceDqr::DQErr rc;
+
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
+	}
+
+	switch (caType) {
+	case TraceDqr::CATRACE_NONE:
+		printf("Error: CATrace::consume(): invalid trace type CATRACE_NONE\n");
+		return TraceDqr::DQERR_ERR;
+	case TraceDqr::CATRACE_INSTRUCTION:
+		qStart = traceQOut;
+
+		rc = consumeCAInstruction(caFlags,pipeCycles);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return rc;
+		}
+		break;
+	case TraceDqr::CATRACE_VECTOR:
+		// get pipe
+
+		qStart = traceQOut;
+
+		rc = consumeCAPipe(qStart,pipeCycles,caFlags);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return status;
+		}
+
+		switch(iType) {
+		case TraceDqr::INST_VECT_ARITH:
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VIARITH,viFinishCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			caFlags |= TraceDqr::CAFLAG_VSTART | TraceDqr::CAFLAG_VARITH;
+
+			if (globalDebugFlag) {
+				printf("CATrace::consume(): INST_VECT_ARITH consumed vector instruction. Current qStart: %d traceQOut: %d traceQIn: %d\n",qStart,traceQOut,traceQIn);
+				printf("vector: viFinishCycles: %d\n",viFinishCycles);
+				dumpCAQ();
+			}
+			break;
+		case TraceDqr::INST_VECT_LOAD:
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			caFlags |= TraceDqr::CAFLAG_VSTART | TraceDqr::CAFLAG_VLOAD;
+
+			if (globalDebugFlag) {
+				printf("CATrace::consume(): INST_VECT_LOAD consumed vector instruction. Current qStart: %d traceQOut: %d traceQIn: %d\n",qStart,traceQOut,traceQIn);
+				printf("vector: viFinishCycles: %d\n",viFinishCycles);
+				dumpCAQ();
+			}
+			break;
+		case TraceDqr::INST_VECT_STORE:
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTORE,viFinishCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			caFlags |= TraceDqr::CAFLAG_VSTART | TraceDqr::CAFLAG_VSTORE;
+
+			if (globalDebugFlag) {
+				printf("CATrace::consume(): INST_VECT_STORE consumed vector instruction. Current qStart: %d traceQOut: %d traceQIn: %d\n",qStart,traceQOut,traceQIn);
+				printf("vector: viFinishCycles: %d\n",viFinishCycles);
+				dumpCAQ();
+			}
+			break;
+		case TraceDqr::INST_VECT_AMO:
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			caFlags |= TraceDqr::CAFLAG_VSTART | TraceDqr::CAFLAG_VLOAD;
+
+			if (globalDebugFlag) {
+				printf("CATrace::consume(): INST_VECT_AMO consumed vector instruction. Current qStart: %d traceQOut: %d traceQIn: %d\n",qStart,traceQOut,traceQIn);
+				printf("vector: viFinishCycles: %d\n",viFinishCycles);
+				dumpCAQ();
+			}
+			break;
+		case TraceDqr::INST_VECT_AMO_WW:
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTORE,viFinishCycles);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
+				return rc;
+			}
+
+			caFlags |= TraceDqr::CAFLAG_VSTART | TraceDqr::CAFLAG_VLOAD | TraceDqr::CAFLAG_VSTORE;
+
+			if (globalDebugFlag) {
+				printf("CATrace::consume(): INST_VECT_AMO consumed vector instruction. Current qStart: %d traceQOut: %d traceQIn: %d\n",qStart,traceQOut,traceQIn);
+				printf("vector: viFinishCycles: %d\n",viFinishCycles);
+				dumpCAQ();
+			}
+			break;
+		case TraceDqr::INST_VECT_CONFIG:
+			break;
+		default:
+			break;
+		}
+
+		// update traceQOut for vector traces
+
+		while ((caTraceQ[traceQOut].record == 0) && (traceQOut != traceQIn)) {
+			traceQOut += 1;
+			if (traceQOut >= traceQSize) {
+				traceQOut = 0;
+			}
+		}
+
+		break;
+	}
 
 	return TraceDqr::DQERR_OK;
 }
@@ -293,12 +905,22 @@ TraceDqr::ADDRESS CATrace::getCATraceStartAddr()
 
 TraceDqr::DQErr CATrace::parseNextCATraceRec(CATraceRec &car)
 {
+	// Reload all 32 catr.data[] records from the raw caBuffer[] data. Update caBufferIndex to start of next record in raw data
+	// Works for CAInstruction and CAVector traces
+
+	// needs to update offset and blockRecordNum as well!
+
 	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
 
+	if ((int)caBufferIndex > (int)(caBufferSize - sizeof(uint32_t))) {
+		status = TraceDqr::DQERR_EOF;
+		return TraceDqr::DQERR_EOF;
+	}
+
 	uint32_t d = 0;
-	bool firstRecord = false;
+	bool firstRecord;
 
 	if (caBufferIndex == 0) {
 		// find start of first message (in case buffer wrapped)
@@ -310,79 +932,56 @@ TraceDqr::DQErr CATrace::parseNextCATraceRec(CATraceRec &car)
 			last = d >> 30;
 			d = *(uint32_t*)(&caBuffer[caBufferIndex]);
 			caBufferIndex += sizeof(uint32_t);
-		} while (((d >> 30) != 0x3) && (last != 0) && (caBufferIndex < caBufferSize));
 
-		if ((int)caBufferIndex >= (int)(caBufferSize - sizeof(uint32_t)*15)) {
-			return TraceDqr::DQERR_EOF;
-		}
+			if ((int)caBufferIndex > (int)(caBufferSize - sizeof(uint32_t))) {
+				status = TraceDqr::DQERR_EOF;
+				return TraceDqr::DQERR_EOF;
+			}
+		} while (((d >> 30) != 0x3) && (last != 0));
 	}
 	else {
-		if ((int)caBufferIndex >= (int)(caBufferSize - sizeof(uint32_t)*32)) {
-			// need to have at least 32 words of 32 bits in buffer for a complete CA frame
-
-			return TraceDqr::DQERR_EOF;
-		}
+		firstRecord = false;
 
 		// need to get first word into d
-		d = *(uint32_t*)(&caBuffer[caBufferIndex]); //is this in the correct order, or backwards?
+		d = *(uint32_t*)(&caBuffer[caBufferIndex]);
 		caBufferIndex += sizeof(uint32_t);
 	}
 
 //	printf("have start of file %d\n",caBufferIndex);
 
-	// read next record. skip records with all retire bits = 0 (but update baseCycles for each skip
+	// make sure there are at least 31 more 32 bit records in the caBuffer. If not, EOF
+
+	if ((int)caBufferIndex > (int)(caBufferSize - sizeof(uint32_t)*31)) {
+		return TraceDqr::DQERR_EOF;
+	}
 
 	TraceDqr::ADDRESS addr;
-	uint32_t x;
+	addr = 0;
 
-	do {
-		addr = 0;
-		car.data[0] = d & 0x3fffffff;
-		x = car.data[0];
+	car.data[0] = d & 0x3fffffff;
 
-		for (int i = 1; i < 32; i++) {
-			d = *(uint32_t*)(&caBuffer[caBufferIndex]);
-			caBufferIndex += sizeof(uint32_t);
+	for (int i = 1; i < 32; i++) {
+		d = *(uint32_t*)(&caBuffer[caBufferIndex]);
+		caBufferIndex += sizeof(uint32_t);
 
-			addr |= (((TraceDqr::ADDRESS)(d >> 30)) << 2*(i-1));
-			car.data[i] = d & 0x3fffffff;
-			x |= car.data[i];
-		}
+		// don't need to check caBufferIndex for EOF because of the check before for loop
 
-		if (x == 0) {
-			d = *(uint32_t*)(&caBuffer[caBufferIndex]); //is this in the correct order, or backwards?
-			caBufferIndex += sizeof(uint32_t);
-			baseCycles += (30*32)/2;
-		}
-	} while (x == 0);
+		addr |= (((TraceDqr::ADDRESS)(d >> 30)) << 2*(i-1));
+		car.data[i] = d & 0x3fffffff;
+	}
 
 	if (firstRecord != false) {
-		car.data[0] |= (1<<29);
+		car.data[0] |= (1<<29); // set the pipe0 finish flag for first bit of trace file (vector or instruction)
+		blockRecNum = 0;
+	}
+	else {
+		blockRecNum += 1;
 	}
 
 	car.address = addr;
 	car.offset = 0;
 
 	return TraceDqr::DQERR_OK;
-}
-
-TraceDqr::DQErr CATrace::parseCATrace()
-{
-	if (caBuffer == nullptr) {
-		return TraceDqr::DQERR_ERR;
-	}
-
-	TraceDqr::DQErr rc;
-	CATraceRec catr;
-
-	do {
-		rc = parseNextCATraceRec(catr);
-		if (rc == TraceDqr::DQERR_OK) {
-			catr.dump();
-		}
-	} while (rc == TraceDqr::DQERR_OK);
-
-	return rc;
 }
 
 // class trace methods
@@ -561,8 +1160,10 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
   instructionInfo.operandLabelOffset = 0;
 
   instructionInfo.timestamp = 0;
-  instructionInfo.cycles = 0;
-  instructionInfo.pipe = 0;
+  instructionInfo.caFlags = TraceDqr::CAFLAG_NONE;
+  instructionInfo.pipeCycles = 0;
+  instructionInfo.VIStartCycles = 0;
+  instructionInfo.VIFinishCycles = 0;
 
   sourceInfo.sourceFile = nullptr;
   sourceInfo.sourceFunction = nullptr;
@@ -701,9 +1302,9 @@ TraceDqr::DQErr Trace::setPathType(TraceDqr::pathType pt)
 	return TraceDqr::DQERR_ERR;
 }
 
-TraceDqr::DQErr Trace::setCATraceFile( char *caf_name)
+TraceDqr::DQErr Trace::setCATraceFile( char *caf_name,TraceDqr::CATraceType catype)
 {
-	caTrace = new CATrace(caf_name);
+	caTrace = new CATrace(caf_name,catype);
 
 	TraceDqr::DQErr rc;
 	rc = caTrace->getStatus();
@@ -1672,9 +2273,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	TraceDqr::DQErr rc;
 	int crFlag;
 	TraceDqr::BranchFlags brFlags;
-	int numConsumed;
-	int pipe;
-	uint32_t cycles;
+	uint32_t caFlags;
+	uint32_t pipeCycles;
+	uint32_t viStartCycles;
+	uint32_t viFinishCycles;
 
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
@@ -1943,7 +2545,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				else {
 //					printf("caSyncAddr: %08x, teAddr: %08x\n",caSyncAddr,teAddr);
 
-					rc = caTrace->consume(numConsumed,pipe,cycles);
+					// We just use an itype of maybe we need to get the instruciton ad addr and get its type??
+
+					rc = caTrace->consume(caFlags,TraceDqr::INST_SCALER,pipeCycles,viStartCycles,viFinishCycles);
+
 					if (rc == TraceDqr::DQERR_EOF) {
 						state[currentCore = TRACE_STATE_DONE];
 
@@ -1961,13 +2566,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 
 //			if (teAddr == caSyncAddr) {
-//				printf("ca sync found at address %08x, cycles: %d\n",caSyncAddr,cycles);
+//				printf("ca sync found at address %08x, cycles: %d\n",caSyncAddr,pipeCycles);
 //			}
 
 			if (teAddr != caSyncAddr) {
 				// unable to sync by fast-forwarding the CA trace to match the instruction trace
 				// so we will try to run the normal trace for a few instructions with the hope it
-				// will syunc up with the ca trace! We set the max number of instructions to run
+				// will sync up with the ca trace! We set the max number of instructions to run
 				// the normal trace below, and turn tracing loose!
 
 				syncCount = 16;
@@ -2730,6 +3335,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			uint32_t inst;
 			int inst_size;
+			TraceDqr::InstType inst_type;
+			int32_t immediate;
+			bool isBranch;
+			int rc;
+			TraceDqr::Reg rs1;
+			TraceDqr::Reg rd;
+
 
 			// getInstrucitonByAddress() should cache last instrucioton/address because I thjink
 			// it gets called a couple times for each address/insruction in a row
@@ -2745,12 +3357,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			// figure out how big the instruction is
 
-			int rc;
-
 //			decode instruction/decode instruction size should cache their results (at least last one)
 //			because it gets called a few times here!
 
-			rc = decodeInstructionSize(inst,inst_size);	// inst and inst_size are only used for analytics?
+			rc = decodeInstruction(inst,inst_size,inst_type,rs1,rd,immediate,isBranch);
 			if (rc != 0) {
 				printf("Error: Cann't decode size of instruction %04x\n",inst);
 
@@ -2773,8 +3383,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// should always have enough informatioon. But it can happen for indirect branches. For indirect
 			// branches, retiring the current trace message (should be an indirect branch or indirect
 			// brnach with sync) will set the next address correclty.
-
-//			foodog
 
 			status = nextAddr(currentCore,currentAddress[currentCore],addr,nm.tcode,crFlag,brFlags);
 			if (status != TraceDqr::DQERR_OK) {
@@ -2842,20 +3450,23 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				if (syncCount == 0) {
-					status = caTrace->consume(numConsumed,pipe,cycles);
+					status = caTrace->consume(caFlags,inst_type,pipeCycles,viStartCycles,viFinishCycles);
+
 					if (status == TraceDqr::DQERR_EOF) {
 						state[currentCore] = TRACE_STATE_DONE;
+
 						return status;
 					}
 
 					if (status != TraceDqr::DQERR_OK) {
 						state[currentCore] = TRACE_STATE_ERROR;
+
 						return status;
 					}
 
-					eCycleCount[currentCore] = cycles - lastCycle[currentCore];
+					eCycleCount[currentCore] = pipeCycles - lastCycle[currentCore];
 
-					lastCycle[currentCore] = cycles;
+					lastCycle[currentCore] = pipeCycles;
 				}
 			}
 
@@ -2867,13 +3478,17 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				(*instInfo)->brFlags = brFlags;
 
 				if ((caTrace != nullptr) && (syncCount == 0)) {
-//					printf("setting info %d %d %d\n",cycles,eCycleCount[currentCore],pipe);
-					(*instInfo)->timestamp = cycles;
-//					(*instInfo)->cycles = cycles - lastCycle[currentCore];
-//					if (lastCycle[currentCore] == cycles) {
-						(*instInfo)->cycles = eCycleCount[currentCore];
+//					printf("setting info %d %d %d\n",cycles,eCycleCount[currentCore],caFlags);
+					(*instInfo)->timestamp = pipeCycles;
+//					(*instInfo)->pipeCycles = pipeCycles - lastCycle[currentCore];
+//					if (lastCycle[currentCore] == pupeCycles) {
+						(*instInfo)->pipeCycles = eCycleCount[currentCore];
 //					}
-					(*instInfo)->pipe = pipe;
+
+					(*instInfo)->VIStartCycles = viStartCycles;
+					(*instInfo)->VIFinishCycles = viFinishCycles;
+
+					(*instInfo)->caFlags = caFlags;
 				}
 				else {
 					(*instInfo)->timestamp = lastTime[currentCore];

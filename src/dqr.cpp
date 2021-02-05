@@ -8319,6 +8319,81 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 			is_branch = false;
 		}
 		break;
+	case 0x07: // vector load
+		// Need to check width encoding field to distinguish between vector and normal FP loads (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_LOAD;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x27: // vector store
+		// Need to check width encoding field to distinguish between vector and normal FP stores (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_STORE;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x2f: // vector AMO
+		// Need to check width encoding field to distinguish between vector and normal AMO (bits 26-28)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			if ((instruction >> 26) & 0x01) {
+				inst_type = TraceDqr::INST_VECT_AMO_WW;
+			}
+			else {
+				inst_type = TraceDqr::INST_VECT_AMO;
+			}
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x57: // vector arith or vector config
+		if (((instruction >> 12) & 0x7) <= 6) {
+			inst_type = TraceDqr::INST_VECT_ARITH;
+		}
+		else {
+			inst_type = TraceDqr::INST_VECT_CONFIG;
+		}
+
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
+		break;
 	default:
 		inst_type = TraceDqr::INST_UNKNOWN;
 		immediate = 0;
@@ -8645,6 +8720,80 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 			rs1 = TraceDqr::REG_unknown;
 			is_branch = false;
 		}
+		break;
+	case 0x07: // vector load
+		// Need to check width encoding field to distinguish between vector and normal FP loads (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_LOAD;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x27: // vector store
+		// Need to check width encoding field to distinguish between vector and normal FP stores (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_STORE;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x2f: // vector AMO
+		// Need to check width encoding field to distinguish between vector and normal AMO (bits 26-28)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			if ((instruction >> 26) & 0x01) {
+				inst_type = TraceDqr::INST_VECT_AMO_WW;
+			}
+			else {
+				inst_type = TraceDqr::INST_VECT_AMO;
+			}
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x57: // vector arith or vector config
+		if (((instruction >> 12) & 0x7) <= 6) {
+			inst_type = TraceDqr::INST_VECT_ARITH;
+		}
+		else {
+			inst_type = TraceDqr::INST_VECT_CONFIG;
+		}
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
 		break;
 	default:
 		inst_type = TraceDqr::INST_UNKNOWN;
@@ -10188,10 +10337,10 @@ TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchF
 	instructionInfo.wVal = srec->wVal;
 
 	if (currentTime[srec->coreId] == 0) {
-		instructionInfo.cycles = 0;
+		instructionInfo.pipeCycles = 0;
 	}
 	else {
-		instructionInfo.cycles = srec->cycles - currentTime[srec->coreId];
+		instructionInfo.pipeCycles = srec->cycles - currentTime[srec->coreId];
 	}
 
 	currentTime[srec->coreId] = srec->cycles;
