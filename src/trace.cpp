@@ -3431,6 +3431,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			currentAddress[currentCore] = addr;
 
+			uint32_t prevCycle;
+
 			if (caTrace != nullptr) {
 				if (syncCount > 0) {
 					if (caSyncAddr == instructionInfo.address) {
@@ -3464,7 +3466,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						return status;
 					}
 
-					eCycleCount[currentCore] = pipeCycles - lastCycle[currentCore];
+					prevCycle = lastCycle[currentCore];
+
+					eCycleCount[currentCore] = pipeCycles - prevCycle;
 
 					lastCycle[currentCore] = pipeCycles;
 				}
@@ -3478,15 +3482,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				(*instInfo)->brFlags = brFlags;
 
 				if ((caTrace != nullptr) && (syncCount == 0)) {
-//					printf("setting info %d %d %d\n",cycles,eCycleCount[currentCore],caFlags);
 					(*instInfo)->timestamp = pipeCycles;
-//					(*instInfo)->pipeCycles = pipeCycles - lastCycle[currentCore];
-//					if (lastCycle[currentCore] == pupeCycles) {
-						(*instInfo)->pipeCycles = eCycleCount[currentCore];
-//					}
-
-					(*instInfo)->VIStartCycles = viStartCycles;
-					(*instInfo)->VIFinishCycles = viFinishCycles;
+					(*instInfo)->pipeCycles = eCycleCount[currentCore];
+					(*instInfo)->VIStartCycles = viStartCycles - prevCycle;
+					(*instInfo)->VIFinishCycles = viFinishCycles - prevCycle;
 
 					(*instInfo)->caFlags = caFlags;
 				}
