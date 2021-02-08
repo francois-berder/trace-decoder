@@ -334,10 +334,6 @@ TraceDqr::DQErr CATrace::packQ()
 	int src;
 	int dst;
 
-	dumpCAQ();
-//foodog
-	exit(1);
-
 	dst = traceQOut;
 	src = traceQOut;
 
@@ -345,6 +341,8 @@ TraceDqr::DQErr CATrace::packQ()
 		// find next empty record
 
 		while ((dst != traceQIn) && (caTraceQ[dst].record != 0)) {
+			// look for an empty slot
+
 			dst += 1;
 			if (dst >= traceQSize) {
 				dst = 0;
@@ -352,7 +350,9 @@ TraceDqr::DQErr CATrace::packQ()
 		}
 
 		if (dst != traceQIn) {
-			// find next valid record
+			// dst is an empty slot
+
+			// now find next valid record
 
 			src = dst+1;
 			if (src >= traceQSize) {
@@ -360,6 +360,8 @@ TraceDqr::DQErr CATrace::packQ()
 			}
 
 			while ((src != traceQIn) && (caTraceQ[src].record == 0)) {
+				// look for a record with data in it to move
+
 				src += 1;
 				if (src >= traceQSize) {
 					src = 0;
@@ -368,6 +370,7 @@ TraceDqr::DQErr CATrace::packQ()
 
 			if (src != traceQIn) {
 				caTraceQ[dst] = caTraceQ[src];
+				caTraceQ[src].record = 0; // don't forget to mark this record as empty!
 			}
 		}
 	}
@@ -523,8 +526,6 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V0;
 
-			printf("found pipe0 at %d\n",QStart);
-
 			QStart += 1;
 			if (QStart >= traceQSize) {
 				QStart = 0;
@@ -537,8 +538,6 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 			pipe = TraceDqr::CAFLAG_PIPE1;
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V1;
-
-			printf("found pipe1 at %d\n",QStart);
 
 			QStart += 1;
 			if (QStart >= traceQSize) {
@@ -575,8 +574,6 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 				cycles = caTraceQ[QStart].cycle;
 				caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V0;
 
-				printf("found pipe0 at %d\n",QStart);
-
 				QStart += 1;
 				if (QStart >= traceQSize) {
 					QStart = 0;
@@ -589,8 +586,6 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 				pipe = TraceDqr::CAFLAG_PIPE1;
 				cycles = caTraceQ[QStart].cycle;
 				caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V1;
-
-				printf("found pipe1 at %d\n",QStart);
 
 				QStart += 1;
 				if (QStart >= traceQSize) {
@@ -624,8 +619,6 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 		if ((caTraceQ[QStart].record & type) != 0) {
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~type;
-
-			printf("found vect at %d\n",QStart);
 
 			QStart += 1;
 			if (QStart >= traceQSize) {
@@ -662,8 +655,6 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 			if ((caTraceQ[QStart].record & type) != 0) {
 				cycles = caTraceQ[QStart].cycle;
 				caTraceQ[QStart].record &= ~type;
-
-				printf("found vect at %d\n",QStart);
 
 				QStart += 1;
 				if (QStart >= traceQSize) {
@@ -766,8 +757,6 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 
 		qStart = traceQOut;
 
-		printf("Qstart1: %d\n",qStart);
-
 		rc = consumeCAPipe(qStart,pipeCycles,caFlags);
 		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
@@ -776,15 +765,11 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 
 		switch(iType) {
 		case TraceDqr::INST_VECT_ARITH:
-			printf("arith: Qstart2: %d\n",qStart);
-
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
-
-			printf("Qstart3: %d\n",qStart);
 
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VIARITH,viFinishCycles);
 			if (rc != TraceDqr::DQERR_OK) {
@@ -801,15 +786,11 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 			}
 			break;
 		case TraceDqr::INST_VECT_LOAD:
-			printf("load: Qstart4: %d\n",qStart);
-
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
-
-			printf("Qstart5: %d\n",qStart);
 
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles);
 			if (rc != TraceDqr::DQERR_OK) {
@@ -826,23 +807,17 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 			}
 			break;
 		case TraceDqr::INST_VECT_STORE:
-			printf("store: start6: %d\n",qStart);
-
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
 
-			printf("Qstart7: %d\n",qStart);
-
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTORE,viFinishCycles);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
-
-			printf("found store at %d (-1)\n",qStart);
 
 			caFlags |= TraceDqr::CAFLAG_VSTART | TraceDqr::CAFLAG_VSTORE;
 
@@ -853,15 +828,11 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 			}
 			break;
 		case TraceDqr::INST_VECT_AMO:
-			printf("amo: Qstart8: %d\n",qStart);
-
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
-
-			printf("Qstart9: %d\n",qStart);
 
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles);
 			if (rc != TraceDqr::DQERR_OK) {
@@ -878,23 +849,17 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 			}
 			break;
 		case TraceDqr::INST_VECT_AMO_WW:
-			printf("amo_ww: Qstart10: %d\n",qStart);
-
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
 
-			printf("Qstart11: %d\n",qStart);
-
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
-
-			printf("Qstart12: %d\n",qStart);
 
 			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTORE,viFinishCycles);
 			if (rc != TraceDqr::DQERR_OK) {
@@ -916,8 +881,6 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 			break;
 		}
 
-		printf("Qstart13: %d\n",qStart);
-
 		// update traceQOut for vector traces
 
 		while ((caTraceQ[traceQOut].record == 0) && (traceQOut != traceQIn)) {
@@ -926,9 +889,6 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 				traceQOut = 0;
 			}
 		}
-
-		printf("traceQOut: %d traceQIn: %d\n",traceQOut,traceQIn);
-
 		break;
 	}
 
