@@ -36,17 +36,19 @@ using namespace std;
 
 static void usage(char *name)
 {
-	printf("Usage: dqr -t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]\n");
-	printf("           [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path]\n");
-	printf("           [-itcprint | -itcprint=n] [-noitcprint] [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+]\n");
-	printf("           [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n] [-noanalytics] [-freq nn] [-tssize=n]\n");
-	printf("           [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n] [-v] [-h]\n");
+	printf("Usage: dqr -t tracefile -e elffile [-ca cafile] | -n basename) [-ca cafile] [-catype [none | instruction | vector]\n");
+	printf("           [-srcbits=nn] [-start mn] [-stop mn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]\n");
+	printf("           [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]\n");
+	printf("           [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]\n");
+	printf("           [-noanalytics] [-freq nn] [-tssize=n] [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n]\n");
+	printf("           [-s file] [-r addr] [-labels] [-nolables] [-debug] [-nodebug] [-v] [-h]\n");
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
 	printf("-s simfile:   Specify the name of the simulator output file. When using a simulator output file, cannot use\n");
 	printf("              a tracefile (-t option). Can provide an elf file (-e option), but is not required.\n");
 	printf("-ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.\n");
+	printf("-catype nn:   Specify the type of the CA trace file. Valid options are none, instruction, and vector\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
 	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
@@ -67,7 +69,7 @@ static void usage(char *name)
 	printf("              Path may be enclosed in quotes if it contains spaces.\n");
 	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated\n");
 	printf("              and displayed as a string until a terminating \\0 is found\n");
-	printf("-itcprint=n:  Disaply ITC channel n data as a null terminated string. Data for consectutie ITC channel n's will be\n");
+	printf("-itcprint=n:  Display ITC channel n data as a null terminated string. Data for consecutive ITC channel n's will be\n");
 	printf("              concatinated and display as a string until a terminating \\n or \\0 is found\n");
 	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
 	printf("-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and\n");
@@ -85,6 +87,7 @@ static void usage(char *name)
 	printf("              if the elf file specifies > 32 bit address size (such as 64). Specifying -32+ overrides the value\n");
 	printf("              read from the elf file\n");
 	printf("-64:          Display addresses as 64 bits. Overrides value read from elf file\n");
+	printf("-archsize=nn: Set the architecture size to 32 or 64 bits instead of getting it from the elf file\n");
 	printf("-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'\n");
 	printf("-noaddrsep:   Do not add a separator for addresses greater than 32 bit between the upper bits and the lower 32 bits\n");
 	printf("              (default).\n");
@@ -109,6 +112,9 @@ static void usage(char *name)
 	printf("              Also cleans up path, removing // -> /, /./ -> /, and uplevels for each /../\n");
 	printf("-pathraw:     Show all file path in the format stored in the elf file\n");
 	printf("-msglevel=n:  Set the nexus trace message detail level. n must be >= 0, <= 3\n");
+	printf("-r addr:      Display the label information for the address specified for the elf file specified\n");
+	printf("-debug:       Display some debug information for the trace to aid in debugging the trace decoder\n");
+	printf("-nodebug:     Do not display any debug information for the trace decoder\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
