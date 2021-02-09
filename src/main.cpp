@@ -61,7 +61,7 @@ static void usage(char *name)
 	printf("-nofile:      Do not display source file information.\n");
 	printf("-dasm:        Display disassembled code in output (on by default).\n");
 	printf("-nodasm:      Do not display disassembled code in output.\n");
-	printf("-func:        Display function name with srouce information (off by default).\n");
+	printf("-func:        Display function name with source information (off by default).\n");
 	printf("-nofunc:      Do not display function information with source information.\n");
 	printf("-trace:       Display trace information in output (off by default).\n");
 	printf("-notrace:     Do not display trace information in output.\n");
@@ -70,7 +70,7 @@ static void usage(char *name)
 	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated\n");
 	printf("              and displayed as a string until a terminating \\0 is found\n");
 	printf("-itcprint=n:  Display ITC channel n data as a null terminated string. Data for consecutive ITC channel n's will be\n");
-	printf("              concatinated and display as a string until a terminating \\n or \\0 is found\n");
+	printf("              concatenated and display as a string until a terminating \\n or \\0 is found\n");
 	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
 	printf("-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and\n");
 	printf("              cause the address field to be jagged. Overrides value address size read from elf file.\n");
@@ -111,7 +111,7 @@ static void usage(char *name)
 	printf("-pathwindows: Show all file paths using windows-type '\\' path separators\n");
 	printf("              Also cleans up path, removing // -> /, /./ -> /, and uplevels for each /../\n");
 	printf("-pathraw:     Show all file path in the format stored in the elf file\n");
-	printf("-msglevel=n:  Set the nexus trace message detail level. n must be >= 0, <= 3\n");
+	printf("-msglevel=n:  Set the Nexus trace message detail level. n must be >= 0, <= 3\n");
 	printf("-r addr:      Display the label information for the address specified for the elf file specified\n");
 	printf("-debug:       Display some debug information for the trace to aid in debugging the trace decoder\n");
 	printf("-nodebug:     Do not display any debug information for the trace decoder\n");
