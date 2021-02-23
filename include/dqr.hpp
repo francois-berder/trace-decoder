@@ -46,7 +46,6 @@
 
 #define DQR_MAXCORES	16
 
-extern int globalDebugFlag;
 extern const char * const DQR_VERSION;
 
 class TraceDqr {
@@ -61,7 +60,6 @@ public:
 	TRACE_HAVE_INSTINFO = 0x01,
 	TRACE_HAVE_SRCINFO  = 0x02,
 	TRACE_HAVE_MSGINFO  = 0x04,
-	TRACE_HAVE_ITCPRINTINFO = 0x08,
   };
 
   typedef enum {
@@ -139,7 +137,12 @@ public:
   } SyncReason;
 
   typedef enum {
+	ICT_CONTROL = 0,
     ICT_EXT_TRIG   = 8,
+	ICT_INFERABLECALL = 9,
+	ICT_EXCEPTION = 10,
+	ICT_INTERRUPT = 11,
+	ICT_CONTEXT = 13,
 	ICT_WATCHPOINT = 14,
 	ICT_PC_SAMPLE  = 15,
 	ICT_NONE
@@ -358,7 +361,6 @@ public:
 	std::string messageToString(int detailLevel);
 	double seconds();
 
-	void dumpRawMessage();
 	void dump();
 
 	static uint32_t targetFrequency;
@@ -442,12 +444,12 @@ public:
     	struct {
     		TraceDqr::ICTReason cksrc;
     		uint8_t ckdf;
-    		TraceDqr::ADDRESS ckdata;
+    		TraceDqr::ADDRESS ckdata[2];
     	} ict;
     	struct {
     		TraceDqr::ICTReason cksrc;
     		uint8_t ckdf;
-    		TraceDqr::ADDRESS ckdata;
+    		TraceDqr::ADDRESS ckdata[2];
     	} ictWS;
     };
 
@@ -461,7 +463,8 @@ public:
     TraceDqr::BType      getB_Type();
 	TraceDqr::SyncReason getSyncReason();
 	TraceDqr::ICTReason  getICTReason();
-	uint8_t   getEType();
+	uint8_t  getEType();
+	uint8_t  getCKDF();
 	uint8_t  getCDF();
 	uint8_t  getEVCode();
 	uint32_t getData();
@@ -670,7 +673,9 @@ public:
     ~Trace();
     void cleanUp();
     static const char *version();
-	TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
+#ifdef foodog
+    TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
+#endif // foodog
 	TraceDqr::DQErr setTSSize(int size);
 	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
@@ -708,21 +713,22 @@ public:
 	void        analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
 	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
 	TraceDqr::TIMESTAMP adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
-	int         getITCPrintMask();
+	int			getITCPrintMask();
 	int         getITCFlushMask();
-
-	TraceDqr::DQErr getNumBytesInSWTQ(int &numBytes);
 
 private:
 	enum state {
 		TRACE_STATE_SYNCCATE,
 		TRACE_STATE_GETFIRSTSYNCMSG,
-		TRACE_STATE_GETSECONDMSG,
+		TRACE_STATE_GETMSGWITHCOUNT,
+#ifdef foodog
 		TRACE_STATE_GETSTARTTRACEMSG,
 		TRACE_STATE_COMPUTESTARTINGADDRESS,
+#endif // foodog
 		TRACE_STATE_RETIREMESSAGE,
 		TRACE_STATE_GETNEXTMSG,
 		TRACE_STATE_GETNEXTINSTRUCTION,
+		TRACE_STATE_EVENT,
 		TRACE_STATE_DONE,
 		TRACE_STATE_ERROR
 	};
@@ -767,7 +773,9 @@ private:
 	TraceDqr::TIMESTAMP lastCycle[DQR_MAXCORES];
 	int               eCycleCount[DQR_MAXCORES];
 
+#ifdef foodog
 	class NexusMessageSync *messageSync[DQR_MAXCORES];
+#endif // foodog
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);

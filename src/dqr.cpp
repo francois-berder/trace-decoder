@@ -32,42 +32,18 @@
 
 #include <unistd.h>
 #include <fcntl.h>
-#ifdef WINDOWS
-#include <winsock2.h>
-#else // WINDOWS
+#ifndef WINDOWS
 #include <netdb.h>
-#include <sys/ioctl.h>
-#include <errno.h>
 #endif // WINDOWS
 
 #include "dqr.hpp"
 #include "trace.hpp"
-
-//#define DQR_MAXCORES	8
-
-int globalDebugFlag = 0;
+#include "swt.hpp"
 
 // DECODER_VERSION is passed in from the Makefile, from version.mk in the root.
 const char *const DQR_VERSION = DECODER_VERSION;
 
 // static C type helper functions
-
-static int atoh(char a)
-{
-	if (a >= '0' && a <= '9') {
-		return a-'0';
-	}
-
-	if (a >= 'a' && a <= 'f') {
-		return a-'a'+10;
-	}
-
-	if (a >= 'A' && a <= 'F') {
-		return a-'A'+10;
-	}
-
-	return -1;
-}
 
 static void override_print_address(bfd_vma addr, struct disassemble_info *info)
 {
@@ -575,94 +551,6 @@ const char *Source::stripPath(const char *path)
 
 std::string Source::sourceFileToString(std::string path)
 {
-	if (sourceFile != nullptr) {
-		// check for garbage in path/file name
-
-		const char *sf = stripPath(path.c_str());
-		if (sf == nullptr) {
-			printf("Error: sourceFileToString(): stripPath() returned nullptr\n");
-		}
-		else {
-			for (int i = 0; sf[i] != 0; i++) {
-				switch (sf[i]) {
-				case 'a':
-				case 'b':
-				case 'c':
-				case 'd':
-				case 'e':
-				case 'f':
-				case 'g':
-				case 'h':
-				case 'i':
-				case 'j':
-				case 'k':
-				case 'l':
-				case 'm':
-				case 'n':
-				case 'o':
-				case 'p':
-				case 'q':
-				case 'r':
-				case 's':
-				case 't':
-				case 'u':
-				case 'v':
-				case 'w':
-				case 'x':
-				case 'y':
-				case 'z':
-				case 'A':
-				case 'B':
-				case 'C':
-				case 'D':
-				case 'E':
-				case 'F':
-				case 'G':
-				case 'H':
-				case 'I':
-				case 'J':
-				case 'K':
-				case 'L':
-				case 'M':
-				case 'N':
-				case 'O':
-				case 'P':
-				case 'Q':
-				case 'R':
-				case 'S':
-				case 'T':
-				case 'U':
-				case 'V':
-				case 'W':
-				case 'X':
-				case 'Y':
-				case 'Z':
-				case '0':
-				case '1':
-				case '2':
-				case '3':
-				case '4':
-				case '5':
-				case '6':
-				case '7':
-				case '8':
-				case '9':
-				case '/':
-				case '\\':
-				case '.':
-				case '_':
-				case '-':
-				case '+':
-				case ':':
-					break;
-				default:
-					printf("Error: source::srouceFileToSTring(): File name '%s' contains bogus char (0x%02x) in position %d!\n",sf,sf[i],i);
-					break;
-				}
-			}
-		}
-	}
-
 	if (sourceFile != nullptr) {
 
 		const char *sf = stripPath(path.c_str());
@@ -1252,47 +1140,37 @@ ITCPrint::ITCPrint(int numCores, int buffSize,int channel)
 
 ITCPrint::~ITCPrint()
 {
-//	printf("ITCPrint::~ITCPrint() delete of object at %08x numCore: %d,buffSize: %d\n",this,numCores,buffSize); fflush(stdout);
-//
 	if (pbuff != nullptr) {
-//		printf("~ITCPrint(): pbuff not null: %08x\n",pbuff); fflush(stdout);
 		for (int i = 0; i < numCores; i++) {
 			if (pbuff[i] != nullptr) {
-//				printf("~ITCPrint(): pbuff[%d]: %08x\n",i,pbuff[i]); fflush(stdout);
 				delete [] pbuff[i];
 				pbuff[i] = nullptr;
 			}
 		}
 
-//		printf("~ITCPrint(): deleting pbuff at %08x\n",pbuff); fflush(stdout);
 		delete [] pbuff;
 		pbuff = nullptr;
 	}
 
 	if (numMsgs != nullptr) {
-//		printf("~ITCPrint(): numMsgs not null. Deleting: %08x\n",numMsgs); fflush(stdout);
 		delete [] numMsgs;
 		numMsgs = nullptr;
 	}
 
 	if (pbi != nullptr) {
-//		printf("~ITCPrint(): pbi not null. Deleting: %08x\n",pbi); fflush(stdout);
 		delete [] pbi;
 		pbi = nullptr;
 	}
 
 	if (pbo != nullptr) {
-//		printf("~ITCPrint():pbo not null: %08x\n",pbo); ffluhs(stdout);
 		delete [] pbo;
 		pbo = nullptr;
 	}
 
 	if (freeList != nullptr) {
-//		printf("~ITCPrint(): freelist not null: %08x\n",freeList); fflush(stdout);
 		TsList *tl = freeList;
 		while (tl != nullptr) {
 			TsList *tln = tl->next;
-//			printf("~ITCPrint() t1 not null: deleting t1 at %08x, next: %08x\n",tl,tln); fflush(stdout);
 			delete tl;
 			tl = tln;
 		}
@@ -1300,19 +1178,14 @@ ITCPrint::~ITCPrint()
 	}
 
 	if (tsList != nullptr) {
-//		printf("~ITCPrint(): tsList not null: %08x\n",tsList): fflush(stdout);
 		for (int i = 0; i < numCores; i++) {
 			TsList *tl = tsList[i];
-			if (tl != nullptr) {
-				do {
-//					printf("~ITCPrint(): t1 not null: %08x\n",tl); fflush(stdout);
-					TsList *tln = tl->next;
-					delete tl;
-					tl = tln;
-				} while ((tl != tsList[i]) && (tl != nullptr));
+			while (tl != nullptr) {
+				TsList *tln = tl->next;
+				delete tl;
+				tl = tln;
 			}
 		}
-		delete [] tsList;
 		tsList = nullptr;
 	}
 }
@@ -1323,19 +1196,14 @@ int ITCPrint::roomInITCPrintQ(uint8_t core)
 		return 0;
 	}
 
-//	printf("roomInITCPrintQ(%d): pbi[%d]: %d, pbo[%d]: %d buffSize: %d\n",core,core,pbi[core],core,pbo[core],buffSize); fflush(stdout);
-
 	if (pbi[core] > pbo[core]) {
-//		printf("roomInITCPrintQ(%d): returning %d\n",core,buffSize - pbi[core]+pbi[core]-1); fflush(stdout);
 		return buffSize - pbi[core] + pbo[core] - 1;
 	}
 
 	if (pbi[core] < pbo[core]) {
-//		printf("roomInITCPrintQ(%d): returning %d\n",core,pbo[core]-pbi[core]-1); fflush(stdout);
 		return pbo[core] - pbi[core] - 1;
 	}
 
-//	printf("roomInITCPrintQ(%d): returning %d\n",core,buffSize-1); fflush(stdout);
 	return buffSize-1;
 }
 
@@ -1358,7 +1226,7 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
     if ((tlp == nullptr) || tlp->terminated == true) {
 		// see if there is one on the free list before making a new one
 
-		if(freeList != nullptr) {
+    	if (freeList != nullptr) {
 			workingtlp = freeList;
 			freeList = workingtlp->next;
 
@@ -1381,7 +1249,6 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 			workingtlp->prev->next = workingtlp;
 		}
 
-		workingtlp->terminated = false;
 		workingtlp->startTime = tstamp;
 		workingtlp->message = &pbuff[core][pbi[core]];
 
@@ -1439,22 +1306,11 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 	return true;
 }
 
-bool ITCPrint::haveITCPrintMsgs()
-{
-	for (int core = 0; core < numCores; core++) {
-		if (numMsgs[core] != 0) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
 int ITCPrint::getITCPrintMask()
 {
 	int mask = 0;
 
-	for (int core = 0; core < numCores; core++) {
+	for (int core = 0; core < DQR_MAXCORES; core++) {
 		if (numMsgs[core] != 0) {
 			mask |= 1 << core;
 		}
@@ -1465,9 +1321,9 @@ int ITCPrint::getITCPrintMask()
 
 int ITCPrint::getITCFlushMask()
 {
-	int mask = 0; 
+	int mask = 0;
 
-	for (int core = 0; core < numCores; core++) {
+	for (int core = 0; core < DQR_MAXCORES; core++) {
 		if (numMsgs[core] > 0) {
 			mask |= 1 << core;
 		}
@@ -1525,7 +1381,6 @@ TsList *ITCPrint::consumeTerminatedTsList(int core)
 				}
 
 				tsl->next = freeList;
-				tsl->prev = nullptr;
 				freeList = tsl;
 			}
 		}
@@ -1563,7 +1418,6 @@ TsList *ITCPrint::consumeOldestTsList(int core)
 			}
 
 			tsl->next = freeList;
-			tsl->prev = nullptr;
 			freeList = tsl;
 		}
 	}
@@ -3519,7 +3373,6 @@ NexusMessage::NexusMessage()
 	timestamp      = 0;
 	currentAddress = 0;
 	time = 0;
-
 	offset = 0;
 	for (int i = 0; (size_t)i < sizeof rawData/sizeof rawData[0]; i++) {
 		rawData[i] = 0xff;
@@ -3590,7 +3443,46 @@ TraceDqr::ADDRESS NexusMessage::getU_Addr()
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 		return indirectHistory.u_addr;
 	case TraceDqr::TCODE_INCIRCUITTRACE:
-		return ict.ckdata;
+	    switch (ict.cksrc) {
+	    case TraceDqr::ICT_EXT_TRIG:
+	    	// ckdata0 is the address of the instruciton that retired before generating the exception
+	    	return ict.ckdata[0];
+	    case TraceDqr::ICT_CONTROL:
+	    	if (ict.ckdf == 1) {
+	    		// ckdata0 is the address of ???
+	    		return ict.ckdata[0];
+	    	}
+	    	break;
+	    case TraceDqr::ICT_INFERABLECALL:
+	    	if (ict.ckdf == 0) { // inferrable call
+	    		// ckdata[0] is the address of the call instruction. destination determined form program image
+	    		return ict.ckdata[0];
+	    	} else if (ict.ckdf == 1) { // call/return
+	    		// ckdata[0] is the address of the call instruction. destination is computed from ckdata[1]
+	    		printf("ckdata[1] is the transfer address. Need to handle it!\n");
+	    		return ict.ckdata[0];
+	    	}
+	    	break;
+	    case TraceDqr::ICT_EXCEPTION:
+	    	// ckdata0 the address of the next mainline instruction to execute (will execute after the return from except)
+	    	return ict.ckdata[0];
+	    case TraceDqr::ICT_INTERRUPT:
+	    	// ckdata0 is the address of the next instruction to execute in mainline code (will execute after the return from interrupt)
+	    	return ict.ckdata[0];
+	    case TraceDqr::ICT_CONTEXT:
+	    	// ckdata[0] is the address of the instruction prior to doing the context switch
+	    	return ict.ckdata[0];
+	    case TraceDqr::ICT_WATCHPOINT:
+	    	// ckdata0 is the address of the last instruction to retire??
+	    	return ict.ckdata[0];
+	    case TraceDqr::ICT_PC_SAMPLE:
+	    	// periodic pc sample. Address of last instruciton to retire??
+	    	return ict.ckdata[0];
+	    case TraceDqr::ICT_NONE:
+	    default:
+	    	break;
+	    }
+		break;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
@@ -3621,7 +3513,6 @@ TraceDqr::ADDRESS NexusMessage::getU_Addr()
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 	case TraceDqr::TCODE_UNDEFINED:
-		break;
 	default:
 		break;
 	}
@@ -3641,7 +3532,46 @@ TraceDqr::ADDRESS NexusMessage::getF_Addr()
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 		return indirectHistoryWS.f_addr;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-		return ictWS.ckdata;
+		switch (ict.cksrc) {
+		case TraceDqr::ICT_EXT_TRIG:
+			// ckdata0 is the address of the instruciton that retired before generating the exception
+			return ict.ckdata[0];
+		case TraceDqr::ICT_CONTROL:
+			if (ict.ckdf == 1) {
+				// ckdata0 is the address of ???
+				return ict.ckdata[0];
+			}
+			break;
+		case TraceDqr::ICT_INFERABLECALL:
+			if (ict.ckdf == 0) { // inferrable call
+				// ckdata[0] is the address of the call instruction. destination determined form program image
+				return ict.ckdata[0];
+			} else if (ict.ckdf == 1) { // call/return
+	    		// ckdata[0] is the address of the call instruction. destination is computed from ckdata[1]
+	    		printf("ckdata[1] is the transfer address. Need to handle it!\n");
+	    		return ict.ckdata[0];
+			}
+    	break;
+		case TraceDqr::ICT_EXCEPTION:
+			// ckdata0 the address of the next mainline instruction to execute (will execute after the return from except)
+			return ict.ckdata[0];
+		case TraceDqr::ICT_INTERRUPT:
+			// ckdata0 is the address of the next instruction to execute in mainline code (will execute after the return from interrupt)
+			return ict.ckdata[0];
+		case TraceDqr::ICT_CONTEXT:
+			// ckdata[0] is the address of the instruction prior to doing the context switch
+			return ict.ckdata[0];
+		case TraceDqr::ICT_WATCHPOINT:
+			// ckdata0 is the address of the last instruction to retire??
+			return ict.ckdata[0];
+		case TraceDqr::ICT_PC_SAMPLE:
+			// periodic pc sample. Address of last instruciton to retire??
+			return ict.ckdata[0];
+		case TraceDqr::ICT_NONE:
+		default:
+			break;
+		}
+		break;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
@@ -3866,6 +3796,52 @@ uint8_t NexusMessage::getEType()
 	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint8_t NexusMessage::getCKDF()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+		return ict.ckdf;
+	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+		return ictWS.ckdf;
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_UNDEFINED:
 		break;
 	default:
@@ -4802,20 +4778,70 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		if (level >= 2) {
 			switch (ict.cksrc) {
 			case TraceDqr::ICT_EXT_TRIG:
-				sr = "External Trigger";
+				if (ict.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
+				}
+				else if (ict.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger + ID (%d) ID %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				}
+				else {
+					printf("Error: messageToText(): ICT_EXTERNAL_TRIG: invalid ict.ckdf value: %d\n",ict.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_EXTERNAL_TRIG: invalid ict.ckdf value: %d",ict.ckdf);
+				}
 				break;
 			case TraceDqr::ICT_WATCHPOINT:
-				sr = "Watchpoint";
+				if (ict.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
+				}
+				else if (ict.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint + ID (%d) ID %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				}
+				else {
+					printf("Error: messageToText(): ICT_WATCHPOINT: invalid ict.ckdf value: %d\n",ict.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_WATCHPOINT: invalid ict.ckdf value: %d",ict.ckdf);
+				}
+				break;
+			case TraceDqr::ICT_INFERABLECALL:
+				if (ict.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Inferable Call (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
+				}
+				else if (ict.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Call/Return (%d) U-ADDR: 0x%08llx PCdest 0x%08llx",ict.cksrc,ict.ckdata[0],ict.ckdata[1]);
+				}
+				else {
+					printf("Error: messageToText(): ICT_INFERABLECALL: invalid ict.ckdf value: %d\n",ict.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_INFERABLECALL: invalid ict.ckdf value: %d",ict.ckdf);
+				}
+				break;
+			case TraceDqr::ICT_EXCEPTION:
+				snprintf(dst+n,dst_len-n," ICT Reason: Exception (%d) Cause %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				break;
+			case TraceDqr::ICT_INTERRUPT:
+				snprintf(dst+n,dst_len-n," ICT Reason: Interrupt (%d) Cause %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				break;
+			case TraceDqr::ICT_CONTEXT:
+				snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) Context %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
 				break;
 			case TraceDqr::ICT_PC_SAMPLE:
-				sr = "PC Sample";
+				snprintf(dst+n,dst_len-n," ICT Reason: Periodic (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata);
+				break;
+			case TraceDqr::ICT_CONTROL:
+				if (ict.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Control (%d) Control %d",ict.cksrc,(int)ict.ckdata[0]);
+				}
+				else if (ict.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Control (%d) Control %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				}
+				else {
+					printf("Error: messageToText(): ICT_CONTROL: invalid ict.ckdf value: %d\n",ict.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_CONTROL: invalid ict.ckdf value: %d",ict.ckdf);
+				}
 				break;
 			default:
-				sr = "Bad ICT Reason";
+				printf("Error: messageToText(): Invalid ICT Event: %d\n",ict.cksrc);
+				snprintf(dst+n,dst_len-n," Error: messageToText(): Invalid ICT Event: %d",ict.cksrc);
 				break;
 			}
-
-			snprintf(dst+n,dst_len-n," ICT Reason: %s (%d) U-ADDR: 0x%08llx",sr,ict.cksrc,ict.ckdata);
 		}
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
@@ -4824,20 +4850,70 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		if (level >= 2) {
 			switch (ict.cksrc) {
 			case TraceDqr::ICT_EXT_TRIG:
-				sr = "External Trigger";
+				if (ict.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
+				}
+				else if (ict.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger + ID (%d) ID %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				}
+				else {
+					printf("Error: messageToText(): ICT_EXTERNAL_TRIG: invalid ict.ckdf value: %d\n",ict.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_EXTERNAL_TRIG: invalid ict.ckdf value: %d",ict.ckdf);
+				}
 				break;
 			case TraceDqr::ICT_WATCHPOINT:
-				sr = "Watchpoint";
+				if (ict.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
+				}
+				else if (ict.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint + ID (%d) ID %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				}
+				else {
+					printf("Error: messageToText(): ICT_WATCHPOINT: invalid ict.ckdf value: %d\n",ict.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_WATCHPOINT: invalid ict.ckdf value: %d",ict.ckdf);
+				}
+				break;
+			case TraceDqr::ICT_INFERABLECALL:
+				if (ict.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Inferable Call (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
+				}
+				else if (ict.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Call/Return (%d) U-ADDR: 0x%08llx PCdest 0x%08llx",ict.cksrc,ict.ckdata[0],ict.ckdata[1]);
+				}
+				else {
+					printf("Error: messageToText(): ICT_INFERABLECALL: invalid ict.ckdf value: %d\n",ict.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_INFERABLECALL: invalid ict.ckdf value: %d",ict.ckdf);
+				}
+				break;
+			case TraceDqr::ICT_EXCEPTION:
+				snprintf(dst+n,dst_len-n," ICT Reason: Exception (%d) Cause %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				break;
+			case TraceDqr::ICT_INTERRUPT:
+				snprintf(dst+n,dst_len-n," ICT Reason: Interrupt (%d) Cause %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				break;
+			case TraceDqr::ICT_CONTEXT:
+				snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) Context %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
 				break;
 			case TraceDqr::ICT_PC_SAMPLE:
-				sr = "PC Sample";
+				snprintf(dst+n,dst_len-n," ICT Reason: Periodic (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata);
+				break;
+			case TraceDqr::ICT_CONTROL:
+				if (ict.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Control (%d) Control %d",ict.cksrc,(int)ict.ckdata[0]);
+				}
+				else if (ict.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Control (%d) Control %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				}
+				else {
+					printf("Error: messageToText(): ICT_CONTROL: invalid ict.ckdf value: %d\n",ict.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_CONTROL: invalid ict.ckdf value: %d",ict.ckdf);
+				}
 				break;
 			default:
-				sr = "Bad ICT Reason";
+				printf("Error: messageToText(): Invalid ICT Event: %d\n",ict.cksrc);
+				snprintf(dst+n,dst_len-n," Error: messageToText(): Invalid ICT Event: %d",ict.cksrc);
 				break;
 			}
-
-			snprintf(dst+n,dst_len-n," ICT Reason: %s (%d) F-ADDR: 0x%08llx",sr,ict.cksrc,ict.ckdata);
 		}
 		break;
 	case TraceDqr::TCODE_UNDEFINED:
@@ -4860,24 +4936,6 @@ double NexusMessage::seconds()
 	}
 
 	return (double)time;
-}
-
-void NexusMessage::dumpRawMessage()
-{
-	int i;
-
-	printf("Raw Message # %d: ",msgNum);
-
-	for (i = 0; ((size_t)i < sizeof rawData / sizeof rawData[0]) && ((rawData[i] & 0x03) != TraceDqr::MSEO_END); i++) {
-		printf("%02x ",rawData[i]);
-	}
-
-	if ((size_t)i < sizeof rawData / sizeof rawData[0]) {
-		printf("%02x\n",rawData[i]);
-	}
-	else {
-		printf("no end of message\n");
-	}
 }
 
 void NexusMessage::dump()
@@ -5296,40 +5354,14 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 	msgSlices      = 0;
 	bitIndex       = 0;
 
-	pendingMsgIndex = 0;
-
 	tfSize = 0;
 	bufferInIndex = 0;
 	bufferOutIndex = 0;
 
 	int i;
-
-	// first lets see if it is a windows path
-
-	bool havePath = true;
-
 	for (i = 0; (filename[i] != 0) && (filename[i] != ':'); i++) { /* empty */ }
 
 	if (filename[i] == ':') {
-		// see if this is a disk designator or port designator
-
-		int j;
-		int numAlpha = 0;
-
-		// look for drive : (not a foolproof test, but should work
-
-		for (j = 0; j < i; j++) {
-			if ((filename[j] >= 'a' && filename[j] <= 'z') || (filename[j] >= 'A' && filename[j] <= 'Z')) {
-				numAlpha += 1;
-			}
-		}
-
-		if (numAlpha != 1) {
-			havePath = false;
-		}
-	}
-
-	if (havePath == false) {
 		// have a server:port address
 
 		int rc;
@@ -5351,7 +5383,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 		wVersionRequested = MAKEWORD(2,2);
 		rc = WSAStartup(wVersionRequested,&wsaData);
 		if (rc != 0) {
-			printf("WSAStartup() failed with error %d\n",rc);
+			printf("WSAStart() failed with error %d\n",rc);
 			delete sn;
 			sn = nullptr;
 			status = TraceDqr::DQERR_ERR;
@@ -5361,7 +5393,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 		SWTsock = socket(AF_INET,SOCK_STREAM,0);
 		if (SWTsock < 0) {
-			printf("Error: SliceFileParser::SliceFileParser(); socket() failed\n");
+			printf("Error: SliceFileParser::SliceFileParser(): socket() failed\n");
 			delete sn;
 			sn = nullptr;
 			status = TraceDqr::DQERR_ERR;
@@ -5387,12 +5419,13 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 #ifdef WINDOWS
 			closesocket(SWTsock);
-#else // WINDOWS
-			close(SWTsock);
+#else  // WINDOWS
+			close (SWTsock);
 #endif // WINDOWS
 
-			SWTsock = -1;
+			SWTsock = 0;
 
+			delete server;
 			server = nullptr;
 
 			status = TraceDqr::DQERR_ERR;
@@ -5402,34 +5435,26 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 		// put socket in non-blocking mode
 #ifdef WINDOWS
-		unsigned long on = 1L;
-		rc = ioctlsocket(SWTsock,FIONBIO,&on);
+		unsigned long ul = 1;
+		rc = ioctlsocket(SWTsock,FIONBIO,&ul);
 		if (rc != NO_ERROR) {
-			printf("SliceFileParser::SliceFileParser(): Failed to put socket into non-blocking mode\n");
+			printf("SliceFileParser::SliceFileParser(): Failed to put socket in non-blocking mode\n");
 			status = TraceDqr::DQERR_ERR;
 			return;
 		}
-#else // WINDOWS
-//		long on = 1L;
-//		rc = ioctl(SWTsock,(int)FIONBIO,(char*)&on);
-//		if (rc < 0) {
-//			printf("SliceFileParser::SliceFileParser():Failed to put socket into non-blocking mode\n");
-//			status = TraceDqr::DQERR_ERR;
-//			return;
-//		}
+#else  // WINDOWS
+		int mode;
+		mode = fcntl(SWTsock,F_GETFL);
+		rc = fcntl(SWTsock,mode | O_NONBLOCK);
 #endif // WINDOWS
 
 		tfSize = 0;
 	}
 	else {
-		tf.open(filename, std::ios::in | std::ios::binary);
+        	tf.open(filename, std::ios::in | std::ios::binary);
 		if (!tf) {
 			printf("Error: SliceFileParder(): could not open file %s for input\n",filename);
 			status = TraceDqr::DQERR_OPEN;
-			return;
-		}
-		else {
-			status = TraceDqr::DQERR_OK;
 		}
 
 		tf.seekg (0, tf.end);
@@ -5438,7 +5463,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 		msgOffset = 0;
 
-		SWTsock = -1;
+		SWTsock = 0;
 	}
 
 	status = TraceDqr::DQERR_OK;
@@ -5450,41 +5475,15 @@ SliceFileParser::~SliceFileParser()
 		tf.close();
 	}
 
-	if (SWTsock >= 0) {
+	if (SWTsock > 0) {
 #ifdef WINDOWS
-		closesocket(SWTsock);
-#else // WINDOWS
-		close(SWTsock);
+			closesocket(SWTsock);
+#else  // WINDOWS
+			close(SWTsock);
 #endif // WINDOWS
 
-		SWTsock = -1;
+		SWTsock = 0;
 	}
-}
-
-TraceDqr::DQErr SliceFileParser::getNumBytesInSWTQ(int &numBytes)
-{
-	TraceDqr::DQErr rc;
-
-	if (SWTsock < 0) {
-		return TraceDqr::DQERR_ERR;
-	}
-
-	rc = bufferSWT();
-	if (rc != TraceDqr::DQERR_OK) {
-		return rc;
-	}
-
-	if (bufferInIndex == bufferOutIndex) {
-		numBytes = 0;
-	}
-	else if (bufferInIndex < bufferOutIndex) {
-		numBytes = (sizeof sockBuffer / sizeof sockBuffer[0]) - bufferOutIndex + bufferInIndex;
-	}
-	else { // bufferInIndex > bufferOutIndex
-		numBytes = bufferInIndex - bufferOutIndex;
-	}
-
-	return TraceDqr::DQERR_OK;
 }
 
 TraceDqr::DQErr SliceFileParser::getFileOffset(int &size,int &offset)
@@ -5576,19 +5575,21 @@ TraceDqr::DQErr SliceFileParser::parseICT(NexusMessage &nm,Analytics &analytics)
 
 	nm.ict.ckdf = (uint8_t)tmp;
 
-	// parse the variable length the CKDATA field
+	for (int i = 0; i <= nm.ict.ckdf; i++) {
+		// parse the variable length the CKDATA field
 
-	rc = parseVarField(&tmp,&width);
-	if (rc != TraceDqr::DQERR_OK) {
-		status = rc;
+		rc = parseVarField(&tmp,&width);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
 
-		return status;
+			return status;
+		}
+
+		bits += width;
+		addr_bits = width;
+
+	    nm.ict.ckdata[i] = (TraceDqr::ADDRESS)tmp;
 	}
-
-	bits += width;
-	addr_bits = width;
-
-    nm.ict.ckdata = (TraceDqr::ADDRESS)tmp;
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -5683,19 +5684,21 @@ TraceDqr::DQErr SliceFileParser::parseICTWS(NexusMessage &nm,Analytics &analytic
 
 	nm.ictWS.ckdf = (uint8_t)tmp;
 
-	// parse the variable length the CKDATA field
+	for (int i = 0; i <= nm.ictWS.ckdf; i++) {
+		// parse the variable length the CKDATA field
 
-	rc = parseVarField(&tmp,&width);
-	if (rc != TraceDqr::DQERR_OK) {
-		status = rc;
+		rc = parseVarField(&tmp,&width);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
 
-		return status;
+			return status;
+		}
+
+		bits += width;
+		addr_bits = width;
+
+	    nm.ictWS.ckdata[i] = (TraceDqr::ADDRESS)tmp;
 	}
-
-	bits += width;
-	addr_bits = width;
-
-    nm.ictWS.ckdata = (TraceDqr::ADDRESS)tmp;
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -6652,7 +6655,7 @@ TraceDqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &an
 
 		bits += width;
 
-		nm.correlation.history = tmp;
+		nm.correlation.history = (int)tmp;
 
 		break;
 	default:
@@ -7176,119 +7179,52 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 TraceDqr::DQErr SliceFileParser::bufferSWT()
 {
 	int br;
-	int bytesToRead;
+
+//	if (bufferInIndex != bufferOutIndex) {
+//		return TraceDqr::DQERR_OK;
+//	}
 
 	// compute room in buffer for read
-
 	if (bufferInIndex == bufferOutIndex) {
 		// buffer is empty
-
-		bytesToRead = (sizeof sockBuffer) - 1;
-
-#ifdef WINDOWS
-		br = recv(SWTsock,(char*)sockBuffer,bytesToRead,0);
-#else // WINDOWS
-		br = recv(SWTsock,(char*)sockBuffer,bytesToRead,MSG_DONTWAIT);
-
-		if (br < 0) {
-			if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
-				perror("SliceFileParser::bufferSWT(): recv() error");
-			}
-		}
-#endif // WINDOWS
-
-		if (br > 0) {
+		br = recv(SWTsock,(char*)sockBuffer,sizeof sockBuffer - 1,0);
+		if ( br > 0) {
 			bufferInIndex = br;
 			bufferOutIndex = 0;
 		}
 	}
-	else if (bufferInIndex < bufferOutIndex) {
+	else if (bufferInIndex < (bufferOutIndex-1)) {
 		// empty bytes is (bufferOutIndex - bufferInIndex) - 1
-
-		bytesToRead = bufferOutIndex - bufferInIndex - 1;
-
-		if (bytesToRead > 0) {
-#ifdef WINDOWS
-			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,0);
-#else // WINDOWS
-			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,MSG_DONTWAIT);
-
-			if (br < 0) {
-				if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
-					perror("SlicFileParser::bufferSWT(): recv() error");
-				}
-			}
-#endif // WINDOWS
-
-			if (br > 0) {
-				bufferInIndex += br;
-			}
+		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,(bufferOutIndex - bufferInIndex) - 1,0);
+		if (br > 0) {
+			bufferInIndex += br;
 		}
 	}
-	else if (bufferInIndex > bufferOutIndex) {
+	else if (bufferInIndex > bufferOutIndex){
 		// empty bytes is bufferInIndex to end of buffer + bufferOutIndex - 1
 		// first read to end of buffer
-
-		if (bufferOutIndex == 0) {
-			// don't want to completely fill up tail of buffer, because can't set bufferInIndex to 0!
-
-			bytesToRead = (sizeof sockBuffer) - bufferInIndex - 1;
-		}
-		else {
-			bytesToRead = (sizeof sockBuffer) - bufferInIndex;
-		}
-
-		if (bytesToRead > 0) {
-#ifdef WINDOWS
-			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,0);
-#else // WINDOWS
-			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,MSG_DONTWAIT);
-
-			if (br < 0) {
-				if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
-					perror("SizeFileParser::bufferSWT(): recv() error");
+		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,sizeof sockBuffer - bufferInIndex,0);
+		if (br > 0) {
+			if ((size_t)br == sizeof sockBuffer - bufferInIndex) {
+				bufferInIndex = 0;
+				br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bufferOutIndex - 1,0);
+				if (br > 0) {
+					bufferInIndex = br ;
 				}
 			}
-#endif // WINDOWS
-
-			if (br > 0) {
-				if ((bufferInIndex + br) >= (int)(sizeof sockBuffer)) {
-					bufferInIndex = 0;
-
-					bytesToRead = bufferOutIndex-1;
-
-					if (bytesToRead > 0) {
-#ifdef WINDOWS
-						br = recv(SWTsock,(char*)sockBuffer,bytesToRead,0);
-#else // WINDOWS
-						br = recv(SWTsock,(char*)sockBuffer,bytesToRead,MSG_DONTWAIT);
-
-						if (br < 0) {
-							if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
-								perror("SliceFileParser::bufferSWT(): recv() error");
-							}
-						}
-#endif // WINDOWS
-
-						if (br > 0) {
-							bufferInIndex = br;
-						}
-					}
-				}
-				else {
-					bufferInIndex += br;
-				}
+			else {
+				bufferInIndex += br; ;
 			}
 		}
 	}
 
-#ifdef WINDOWS
+	#ifdef WINDOWS
 	if ((br == -1) && (WSAGetLastError() != WSAEWOULDBLOCK)) {
 		printf("Error: bufferSWT(): read socket failed\n");
 		status = TraceDqr::DQERR_ERR;
 		return status;
 	}
-#else // WINDOWS
+#else  // WINDOWS
 	if ((br == -1) && ((errno != EAGAIN) && (errno != EWOULDBLOCK))) {
 		printf("Error: bufferSWT(): read socket failed\n");
 		status = TraceDqr::DQERR_ERR;
@@ -7299,113 +7235,31 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
+TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 {
 	// start by stripping off end of message or end of var bytes. These would be here in the case
 	// of a wrapped buffer, or some kind of corruption
 
-	haveMsg = false;
+	do {
+		if (SWTsock != 0) {
+			// need a buffer to read from.
 
-	if (pendingMsgIndex == 0) {
-		do {
-			if (SWTsock >= 0) {
-				// need a buffer to read from.
-
+			do {
 				status = bufferSWT();
-
-				if (status != TraceDqr::DQERR_OK) {
-					return status;
-				}
-
-				if (bufferInIndex == bufferOutIndex) {
-					return status;
-				}
-
-				msg[0] = sockBuffer[bufferOutIndex];
-				bufferOutIndex += 1;
-				if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
-					bufferOutIndex = 0;
-				}
-			}
-			else {
-				tf.read((char*)&msg[0],sizeof msg[0]);
-				if (!tf) {
-					if (tf.eof()) {
-						status = TraceDqr::DQERR_EOF;
-					}
-					else {
-						status = TraceDqr::DQERR_ERR;
-
-						std::cout << "Error reading trace file\n";
-					}
-
-					tf.close();
-
-					return status;
-				}
-			}
-
-			if ((msg[0] == 0x00) || (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff))) {
-				printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
-			}
-		} while ((msg[0] == 0x00) || ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL));
-
-		pendingMsgIndex = 1;
-	}
-
-	if (SWTsock >= 0) {
-		msgOffset = 0;
-	}
-	else {
-		msgOffset = ((uint32_t)tf.tellg())-1;
-
-	}
-
-	bool done = false;
-
-	while (!done) {
-		if (pendingMsgIndex >= (int)(sizeof msg / sizeof msg[0])) {
-			if (SWTsock >= 0) {
-#ifdef WINDOWS
-				closesocket(SWTsock);
-#else // WINDOWS
-				close(SWTsock);
-#endif // WINDOWS
-				SWTsock = -1;
-			}
-			else {
-				tf.close();
-			}
-
-			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
-
-			pendingMsgIndex = 0;
-
-			status = TraceDqr::DQERR_ERR;
-
-			return TraceDqr::DQERR_ERR;
-		}
-
-		if (SWTsock >= 0) {
-			status = bufferSWT();
+			} while ((bufferInIndex == bufferOutIndex) && (status == TraceDqr::DQERR_OK));
 
 			if (status != TraceDqr::DQERR_OK) {
 				return status;
 			}
 
-			if (bufferInIndex == bufferOutIndex) {
-				return status;
-			}
-
-			msg[pendingMsgIndex] = sockBuffer[bufferOutIndex];
-
+			msg[0] = sockBuffer[bufferOutIndex];
 			bufferOutIndex += 1;
 			if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
 				bufferOutIndex = 0;
 			}
 		}
 		else {
-			tf.read((char*)&msg[pendingMsgIndex],sizeof msg[0]);
+			tf.read((char*)&msg[0],sizeof msg[0]);
 			if (!tf) {
 				if (tf.eof()) {
 					status = TraceDqr::DQERR_EOF;
@@ -7422,113 +7276,84 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 			}
 		}
 
-		if ((msg[pendingMsgIndex] & 0x03) == TraceDqr::MSEO_END) {
-			done = true;
-			msgSlices = pendingMsgIndex+1;
+		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff)) {
+			printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
+		}
+	} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
+
+	msgOffset = ((uint32_t)tf.tellg())-1;
+
+	bool done = false;
+
+	for (int i = 1; !done; i++) {
+		if (i >= (int)(sizeof msg / sizeof msg[0])) {
+			if (SWTsock > 0) {
+#ifdef WINDOWS
+				closesocket(SWTsock);
+#else  // WINDOWS
+				close(SWTsock);
+#endif // WINDOWS
+
+				SWTsock = 0;
+			}
+			else {
+				tf.close();
+			}
+
+			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
+
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_ERR;
 		}
 
-		pendingMsgIndex += 1;
+		if (SWTsock > 0) {
+			do {
+				status = bufferSWT();
+			} while ((bufferInIndex == bufferOutIndex) && (status == TraceDqr::DQERR_OK));
+
+			if (status != TraceDqr::DQERR_OK) {
+				return status;
+			}
+
+			msg[i] = sockBuffer[bufferOutIndex];
+			bufferOutIndex += 1;
+			if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
+				bufferOutIndex = 0;
+			}
+		}
+		else {
+			tf.read((char*)&msg[i],sizeof msg[0]);
+			if (!tf) {
+				if (tf.eof()) {
+					status = TraceDqr::DQERR_EOF;
+				}
+				else {
+					status = TraceDqr::DQERR_ERR;
+
+					std::cout << "Error reading trace file\n";
+				}
+
+				tf.close();
+
+				return status;
+			}
+		}
+
+		if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
+			done = true;
+			msgSlices = i+1;
+		}
 	}
 
 	eom = false;
 	bitIndex = 0;
 
-	haveMsg = true;
-	pendingMsgIndex = 0;
-
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
+TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics)	// generator to read trace messages one at a time
 {
-	char c;
-
-	// strip white space, comments, cr, and lf
-
-	enum {
-		STRIPPING_WHITESPACE,
-		STRIPPING_COMMENT,
-		STRIPPING_DONE
-	} ss = STRIPPING_WHITESPACE;
-
-	do {
-		tf.read((char*)&c,sizeof c);
-		if (!tf) {
-			tf.close();
-
-			status = TraceDqr::DQERR_EOF;
-
-			return TraceDqr::DQERR_EOF;
-		}
-
-		switch (ss) {
-		case STRIPPING_WHITESPACE:
-			switch (c) {
-			case '#':
-				ss = STRIPPING_COMMENT;
-				break;
-			case '\n':
-			case '\r':
-			case ' ':
-			case '\t':
-				break;
-			default:
-				ss = STRIPPING_DONE;
-			}
-			break;
-		case STRIPPING_COMMENT:
-			switch (c) {
-			case '\n':
-				ss = STRIPPING_WHITESPACE;
-				break;
-			}
-			break;
-		default:
-			break;
-		}
-	} while (ss != STRIPPING_DONE);
-
-	// now try to get two hex digits
-
-	tf.read((char*)&c,sizeof c);
-	if (!tf) {
-		tf.close();
-
-		status = TraceDqr::DQERR_EOF;
-
-		return TraceDqr::DQERR_EOF;
-	}
-
-	int hd;
-	uint8_t hn;
-
-	hd = atoh(c);
-	if (hd < 0) {
-		status = TraceDqr::DQERR_ERR;
-
-		return TraceDqr::DQERR_ERR;
-	}
-
-	hn = hd << 4;
-
-	hd = atoh(c);
-	if (hd < 0) {
-		status = TraceDqr::DQERR_ERR;
-
-		return TraceDqr::DQERR_ERR;
-	}
-
-	hn = hn | hd;
-
-	*byte = hn;
-
-	return TraceDqr::DQERR_OK;
-}
-
-TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics,bool &haveMsg)	// generator to read trace messages one at a time
-{
-	haveMsg = false;
-
 	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
@@ -7544,7 +7369,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 
 		// read from file, store in object, compute and fill out full fields, such as address and more later
 
-		rc = readBinaryMsg(haveMsg);
+		rc = readBinaryMsg();
 		if (rc != TraceDqr::DQERR_OK) {
 
 			// all errors from readBinaryMsg() are non-recoverable.
@@ -7556,10 +7381,6 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 			status = rc;
 
 			return status;
-		}
-
-		if (haveMsg == false) {
-			return TraceDqr::DQERR_OK;
 		}
 
 		nm.offset = msgOffset;
@@ -7866,16 +7687,12 @@ Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
     			section = symbol_table[i]->section;
 
     			if (labelsAreFunctions) {
-        			if ((section->flags & SEC_CODE)
-        				&& ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))
-						&& ((symbol_table[i]->flags & BSF_SECTION_SYM) == 0)) {
+        			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))) {
         				symbol_table[i]->flags |= BSF_FUNCTION;
         			}
     			}
     			else {
-        			if ((section->flags & SEC_CODE)
-        			    && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL))
-						&& ((symbol_table[i]->flags & BSF_SECTION_SYM) == 0)) {
+        			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL))) {
         				symbol_table[i]->flags |= BSF_FUNCTION;
         			}
     			}
@@ -9348,92 +9165,6 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 		sane = nullptr;
 	}
 
-	{
-		// foodog
-		// check for garbage in path/file name
-
-		if (*filename != nullptr) {
-			const char *cp = *filename;
-			for (int i = 0; cp[i] != 0; i++) {
-				switch (cp[i]) {
-				case 'a':
-				case 'b':
-				case 'c':
-				case 'd':
-				case 'e':
-				case 'f':
-				case 'g':
-				case 'h':
-				case 'i':
-				case 'j':
-				case 'k':
-				case 'l':
-				case 'm':
-				case 'n':
-				case 'o':
-				case 'p':
-				case 'q':
-				case 'r':
-				case 's':
-				case 't':
-				case 'u':
-				case 'v':
-				case 'w':
-				case 'x':
-				case 'y':
-				case 'z':
-				case 'A':
-				case 'B':
-				case 'C':
-				case 'D':
-				case 'E':
-				case 'F':
-				case 'G':
-				case 'H':
-				case 'I':
-				case 'J':
-				case 'K':
-				case 'L':
-				case 'M':
-				case 'N':
-				case 'O':
-				case 'P':
-				case 'Q':
-				case 'R':
-				case 'S':
-				case 'T':
-				case 'U':
-				case 'V':
-				case 'W':
-				case 'X':
-				case 'Y':
-				case 'Z':
-				case '0':
-				case '1':
-				case '2':
-				case '3':
-				case '4':
-				case '5':
-				case '6':
-				case '7':
-				case '8':
-				case '9':
-				case '/':
-				case '\\':
-				case '.':
-				case '_':
-				case '-':
-				case '+':
-				case ':':
-					break;
-				default:
-					printf("Error: getSrcLines(): File name '%s' contains bogus char (0x%02x) in position %d!\n",cp,cp[i],i);
-					break;
-				}
-			}
-		}
-	}
-
 	return 1;
 }
 
@@ -9564,12 +9295,14 @@ TraceDqr::ADDRESS AddrStack::pop()
 	return t;
 }
 
+#ifdef foodog
 NexusMessageSync::NexusMessageSync()
 {
 	firstMsgNum = 0;
 	lastMsgNum  = 0;
 	index = 0;
 }
+#endif // foodog
 
 Simulator::Simulator(char *f_name,int arch_size)
 {

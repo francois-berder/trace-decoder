@@ -36,7 +36,10 @@ using namespace std;
 
 static void usage(char *name)
 {
+#ifdef foodog
 	printf("Usage: dqr -t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]\n");
+#endif // foodog
+	printf("Usage: dqr -t tracefile -e elffile | -n basename) [-src] [-nosrc]\n");
 	printf("           [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path]\n");
 	printf("           [-itcprint | -itcprint=n] [-noitcprint] [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+]\n");
 	printf("           [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n] [-noanalytics] [-freq nn] [-tssize=n]\n");
@@ -49,10 +52,12 @@ static void usage(char *name)
 	printf("-ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
+#ifdef foodog
 	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
 	printf("              not specified, continues to last trace message.\n");
 	printf("-stop nm:     Select the last Nexus trace message number to end DQing at. If -start is not specified, starts\n");
 	printf("              at trace message 1.\n");
+#endif // foodog
 	printf("-src:         Enable display of source lines in output if available (on by default).\n");
 	printf("-nosrc:       Disable display of source lines in output.\n");
 	printf("-file:        Display source file information in output (on by default).\n");
@@ -167,8 +172,10 @@ int main(int argc, char *argv[])
 	int buff_index = 0;
 	bool usage_flag = false;
 	bool version_flag = false;
+#ifdef foodog
 	int start_msg_num = 0;
 	int stop_msg_num = 0;
+#endif // foodog
 	bool src_flag = true;
 	bool file_flag = true;
 	bool dasm_flag = true;
@@ -240,6 +247,7 @@ int main(int argc, char *argv[])
 
 			ca_name = argv[i];
 		}
+#ifdef foodog
 		else if (strcmp("-start",argv[i]) == 0) {
 			i += 1;
 			if (i >= argc) {
@@ -268,6 +276,7 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
+#endif // foodog
 		else if (strcmp("-src",argv[i]) == 0) {
 			src_flag = true;
 		}
@@ -488,7 +497,7 @@ int main(int argc, char *argv[])
 			}
 
 			if (ef_name == nullptr) {
-				printf("option -r requires first specifying the elf file name (with the -e flag)\n");
+				printf("option -r requires first specifing the elffile name (with the -e flag)\n");
 				return 1;
 			}
 
@@ -540,12 +549,6 @@ int main(int argc, char *argv[])
 		else if (strcmp("-nolabels",argv[i]) == 0) {
 			labelFlag = false;
 		}
-		else if (strcmp("-debug",argv[i]) == 0) {
-			globalDebugFlag = 1;
-		}
-		else if (strcmp("-nodebug",argv[i]) == 0) {
-			globalDebugFlag = 0;
-		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -563,7 +566,7 @@ int main(int argc, char *argv[])
 	}
 
 	if ((sf_name == nullptr) && (tf_name == nullptr) && (base_name == nullptr)) {
-		printf("Error: must specify either simulator file, trace file, SWT trace server, or base name\n");
+		printf("Error: must specify either simulator file, trace file, trace server, or base name\n");
 		usage(argv[0]);
 		return 1;
 	}
@@ -598,7 +601,6 @@ int main(int argc, char *argv[])
 		if (sim->getStatus() != TraceDqr::DQERR_OK) {
 			delete sim;
 			sim = nullptr;
-
 			printf("Error: new Simulator(%s,%d) failed\n",sf_name,archSize);
 
 			return 1;
@@ -629,7 +631,9 @@ int main(int argc, char *argv[])
 			}
 		}
 
+#ifdef foodog
 		trace->setTraceRange(start_msg_num,stop_msg_num);
+#endif // foodog
 		trace->setTSSize(tssize);
 		trace->setPathType(pt);
 
@@ -688,8 +692,6 @@ int main(int argc, char *argv[])
 		}
 
 		if (ec == TraceDqr::DQERR_OK) {
-//			printf("-> m:%d, s:%d, i:%d\n",msgInfo!=nullptr,srcInfo!=nullptr,instInfo!=nullptr);
-
 			if (srcInfo != nullptr) {
 				if ((lastSrcFile != srcInfo->sourceFile) || (lastSrcLine != srcInfo->sourceLine) || (lastSrcLineNum != srcInfo->sourceLineNum)) {
 					lastSrcFile = srcInfo->sourceFile;
@@ -839,12 +841,8 @@ int main(int argc, char *argv[])
 				firstPrint = false;
 			}
 
-			if ((trace != nullptr) && trace_flag && (msgInfo != nullptr)) {
+			if ((trace != nullptr) && trace_flag & (msgInfo != nullptr)) {
 				// got the goods! Get to it!
-
-				if (globalDebugFlag) {
-					msgInfo->dumpRawMessage();
-				}
 
 				msgInfo->messageToText(dst,sizeof dst,msgLevel);
 
@@ -863,7 +861,7 @@ int main(int argc, char *argv[])
 				firstPrint = false;
 			}
 
-			if ((trace != nullptr) && itcprint_flag) {
+			if ((trace != nullptr) && itcprint_flag){
 				std::string s;
 				bool haveStr;
 
@@ -884,7 +882,7 @@ int main(int argc, char *argv[])
 							std::cout << "ITC Print: ";
 
 							if ((startTime != 0) || (endTime != 0)) {
-								std::cout << "Msg Tics: <" << startTime << "." << endTime << "> ";
+								std::cout << "Msg Tics: <" << startTime << "-" << endTime << "> ";
 							}
 
 							std::cout << s;
@@ -909,9 +907,11 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if ((trace != nullptr) && itcprint_flag) {
-		std::string s = "";
+	if ((trace != nullptr) && itcprint_flag){
+		std::string s;
 		bool haveStr;
+
+		core_mask = trace->getITCFlushMask();
 
 		for (int core = 0; core_mask != 0; core++) {
 			if (core_mask & 1) {
@@ -938,6 +938,7 @@ int main(int argc, char *argv[])
 					s = trace->flushITCPrintStr(core,haveStr,startTime,endTime);
 				}
 			}
+
 			core_mask >>= 1;
 		}
 	}
