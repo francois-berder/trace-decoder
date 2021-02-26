@@ -11,12 +11,16 @@
 /* Name of host specific core header file to include in elf.c. */
 /* #undef CORE_HEADER */
 
+/* Define to 1 if you want to enable -z separate-code in ELF linker by
+   default. */
+#define DEFAULT_LD_Z_SEPARATE_CODE 0
+
 /* Define to 1 if translation of program messages to the user's native
    language is requested. */
 #define ENABLE_NLS 1
 
 /* Define to 1 if you have the <alloca.h> header file. */
-/* #undef HAVE_ALLOCA_H */
+#define HAVE_ALLOCA_H 1
 
 /* Define to 1 if you have the declaration of `asprintf', and to 0 if you
    don't. */
@@ -24,10 +28,10 @@
 
 /* Define to 1 if you have the declaration of `basename', and to 0 if you
    don't. */
-#define HAVE_DECL_BASENAME 0
+#define HAVE_DECL_BASENAME 1
 
 /* Define to 1 if you have the declaration of `ffs', and to 0 if you don't. */
-#define HAVE_DECL_FFS 0
+#define HAVE_DECL_FFS 1
 
 /* Define to 1 if you have the declaration of `free', and to 0 if you don't.
    */
@@ -67,7 +71,7 @@
 
 /* Define to 1 if you have the declaration of `stpcpy', and to 0 if you don't.
    */
-#define HAVE_DECL_STPCPY 0
+#define HAVE_DECL_STPCPY 1
 
 /* Define to 1 if you have the declaration of `strnlen', and to 0 if you
    don't. */
@@ -90,10 +94,10 @@
 #define HAVE_DIRENT_H 1
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
-/* #undef HAVE_DLFCN_H */
+#define HAVE_DLFCN_H 1
 
 /* Define to 1 if you have the `fcntl' function. */
-/* #undef HAVE_FCNTL */
+#define HAVE_FCNTL 1
 
 /* Define to 1 if you have the <fcntl.h> header file. */
 #define HAVE_FCNTL_H 1
@@ -103,6 +107,9 @@
 
 /* Define to 1 if you have the `fileno' function. */
 #define HAVE_FILENO 1
+
+/* Define to 1 if you have the `fls' function. */
+/* #undef HAVE_FLS */
 
 /* Define to 1 if you have the `fopen64' function. */
 #define HAVE_FOPEN64 1
@@ -120,16 +127,19 @@
 #define HAVE_FTELLO64 1
 
 /* Define to 1 if you have the `getgid' function. */
-/* #undef HAVE_GETGID */
+#define HAVE_GETGID 1
 
 /* Define to 1 if you have the `getpagesize' function. */
 #define HAVE_GETPAGESIZE 1
 
 /* Define to 1 if you have the `getrlimit' function. */
-/* #undef HAVE_GETRLIMIT */
+#define HAVE_GETRLIMIT 1
 
 /* Define to 1 if you have the `getuid' function. */
-/* #undef HAVE_GETUID */
+#define HAVE_GETUID 1
+
+/* Define if your compiler supports hidden visibility. */
+#define HAVE_HIDDEN 1
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #define HAVE_INTTYPES_H 1
@@ -156,7 +166,7 @@
 /* #undef HAVE_LWPXSTATUS_T */
 
 /* Define to 1 if you have the `madvise' function. */
-/* #undef HAVE_MADVISE */
+#define HAVE_MADVISE 1
 
 /* Define to 1 if you have the <memory.h> header file. */
 #define HAVE_MEMORY_H 1
@@ -216,7 +226,7 @@
 /* #undef HAVE_PXSTATUS_T */
 
 /* Define to 1 if you have the `setitimer' function. */
-/* #undef HAVE_SETITIMER */
+#define HAVE_SETITIMER 1
 
 /* Define to 1 if you have the <stddef.h> header file. */
 #define HAVE_STDDEF_H 1
@@ -240,7 +250,7 @@
 /* #undef HAVE_ST_C_IMPL */
 
 /* Define to 1 if you have the `sysconf' function. */
-/* #undef HAVE_SYSCONF */
+#define HAVE_SYSCONF 1
 
 /* Define to 1 if you have the <sys/dir.h> header file, and it defines `DIR'.
    */
@@ -253,11 +263,14 @@
    */
 /* #undef HAVE_SYS_NDIR_H */
 
+/* Define to 1 if you have the <sys/param.h> header file. */
+#define HAVE_SYS_PARAM_H 1
+
 /* Define to 1 if you have the <sys/procfs.h> header file. */
 /* #undef HAVE_SYS_PROCFS_H */
 
 /* Define to 1 if you have the <sys/resource.h> header file. */
-/* #undef HAVE_SYS_RESOURCE_H */
+#define HAVE_SYS_RESOURCE_H 1
 
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #define HAVE_SYS_STAT_H 1
@@ -284,7 +297,7 @@
 /* #undef HAVE_WIN32_PSTATUS_T */
 
 /* Define to 1 if you have the <windows.h> header file. */
-#define HAVE_WINDOWS_H 1
+/* #undef HAVE_WINDOWS_H */
 
 /* Define to the sub-directory in which libtool stores uninstalled libraries.
    */
@@ -300,7 +313,7 @@
 #define PACKAGE_NAME "bfd"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "bfd 2.30"
+#define PACKAGE_STRING "bfd 2.35"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "bfd"
@@ -309,16 +322,16 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "2.30"
+#define PACKAGE_VERSION "2.35"
 
 /* The size of `char', as computed by sizeof. */
 /* #undef SIZEOF_CHAR */
 
 /* The size of `int', as computed by sizeof. */
-/* #undef SIZEOF_INT */
+#define SIZEOF_INT 4
 
 /* The size of `long', as computed by sizeof. */
-#define SIZEOF_LONG 4
+#define SIZEOF_LONG 8
 
 /* The size of `long long', as computed by sizeof. */
 #define SIZEOF_LONG_LONG 8
@@ -348,7 +361,7 @@
 /* #undef USE_64_BIT_ARCHIVE */
 
 /* Use b modifier when opening binary files? */
-#define USE_BINARY_FOPEN 1
+/* #undef USE_BINARY_FOPEN */
 
 /* Define if we should use leading underscore on 64 bit mingw targets */
 /* #undef USE_MINGW64_LEADING_UNDERSCORES */
@@ -382,10 +395,15 @@
 
 
 /* Version number of package */
-#define VERSION "2.30"
+#define VERSION "2.35"
+
+/* Enable large inode numbers on Mac OS X 10.5.  */
+#ifndef _DARWIN_USE_64_BIT_INODE
+# define _DARWIN_USE_64_BIT_INODE 1
+#endif
 
 /* Number of bits in a file offset, on hosts where this is settable. */
-#define _FILE_OFFSET_BITS 64
+/* #undef _FILE_OFFSET_BITS */
 
 /* Define for large files, on AIX-style hosts. */
 /* #undef _LARGE_FILES */
