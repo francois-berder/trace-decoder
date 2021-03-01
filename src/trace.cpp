@@ -1581,8 +1581,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		}
 
 		printf("boink: need to handle two addresses in some cases!!\n");
-		printf("should we update pc here?? maybe in some cases based on cksrc??");
+		printf("should we update pc here?? maybe in some cases based on cksrc??\n");
 		// update faddr but not pc
+
+		printf("maybe pc should be the next addr? Take into account the number of addresses?\n");
 
 		switch (nm.ict.cksrc) {
 		case TraceDqr::ICT_EXT_TRIG:
@@ -1691,7 +1693,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		}
 
 		printf("boink: need to handle two addresses in some cases!!\n");
-		printf("should we update pc here?? maybe in some cases based on cksrc??");
+		printf("should we update pc here?? maybe in some cases based on cksrc??\n");
 		// update faddr but not pc
 
 		switch (nm.ictWS.cksrc) {
@@ -2636,7 +2638,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		case TRACE_STATE_GETFIRSTSYNCMSG:
 			// start here for normal traces
 
-//			printf("TRACE_STATE_GETFIRSTSYNCMSG\n");
+			printf("TRACE_STATE_GETFIRSTSYNCMSG\n");
 
 			// read trace messages until a sync is found. Should be the first message normally
 			// unless the wrapped buffer
@@ -2753,6 +2755,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// ERROR, ICT (all forms), ITC
 			// any other messages and we are in an event trace anymore: switch back to normal (get first sync)
 
+			printf("TRACE_STATE_EVENT\n");
+
 			switch (nm.tcode) {
 			case TraceDqr::TCODE_SYNC:
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
@@ -2788,6 +2792,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 				// If we are looking for a starting sync and see this, all is cool!!
+				printf("pre current address %08x, faddr: %08x\n",currentAddress[currentCore],lastFaddr[currentCore]);
+
 				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
@@ -2798,6 +2804,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 
+				printf("post current address %08x, faddr: %08x\n",currentAddress[currentCore],lastFaddr[currentCore]);
 				printf("boink: need to check for two addresses, depending on cksrc/ckdf!\n");
 
 				if ((instInfo != nullptr) || (srcInfo != nullptr)) {
@@ -2810,9 +2817,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 						instructionInfo.coreId = currentCore;
 						*instInfo = &instructionInfo;
-						(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
-						enterISR[currentCore] = TraceDqr::isNone;
-						(*instInfo)->brFlags = brFlags;
+						(*instInfo)->CRFlag = TraceDqr::isNone;
+						(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
 
 						(*instInfo)->timestamp = lastTime[currentCore]; // only instructions at a message get a timestamp
 					}
@@ -2839,10 +2845,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// and not currentAddress
 
 				if (nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE_WS) {
-					messageInfo.currentAddress = lastFaddr[currentCore];
+					messageInfo.currentAddress = lastFaddr[currentCore]; here it is! fix in process trace?
 				}
 				else {
-					messageInfo.currentAddress = currentAddress[currentCore];
+					messageInfo.currentAddress = currentAddress[currentCore]; should current address be next address? Don't know it if it is an uninferrable call'
 				}
 
 				messageInfo.time = lastTime[currentCore];
