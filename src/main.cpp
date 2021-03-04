@@ -590,7 +590,7 @@ int main(int argc, char *argv[])
 	}
 
 	if ((sf_name == nullptr) && (tf_name == nullptr) && (base_name == nullptr)) {
-		printf("Error: must specify either simulator file, trace file, or base name\n");
+		printf("Error: must specify either simulator file, trace file, SWT trace server, or base name\n");
 		usage(argv[0]);
 		return 1;
 	}
@@ -891,10 +891,8 @@ int main(int argc, char *argv[])
 				firstPrint = false;
 			}
 
-			if ((trace != nullptr) && (trace_flag || itcprint_flag) && (msgInfo != nullptr)) {
+			if ((trace != nullptr) && trace_flag && (msgInfo != nullptr)) {
 				// got the goods! Get to it!
-
-				core_mask |= 1 << msgInfo->coreId;
 
 				if (globalDebugFlag) {
 					msgInfo->dumpRawMessage();
@@ -902,48 +900,54 @@ int main(int argc, char *argv[])
 
 				msgInfo->messageToText(dst,sizeof dst,msgLevel);
 
-				if (trace_flag) {
-					if (firstPrint == false) {
-						printf("\n");
-					}
-
-					if (srcbits > 0) {
-						printf("[%d] ",msgInfo->coreId);
-					}
-
-					printf("Trace: %s",dst);
-
+				if (firstPrint == false) {
 					printf("\n");
-
-					firstPrint = false;
 				}
 
-				if (itcprint_flag) {
-					std::string s;
-					bool haveStr;
+				if (srcbits > 0) {
+					printf("[%d] ",msgInfo->coreId);
+				}
 
-					s = trace->getITCPrintStr(msgInfo->coreId,haveStr,startTime,endTime);
-					while (haveStr != false) {
-						if (firstPrint == false) {
-							printf("\n");
-						}
+				printf("Trace: %s",dst);
 
-						if (srcbits > 0) {
-							printf("[%d] ",msgInfo->coreId);
-						}
+				printf("\n");
 
-						std::cout << "ITC Print: ";
+				firstPrint = false;
+			}
 
-						if ((startTime != 0) || (endTime != 0)) {
-							std::cout << "Msg Tics: <" << startTime << "-" << endTime << "> ";
-						}
+			if ((trace != nullptr) && itcprint_flag) {
+				std::string s;
+				bool haveStr;
 
-						std::cout << s;
+				core_mask = trace->getITCPrintMask();
 
-						firstPrint = false;
-
+				for (int core = 0; core_mask != 0; core++) {
+					if (core_mask & 1) {
 						s = trace->getITCPrintStr(msgInfo->coreId,haveStr,startTime,endTime);
+						while (haveStr != false) {
+							if (firstPrint == false) {
+								printf("\n");
+							}
+
+							if (srcbits > 0) {
+								printf("[%d] ",msgInfo->coreId);
+							}
+
+							std::cout << "ITC Print: ";
+
+							if ((startTime != 0) || (endTime != 0)) {
+								std::cout << "Msg Tics: <" << startTime << "-" << endTime << "> ";
+							}
+
+							std::cout << s;
+
+							firstPrint = false;
+
+							s = trace->getITCPrintStr(msgInfo->coreId,haveStr,startTime,endTime);
+						}
 					}
+
+					core_mask >>= 1;
 				}
 			}
 		}
@@ -960,6 +964,8 @@ int main(int argc, char *argv[])
 	if ((trace != nullptr) && itcprint_flag) {
 		std::string s = "";
 		bool haveStr;
+
+		core_mask = trace->getITCPrintMask();
 
 		for (int core = 0; core_mask != 0; core++) {
 			if (core_mask & 1) {

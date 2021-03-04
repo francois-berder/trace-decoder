@@ -30,6 +30,16 @@
 #include <cstdint>
 #include <cassert>
 
+#include <unistd.h>
+#include <fcntl.h>
+#ifdef WINDOWS
+#include <winsock2.h>
+#else // WINDOWS
+#include <netdb.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+#endif // WiNDOWS
+
 #include "dqr.hpp"
 #include "trace.hpp"
 
@@ -1282,12 +1292,15 @@ ITCPrint::~ITCPrint()
 	if (tsList != nullptr) {
 		for (int i = 0; i < numCores; i++) {
 			TsList *tl = tsList[i];
-			while (tl != nullptr) {
-				TsList *tln = tl->next;
-				delete tl;
-				tl = tln;
+			if (tl != nullptr) {
+				do {
+					TsList *tln = tl->next;
+					delete tl;
+					tl = tln;
+				} while ((tl != tsList[i]) && (tl != nullptr));
 			}
 		}
+		delete [] tsList;
 		tsList = nullptr;
 	}
 }
@@ -1351,6 +1364,7 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 			workingtlp->prev->next = workingtlp;
 		}
 
+		workingtlp->terminated = false;
 		workingtlp->startTime = tstamp;
 		workingtlp->message = &pbuff[core][pbi[core]];
 
@@ -1400,9 +1414,52 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 		}
 	}
 
+	// returning true means it was an itc print msg and has been processed
+	// false means it was not, and should be handled normally
+
 	pbuff[core][pbi[core]] = 0; // make sure always null terminated. This may be a temporary null termination
 
 	return true;
+}
+
+bool ITCPrint::haveITCPrintMsgs()
+{
+	for (int core = 0; core < numCores; core++) {
+		if (numMsgs[core] != 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+int ITCPrint::getITCPrintMask()
+{
+	int mask = 0;
+
+	for (int core = 0; core < numCores; core++) {
+		if (numMsgs[core] != 0) {
+			mask |= 1 << core;
+		}
+	}
+
+	return mask;
+}
+
+int ITCPrint::getITCFlushMask()
+{
+	int mask = 0;
+
+	for (int core = 0; core < numCores; core++) {
+		if (numMsgs[core] > 0) {
+			mask |= 1 << core;
+		}
+		else if (pbo[core] != pbi[core]) {
+			mask |= 1 << core;
+		}
+	}
+
+	return mask;
 }
 
 void ITCPrint::haveITCPrintData(int numMsgs[], bool havePrintData[])
@@ -1451,6 +1508,7 @@ TsList *ITCPrint::consumeTerminatedTsList(int core)
 				}
 
 				tsl->next = freeList;
+				tsl->prev = nullptr;
 				freeList = tsl;
 			}
 		}
@@ -1488,6 +1546,7 @@ TsList *ITCPrint::consumeOldestTsList(int core)
 			}
 
 			tsl->next = freeList;
+			tsl->prev = nullptr;
 			freeList = tsl;
 		}
 	}
@@ -5220,28 +5279,154 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 	msgSlices      = 0;
 	bitIndex       = 0;
 
-	tfSize = 0;
+	pendingMsgIndex = 0;
 
-	tf.open(filename, std::ios::in | std::ios::binary);
-	if (!tf) {
-		printf("Error: SliceFileParder(): could not open file %s for input\n",filename);
-		status = TraceDqr::DQERR_OPEN;
+	tfSize = 0;
+	bufferInIndex = 0;
+	bufferOutIndex = 0;
+
+	eom = false;
+
+	int i;
+
+	// first lets see if it is a windows path
+
+	bool havePath = true;
+
+	for (i = 0; (filename[i] != 0) && (filename[i] != ':'); i++) { /* empty */ }
+
+	if (filename[i] == ':') {
+		// see if this is a disk designator or port designator
+
+		int j;
+		int numAlpha = 0;
+
+		// look for drive : (not a foolproof test, but should work
+
+		for (j = 0; j < i; j++) {
+			if ((filename[j] >= 'a' && filename[j] <= 'z') || (filename[j] >= 'A' && filename[j] <= 'Z')) {
+				numAlpha += 1;
+			}
+		}
+
+		if (numAlpha != 1) {
+			havePath = false;
+		}
+	}
+
+	if (havePath == false) {
+		// have a server:port address
+
+		int rc;
+		char *sn = nullptr;
+		int port = 0;
+
+		sn = new char[i];
+		strncpy(sn,filename,i);
+		sn[i] = 0;
+
+		port = atoi(&filename[i+1]);
+
+		// create socket
+
+#ifdef WINDOWS
+		WORD wVersionRequested;
+		WSADATA wsaData;
+
+		wVersionRequested = MAKEWORD(2,2);
+		rc = WSAStartup(wVersionRequested,&wsaData);
+		if (rc != 0) {
+			printf("Error: WSAStartUP() failed with error %d\n",rc);
+			delete [] sn;
+			sn = nullptr;
+			status = TraceDqr::DQERR_ERR;
+			return;
+		}
+#endif // WINDOWS
+
+		SWTsock = socket(AF_INET,SOCK_STREAM,0);
+		if (SWTsock < 0) {
+			printf("Error: SliceFileParser::SliceFileParser(); socket() failed\n");
+			delete [] sn;
+			sn = nullptr;
+			status = TraceDqr::DQERR_ERR;
+			return;
+		}
+
+		struct sockaddr_in serv_addr;
+		struct hostent *server;
+
+		server = gethostbyname(sn);
+
+		delete [] sn;
+		sn = nullptr;
+
+		memset((char*)&serv_addr,0,sizeof(serv_addr));
+		serv_addr.sin_family = AF_INET;
+		serv_addr.sin_port = htons(port);
+		memcpy((char*)&serv_addr.sin_addr.s_addr,(char*)server->h_addr,server->h_length);
+
+		rc = connect(SWTsock,(struct sockaddr*)&serv_addr,sizeof(serv_addr));
+		if (rc < 0) {
+			printf("Error: SliceFileParser::SliceFileParser(): connect() failed: %d\n",rc);
+
+#ifdef WINDOWS
+			closesocket(SWTsock);
+#else // WINDOWS
+			close(SWTsock);
+#endif // WINDOWS
+
+			SWTsock = -1;
+
+			server = nullptr;
+
+			status = TraceDqr::DQERR_ERR;
+
+			return;
+		}
+
+		// put socket in non-blocking mode
+#ifdef WINDOWS
+		unsigned long on = 1L;
+		rc = ioctlsocket(SWTsock,FIONBIO,&on);
+		if (rc != NO_ERROR) {
+			printf("Error: SliceFileParser::SliceFileParser(): Failed to put socket into non-blocking mode\n");
+			status = TraceDqr::DQERR_ERR;
+			return;
+		}
+#else // WINDOWS
+//		long on = 1L;
+//		rc = ioctl(SWTsock,(int)FIONBIO,(char*)&on);
+//		if (rc < 0) {
+//			printf("Error: SliceFileParser::SliceFileParser(): Failed to put socket into non-blocking mode\n");
+//			status = TraceDqr::DQERR_ERR;
+//			return;
+//		}
+#endif // WINDOWS
+
+		tfSize = 0;
 	}
 	else {
-		status = TraceDqr::DQERR_OK;
+		tf.open(filename, std::ios::in | std::ios::binary);
+		if (!tf) {
+			printf("Error: SliceFileParder(): could not open file %s for input\n",filename);
+			status = TraceDqr::DQERR_OPEN;
+			return;
+		}
+		else {
+			status = TraceDqr::DQERR_OK;
+		}
+
+		tf.seekg (0, tf.end);
+		tfSize = tf.tellg();
+		tf.seekg (0, tf.beg);
+
+		msgOffset = 0;
+
+		SWTsock = -1;
 	}
 
-	tf.seekg (0, tf.end);
-	tfSize = tf.tellg();
-	tf.seekg (0, tf.beg);
-
-	msgOffset = 0;
-
-#if	0
-	// read entire slice file, create multiple quese base on src field
-
-	readAllTraceMsgs();
-#endif
+	status = TraceDqr::DQERR_OK;
 }
 
 SliceFileParser::~SliceFileParser()
@@ -5249,6 +5434,42 @@ SliceFileParser::~SliceFileParser()
 	if (tf.is_open()) {
 		tf.close();
 	}
+
+	if (SWTsock >= 0) {
+#ifdef WINDOWS
+		closesocket(SWTsock);
+#else // WINDOWS
+		close(SWTsock);
+#endif // WINDOWS
+
+		SWTsock = -1;
+	}
+}
+
+TraceDqr::DQErr SliceFileParser::getNumBytesInSWTQ(int &numBytes)
+{
+	TraceDqr::DQErr rc;
+
+	if (SWTsock < 0) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	rc = bufferSWT();
+	if (rc != TraceDqr::DQERR_OK) {
+		return rc;
+	}
+
+	if (bufferInIndex == bufferOutIndex) {
+		numBytes = 0;
+	}
+	else if (bufferInIndex < bufferOutIndex) {
+		numBytes = (sizeof sockBuffer / sizeof sockBuffer[0]) - bufferOutIndex + bufferInIndex;
+	}
+	else { // bufferInIndex > bufferOutIndex
+		numBytes = bufferInIndex - bufferOutIndex;
+	}
+
+	return TraceDqr::DQERR_OK;
 }
 
 TraceDqr::DQErr SliceFileParser::getFileOffset(int &size,int &offset)
@@ -6937,74 +7158,267 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readBinaryMsg()
+TraceDqr::DQErr SliceFileParser::bufferSWT()
+{
+	int br;
+	int bytesToRead;
+
+	// compute room in buffer for read
+
+	if (bufferInIndex == bufferOutIndex) {
+		// buffer is empty
+
+		bytesToRead = (sizeof sockBuffer) - 1;
+
+#ifdef WINDOWS
+		br = recv(SWTsock,(char*)sockBuffer,bytesToRead,0);
+#else // WINDOWS
+		br = recv(SWTsock,(char*)sockBuffer,bytesToRead,MSG_DONTWAIT);
+
+		if (br < 0) {
+			if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+				perror("SliceFileParser::bufferSWT(): recv() error");
+			}
+		}
+#endif // WINDOWS
+
+		if (br > 0) {
+			bufferInIndex = br;
+			bufferOutIndex = 0;
+		}
+	}
+	else if (bufferInIndex < bufferOutIndex) {
+		// empty bytes is (bufferOutIndex - bufferInIndex) - 1
+
+		bytesToRead = bufferOutIndex - bufferInIndex - 1;
+
+		if (bytesToRead > 0) {
+#ifdef WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,0);
+#else // WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,MSG_DONTWAIT);
+
+			if (br < 0) {
+				if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+					perror("SlicFileParser::bufferSWT(): recv() error");
+				}
+			}
+#endif // WINDOWS
+
+			if (br > 0) {
+				bufferInIndex += br;
+			}
+		}
+	}
+	else if (bufferInIndex > bufferOutIndex) {
+		// empty bytes is bufferInIndex to end of buffer + bufferOutIndex - 1
+		// first read to end of buffer
+
+		if (bufferOutIndex == 0) {
+			// don't want to completely fill up tail of buffer, because can't set bufferInIndex to 0!
+
+			bytesToRead = (sizeof sockBuffer) - bufferInIndex - 1;
+		}
+		else {
+			bytesToRead = (sizeof sockBuffer) - bufferInIndex;
+		}
+
+		if (bytesToRead > 0) {
+#ifdef WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,0);
+#else // WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,MSG_DONTWAIT);
+
+			if (br < 0) {
+				if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+					perror("SizeFileParser::bufferSWT(): recv() error");
+				}
+			}
+#endif // WINDOWS
+
+			if (br > 0) {
+				if ((bufferInIndex + br) >= (int)(sizeof sockBuffer)) {
+					bufferInIndex = 0;
+
+					bytesToRead = bufferOutIndex-1;
+
+					if (bytesToRead > 0) {
+#ifdef WINDOWS
+						br = recv(SWTsock,(char*)sockBuffer,bytesToRead,0);
+#else // WINDOWS
+						br = recv(SWTsock,(char*)sockBuffer,bytesToRead,MSG_DONTWAIT);
+
+						if (br < 0) {
+							if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+								perror("SliceFileParser::bufferSWT(): recv() error");
+							}
+						}
+#endif // WINDOWS
+						if (br > 0) {
+							bufferInIndex = br;
+						}
+					}
+				}
+				else {
+					bufferInIndex += br;
+				}
+			}
+		}
+	}
+
+#ifdef WINDOWS
+	if ((br == -1) && (WSAGetLastError() != WSAEWOULDBLOCK)) {
+		printf("Error: bufferSWT(): read socket failed\n");
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+#else // WINDOWS
+	if ((br == -1) && ((errno != EAGAIN) && (errno != EWOULDBLOCK))) {
+		printf("Error: bufferSWT(): read socket failed\n");
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+#endif // WINDOWS
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 {
 	// start by stripping off end of message or end of var bytes. These would be here in the case
 	// of a wrapped buffer, or some kind of corruption
 
-	do {
-		tf.read((char*)&msg[0],sizeof msg[0]);
-		if (!tf) {
-			if (tf.eof()) {
-				status = TraceDqr::DQERR_EOF;
+	haveMsg = false;
+
+	if (pendingMsgIndex == 0) {
+		do {
+			if (SWTsock >= 0) {
+				// need a buffer to read from.
+
+				status = bufferSWT();
+
+				if (status != TraceDqr::DQERR_OK) {
+					return status;
+				}
+
+				if (bufferInIndex == bufferOutIndex) {
+					return status;
+				}
+
+				msg[0] = sockBuffer[bufferOutIndex];
+				bufferOutIndex += 1;
+				if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
+					bufferOutIndex = 0;
+				}
 			}
 			else {
-				status = TraceDqr::DQERR_ERR;
+				tf.read((char*)&msg[0],sizeof msg[0]);
+				if (!tf) {
+					if (tf.eof()) {
+						status = TraceDqr::DQERR_EOF;
+					}
+					else {
+						status = TraceDqr::DQERR_ERR;
 
-				std::cout << "Error reading trace file\n";
+						std::cout << "Error reading trace file\n";
+					}
+
+					tf.close();
+
+					return status;
+				}
 			}
 
-			tf.close();
+			if ((msg[0] == 0x00) || (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff))) {
+				printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
+			}
+		} while ((msg[0] == 0x00) || ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL));
 
-			return status;
-		}
+		pendingMsgIndex = 1;
+	}
 
+	if (SWTsock >= 0) {
+		msgOffset = 0;
+	}
+	else {
+		msgOffset = ((uint32_t)tf.tellg())-1;
 
-		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff)) {
-			printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
-		}
-	} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
-
-	msgOffset = ((uint32_t)tf.tellg())-1;
+	}
 
 	bool done = false;
 
-	for (int i = 1; !done; i++) {
-		if (i >= (int)(sizeof msg / sizeof msg[0])) {
-
-			tf.close();
+	while (!done) {
+		if (pendingMsgIndex >= (int)(sizeof msg / sizeof msg[0])) {
+			if (SWTsock >= 0) {
+#ifdef WINDOWS
+				closesocket(SWTsock);
+#else // WINDOWS
+				close(SWTsock);
+#endif // WINDOWS
+				SWTsock = -1;
+			}
+			else {
+				tf.close();
+			}
 
 			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
+
+			pendingMsgIndex = 0;
 
 			status = TraceDqr::DQERR_ERR;
 
 			return TraceDqr::DQERR_ERR;
 		}
 
-		tf.read((char*)&msg[i],sizeof msg[0]);
-		if (!tf) {
-			if (tf.eof()) {
-				status = TraceDqr::DQERR_EOF;
-			}
-			else {
-				status = TraceDqr::DQERR_ERR;
+		if (SWTsock >= 0) {
+			status = bufferSWT();
 
-				std::cout << "Error reading trace file\n";
+			if (status != TraceDqr::DQERR_OK) {
+				return status;
 			}
 
-			tf.close();
+			if (bufferInIndex == bufferOutIndex) {
+				return status;
+			}
 
-			return status;
+			msg[pendingMsgIndex] = sockBuffer[bufferOutIndex];
+
+			bufferOutIndex += 1;
+			if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
+				bufferOutIndex = 0;
+			}
+		}
+		else {
+			tf.read((char*)&msg[pendingMsgIndex],sizeof msg[0]);
+			if (!tf) {
+				if (tf.eof()) {
+					status = TraceDqr::DQERR_EOF;
+				}
+				else {
+					status = TraceDqr::DQERR_ERR;
+
+					std::cout << "Error reading trace file\n";
+				}
+
+				tf.close();
+
+				return status;
+			}
 		}
 
-		if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
+		if ((msg[pendingMsgIndex] & 0x03) == TraceDqr::MSEO_END) {
 			done = true;
-			msgSlices = i+1;
+			msgSlices = pendingMsgIndex+1;
 		}
+
+		pendingMsgIndex += 1;
 	}
 
 	eom = false;
 	bitIndex = 0;
+
+	haveMsg = true;
+	pendingMsgIndex = 0;
 
 	return TraceDqr::DQERR_OK;
 }
@@ -7095,8 +7509,10 @@ TraceDqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics)	// generator to read trace messages one at a time
+TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics,bool &haveMsg)	// generator to read trace messages one at a time
 {
+	haveMsg = false;
+
 	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
@@ -7112,7 +7528,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 
 		// read from file, store in object, compute and fill out full fields, such as address and more later
 
-		rc = readBinaryMsg();
+		rc = readBinaryMsg(haveMsg);
 		if (rc != TraceDqr::DQERR_OK) {
 
 			// all errors from readBinaryMsg() are non-recoverable.
@@ -7124,6 +7540,10 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 			status = rc;
 
 			return status;
+		}
+
+		if (haveMsg == false) {
+			return TraceDqr::DQERR_OK;
 		}
 
 		nm.offset = msgOffset;
@@ -7734,6 +8154,8 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 				}
 
 				// have a match with a function
+
+				//printf("have match. Index %d\n",i);
 
 				// cache it for re-lookup speed improvement
 

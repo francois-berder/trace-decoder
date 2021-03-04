@@ -200,6 +200,9 @@ public:
 	bool flushITCPrintMsg(uint8_t core, char *dst, int dstLen, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime);
 	bool getITCPrintStr(uint8_t core, std::string &s, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime);
 	bool flushITCPrintStr(uint8_t core, std::string &s, TraceDqr::TIMESTAMP &starTime, TraceDqr::TIMESTAMP &endTime);
+	int  getITCPrintMask();
+	int  getITCFlushMask();
+	bool haveITCPrintMsgs();
 
 private:
 	int  roomInITCPrintQ(uint8_t core);
@@ -222,11 +225,13 @@ class SliceFileParser {
 public:
              SliceFileParser(char *filename,int srcBits);
              ~SliceFileParser();
-  TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
+  TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics,bool &haveMsg);
   TraceDqr::DQErr getFileOffset(int &size,int &offset);
 
   TraceDqr::DQErr getErr() { return status; };
   void       dump();
+
+  TraceDqr::DQErr getNumBytesInSWTQ(int &numBytes);
 
 private:
   TraceDqr::DQErr status;
@@ -236,13 +241,20 @@ private:
   int           srcbits;
   std::ifstream tf;
   int           tfSize;
+  int           SWTsock;
   int           bitIndex;
   int           msgSlices;
   uint32_t      msgOffset;
+  int           pendingMsgIndex;
   uint8_t       msg[64];
-  bool          eom = false;
+  bool          eom;
 
-  TraceDqr::DQErr readBinaryMsg();
+  int           bufferInIndex;
+  int           bufferOutIndex;
+  uint8_t       sockBuffer[2048];
+
+  TraceDqr::DQErr readBinaryMsg(bool &haveMsg);
+  TraceDqr::DQErr bufferSWT();
   TraceDqr::DQErr readNextByte(uint8_t *byte);
   TraceDqr::DQErr parseVarField(uint64_t *val,int *width);
   TraceDqr::DQErr parseFixedField(int width, uint64_t *val);
@@ -385,7 +397,7 @@ public:
 	int consumeTakenCount(int core);
 	int consumeNotTakenCount(int core);
 
-	int getICnt(int core) {return i_cnt[core]; }
+	int getICnt(int core) { return i_cnt[core]; }
 	uint32_t getHistory(int core) { return history[core]; }
 	int getNumHistoryBits(int core) { return histBit[core]; }
 	uint32_t getTakenCount(int core) {return takenCount[core]; }

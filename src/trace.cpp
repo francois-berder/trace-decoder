@@ -1005,6 +1005,7 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
   symtab       = nullptr;
   disassembler = nullptr;
   caTrace      = nullptr;
+  counts       = nullptr;//delete this line if compile error
 
   syncCount = 0;
   caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -1145,6 +1146,9 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 
   if (numAddrBits != 0 ) {
 	  instructionInfo.addrSize = numAddrBits;
+  }
+  else if (elfReader == nullptr) {
+	  instructionInfo.addrSize = 0;
   }
   else {
 	  instructionInfo.addrSize = elfReader->getBitsPerAddress();
@@ -1388,9 +1392,36 @@ TraceDqr::TIMESTAMP Trace::adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TI
 	return ts;
 }
 
+TraceDqr::DQErr Trace::getNumBytesInSWTQ(int &numBytes)
+{
+	if (sfp == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return sfp->getNumBytesInSWTQ(numBytes);
+}
+
 TraceDqr::DQErr Trace::getTraceFileOffset(int &size,int &offset)
 {
 	return sfp->getFileOffset(size,offset);
+}
+
+int Trace::getITCPrintMask()
+{
+	if (itcPrint == nullptr) {
+		return 0;
+	}
+
+	return itcPrint->getITCPrintMask();
+}
+
+int Trace::getITCFlushMask()
+{
+	if (itcPrint == nullptr) {
+		return 0;
+	}
+
+	return itcPrint->getITCFlushMask();
 }
 
 TraceDqr::ADDRESS Trace::computeAddress()
@@ -2252,6 +2283,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgIn
 				*flags |= TraceDqr::TRACE_HAVE_SRCINFO;
 			}
 		}
+
+		if (itcPrint != nullptr) {
+			if (itcPrint->haveITCPrintMsgs() != false) {
+				*flags |= TraceDqr::TRACE_HAVE_ITCPRINTINFO;
+			}
+		}
 	}
 
 	return ec;
@@ -2296,8 +2333,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //		need to set readNewTraceMessage where it is needed! That includes
 //		staying in the same state that expects to get another message!!
 
+		bool haveMsg;
+
 		if (readNewTraceMessage != false) {
-			rc = sfp->readNextTraceMsg(nm,analytics);
+			rc = sfp->readNextTraceMsg(nm,analytics,haveMsg);
 
 			if (rc != TraceDqr::DQERR_OK) {
 				// have an error. either eof, or error
@@ -2318,6 +2357,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					state[currentCore] = TRACE_STATE_ERROR;
 				}
 
+				return status;
+			}
+
+			if (haveMsg == false) {
 				return status;
 			}
 
