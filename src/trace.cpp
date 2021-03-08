@@ -150,6 +150,8 @@ int CATraceRec::consumeCAInstruction(uint32_t &pipe,uint32_t &cycles)
 
 	// check if we have exhausted all bits in this record
 
+//	printf("CATraceRec::consumCAInstruction(): offset: %d\n",offset);
+
 	if (offset >= 30 * 32) {
 		// this record is exhausted. Tell caller to read another record
 
@@ -160,6 +162,10 @@ int CATraceRec::consumeCAInstruction(uint32_t &pipe,uint32_t &cycles)
 
 	dataIndex = offset / 30; // 30 bits of data in each data word. dataIndex is data[] index
 	bitIndex = 29 - (offset % 30);  // 0 - 29 is the bit index to start looking at (29 oldest, 0 newest)
+
+//	for (int i = 0; i < 32; i++) {
+//		printf("data[%d]: %08x\n",i,data[i]);
+//	}
 
 	while (found == false) {
 		while ((bitIndex >= 0) && ((data[dataIndex] & (1<<bitIndex)) == 0)) {
@@ -182,7 +188,11 @@ int CATraceRec::consumeCAInstruction(uint32_t &pipe,uint32_t &cycles)
 
 			// cycle is the start cycle of the pipe bit relative to the start of the 32 word block.
 
-			cycles = dataIndex * 15 + offset/2;
+//			cycles = dataIndex * 15 + (29-bitIndex)/2;
+//			or:
+			cycles = offset/2;
+
+//			printf("one at offset: %d, dataIndex: %d, bitindex: %d, cycle: %d\n",offset,dataIndex,bitIndex,cycles);
 
 			// Bump past it
 			offset += 1;
@@ -196,6 +206,8 @@ int CATraceRec::consumeCAInstruction(uint32_t &pipe,uint32_t &cycles)
 	else {
 		pipe = TraceDqr::CAFLAG_PIPE1;
 	}
+
+//	printf("CATraceRec::consumeCAInstruction(): Found: offset: %d cycles: %d\n",offset,cycles);
 
 	return 1;	// success
 }
@@ -233,6 +245,24 @@ CATrace::CATrace(char *caf_name,TraceDqr::CATraceType catype)
 	catf.read((char*)caBuffer,caBufferSize);
 
 	catf.close();
+
+//	printf("caBufferSize: %d\n",caBufferSize);
+//
+//	int *ip;
+//	ip = (int*)caBuffer;
+//
+//	for (int i = 0; (size_t)i < caBufferSize / sizeof(int); i++) {
+//		printf("%3d  ",(i*30)>>1);
+//
+//		for (int j = 28; j >= 0; j -= 2) {
+//			if (j != 28) {
+//				printf(":");
+//			}
+//			printf("%01x",(ip[i] >> j) & 0x3);
+//		}
+//
+//		printf("\n");
+//	}
 
 	traceQOut = 0;
 	traceQIn = 0;
@@ -492,8 +522,12 @@ TraceDqr::DQErr CATrace::consumeCAInstruction(uint32_t &pipe,uint32_t &cycles)
 
 	TraceDqr::DQErr rc;
 
+//	printf("CATrace::consumeCAInstruction()\n");
+
 	while (numConsumed == 0) {
 		numConsumed = catr.consumeCAInstruction(pipe,cycles);
+//		printf("CATrace::consumeCAInstruction(): num consumed: %d\n",numConsumed);
+
 		if (numConsumed == 0) {
 			// need to read another record
 
@@ -506,6 +540,8 @@ TraceDqr::DQErr CATrace::consumeCAInstruction(uint32_t &pipe,uint32_t &cycles)
 	}
 
 	cycles += blockRecNum * 15 * 32;
+
+//	printf("CATrace::consumeCAInstruction(): cycles: %d\n",cycles);
 
 	return TraceDqr::DQERR_OK;
 }
@@ -737,6 +773,8 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 
 	TraceDqr::DQErr rc;
 
+//	printf("CATrace::consume()\n");
+
 	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
@@ -948,8 +986,6 @@ TraceDqr::DQErr CATrace::parseNextCATraceRec(CATraceRec &car)
 		d = *(uint32_t*)(&caBuffer[caBufferIndex]);
 		caBufferIndex += sizeof(uint32_t);
 	}
-
-//	printf("have start of file %d\n",caBufferIndex);
 
 	// make sure there are at least 31 more 32 bit records in the caBuffer. If not, EOF
 
@@ -2427,6 +2463,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 		switch (state[currentCore]) {
 		case TRACE_STATE_SYNCCATE:
+//			printf("TRACE_STATE_SYNCCATE\n");
+
 			if (caTrace == nullptr) {
 				// have an error! Should never have TRACE_STATE_SYNC whthout a caTrace ptr
 				printf("Error: caTrace is null\n");
@@ -2873,7 +2911,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_GETFIRSTSYNCMSG:
-//			printf("TRACE_STATE_GETFIRSTSYNCMSG\n");
+			//printf("TRACE_STATE_GETFIRSTSYNCMSG\n");
 
 			// read trace messages until a sync is found. Should be the first message normally, unless wrapped buffer
 
