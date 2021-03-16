@@ -923,7 +923,7 @@ int main(int argc, char *argv[])
 
 				for (int core = 0; core_mask != 0; core++) {
 					if (core_mask & 1) {
-						s = trace->getITCPrintStr(msgInfo->coreId,haveStr,startTime,endTime);
+						s = trace->getITCPrintStr(core,haveStr,startTime,endTime);
 						while (haveStr != false) {
 							if (firstPrint == false) {
 								printf("\n");
@@ -943,7 +943,7 @@ int main(int argc, char *argv[])
 
 							firstPrint = false;
 
-							s = trace->getITCPrintStr(msgInfo->coreId,haveStr,startTime,endTime);
+							s = trace->getITCPrintStr(core,haveStr,startTime,endTime);
 						}
 					}
 
