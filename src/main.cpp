@@ -965,7 +965,7 @@ int main(int argc, char *argv[])
 		std::string s = "";
 		bool haveStr;
 
-		core_mask = trace->getITCPrintMask();
+		core_mask = trace->getITCFlushMask();
 
 		for (int core = 0; core_mask != 0; core++) {
 			if (core_mask & 1) {
