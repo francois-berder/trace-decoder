@@ -401,6 +401,13 @@ TraceDqr::DQErr CATrace::packQ()
 			if (src != traceQIn) {
 				caTraceQ[dst] = caTraceQ[src];
 				caTraceQ[src].record = 0; // don't forget to mark this record as empty!
+
+				// zero out the q depth stats fields
+
+				caTraceQ[src].qDepth = 0;
+				caTraceQ[src].arithInProcess = 0;
+				caTraceQ[src].loadInProcess = 0;
+				caTraceQ[src].storeInProcess = 0;
 			}
 		}
 	}
@@ -466,6 +473,14 @@ TraceDqr::DQErr CATrace::addQ(uint32_t data,uint32_t t)
 		if (rec != 0) {
 			caTraceQ[traceQIn].record = rec;
 			caTraceQ[traceQIn].cycle = t;
+
+			// zero out the q depth stats fields
+
+			caTraceQ[traceQIn].qDepth = 0;
+			caTraceQ[traceQIn].arithInProcess = 0;
+			caTraceQ[traceQIn].loadInProcess = 0;
+			caTraceQ[traceQIn].storeInProcess = 0;
+
 			traceQIn += 1;
 			if (traceQIn >= traceQSize) {
 				traceQIn = 0;
@@ -641,7 +656,7 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 	return TraceDqr::DQERR_ERR;
 }
 
-TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlags type,uint32_t &cycles)
+TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlags type,uint32_t &cycles,uint8_t &qInfo,uint8_t &arithInfo,uint8_t &loadInfo, uint8_t &storeInfo)
 {
 	if (caTraceQ == nullptr) {
 		return TraceDqr::DQERR_ERR;
@@ -651,10 +666,69 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 
 	// look in Q and see if record with matching type is found
 
+	TraceDqr::DQErr rc;
+
+	if (QStart == traceQIn) {
+		// get next record
+
+		rc = parseNextVectorRecord(QStart);	// reads a record and adds it to the Q (adds five entries to the Q. Packs the Q if needed
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+
+			return rc;
+		}
+	}
+
+	uint8_t tQInfo = caTraceQ[QStart].qDepth;
+	uint8_t tArithInfo = caTraceQ[QStart].arithInProcess;
+	uint8_t tLoadInfo = caTraceQ[QStart].loadInProcess;
+	uint8_t tStoreInfo = caTraceQ[QStart].storeInProcess;
+
 	while (QStart != traceQIn) {
+		switch (type) {
+		case TraceDqr::CAVFLAG_VISTART:
+			caTraceQ[QStart].qDepth += 1;
+			break;
+		case TraceDqr::CAVFLAG_VIARITH:
+			caTraceQ[QStart].arithInProcess += 1;
+			break;
+		case TraceDqr::CAVFLAG_VISTORE:
+			caTraceQ[QStart].storeInProcess += 1;
+			break;
+		case TraceDqr::CAVFLAG_VILOAD:
+			caTraceQ[QStart].loadInProcess += 1;
+			break;
+		default:
+			printf("Error: CATrace::consumeCAVector(): invalid type: %08x\n",type);
+			return TraceDqr::DQERR_ERR;
+		}
+
 		if ((caTraceQ[QStart].record & type) != 0) {
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~type;
+
+			switch (type) {
+			case TraceDqr::CAVFLAG_VISTART:
+				tQInfo += 1;
+				break;
+			case TraceDqr::CAVFLAG_VIARITH:
+				tArithInfo += 1;
+				break;
+			case TraceDqr::CAVFLAG_VISTORE:
+				tStoreInfo += 1;
+				break;
+			case TraceDqr::CAVFLAG_VILOAD:
+				tLoadInfo += 1;
+				break;
+			default:
+				printf("Error: CATrace::consumeCAVector(): invalid type: %08x\n",type);
+				return TraceDqr::DQERR_ERR;
+			}
+
+			qInfo = tQInfo;
+			arithInfo = tArithInfo;
+			loadInfo = tLoadInfo;
+			storeInfo = tStoreInfo;
 
 			QStart += 1;
 			if (QStart >= traceQSize) {
@@ -675,8 +749,6 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 	// otherwise, start reading records and adding them to the Q until
 	// matching type is found
 
-	TraceDqr::DQErr rc;
-
 	for (;;) {
 		// get next record
 
@@ -688,9 +760,50 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 		}
 
 		while (QStart != traceQIn) {
+			switch (type) {
+			case TraceDqr::CAVFLAG_VISTART:
+				caTraceQ[QStart].qDepth += 1;
+				break;
+			case TraceDqr::CAVFLAG_VIARITH:
+				caTraceQ[QStart].arithInProcess += 1;
+				break;
+			case TraceDqr::CAVFLAG_VISTORE:
+				caTraceQ[QStart].storeInProcess += 1;
+				break;
+			case TraceDqr::CAVFLAG_VILOAD:
+				caTraceQ[QStart].loadInProcess += 1;
+				break;
+			default:
+				printf("Error: CATrace::consumeCAVector(): invalid type: %08x\n",type);
+				return TraceDqr::DQERR_ERR;
+			}
+
 			if ((caTraceQ[QStart].record & type) != 0) {
 				cycles = caTraceQ[QStart].cycle;
 				caTraceQ[QStart].record &= ~type;
+
+				switch (type) {
+				case TraceDqr::CAVFLAG_VISTART:
+					tQInfo += 1;
+					break;
+				case TraceDqr::CAVFLAG_VIARITH:
+					tArithInfo += 1;
+					break;
+				case TraceDqr::CAVFLAG_VISTORE:
+					tStoreInfo += 1;
+					break;
+				case TraceDqr::CAVFLAG_VILOAD:
+					tLoadInfo += 1;
+					break;
+				default:
+					printf("Error: CATrace::consumeCAVector(): invalid type: %08x\n",type);
+					return TraceDqr::DQERR_ERR;
+				}
+
+				qInfo = tQInfo;
+				arithInfo = tArithInfo;
+				loadInfo = tLoadInfo;
+				storeInfo = tStoreInfo;
 
 				QStart += 1;
 				if (QStart >= traceQSize) {
@@ -767,7 +880,7 @@ void CATrace::dumpCAQ()
 	}
 }
 
-TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint32_t &pipeCycles,uint32_t &viStartCycles,uint32_t &viFinishCycles)
+TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint32_t &pipeCycles,uint32_t &viStartCycles,uint32_t &viFinishCycles,uint8_t &qDepth,uint8_t &arithDepth,uint8_t &loadDepth,uint8_t &storeDepth)
 {
 	int qStart;
 
@@ -779,6 +892,11 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 		return status;
 	}
 
+	uint8_t tQDepth;
+	uint8_t tArithDepth;
+	uint8_t tLoadDepth;
+	uint8_t tStoreDepth;
+
 	switch (caType) {
 	case TraceDqr::CATRACE_NONE:
 		printf("Error: CATrace::consume(): invalid trace type CATRACE_NONE\n");
@@ -789,6 +907,11 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 			status = rc;
 			return rc;
 		}
+
+		qDepth = 0;
+		arithDepth = 0;
+		loadDepth = 0;
+		storeDepth = 0;
 		break;
 	case TraceDqr::CATRACE_VECTOR:
 		// get pipe
@@ -803,13 +926,13 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 
 		switch(iType) {
 		case TraceDqr::INST_VECT_ARITH:
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles,qDepth,tArithDepth,tLoadDepth,tStoreDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
 
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VIARITH,viFinishCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VIARITH,viFinishCycles,tQDepth,arithDepth,loadDepth,storeDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
@@ -824,13 +947,13 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 			}
 			break;
 		case TraceDqr::INST_VECT_LOAD:
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles,qDepth,tArithDepth,tLoadDepth,tStoreDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
 
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles,tQDepth,arithDepth,loadDepth,storeDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
@@ -845,13 +968,13 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 			}
 			break;
 		case TraceDqr::INST_VECT_STORE:
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles,qDepth,tArithDepth,tLoadDepth,tStoreDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
 
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTORE,viFinishCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTORE,viFinishCycles,tQDepth,arithDepth,loadDepth,storeDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
@@ -866,13 +989,13 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 			}
 			break;
 		case TraceDqr::INST_VECT_AMO:
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles,qDepth,tArithDepth,tLoadDepth,tStoreDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
 
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles,tQDepth,arithDepth,loadDepth,storeDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
@@ -887,19 +1010,19 @@ TraceDqr::DQErr CATrace::consume(uint32_t &caFlags,TraceDqr::InstType iType,uint
 			}
 			break;
 		case TraceDqr::INST_VECT_AMO_WW:
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTART,viStartCycles,qDepth,tArithDepth,tLoadDepth,tStoreDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
 
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VILOAD,viFinishCycles,tQDepth,arithDepth,loadDepth,storeDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
 			}
 
-			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTORE,viFinishCycles);
+			rc = consumeCAVector(qStart,TraceDqr::CAVFLAG_VISTORE,viFinishCycles,tQDepth,tArithDepth,tLoadDepth,tStoreDepth);
 			if (rc != TraceDqr::DQERR_OK) {
 				status = rc;
 				return rc;
@@ -2353,6 +2476,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	uint32_t viStartCycles;
 	uint32_t viFinishCycles;
 
+	uint8_t qDepth;
+	uint8_t arithInProcess;
+	uint8_t loadInProcess;
+	uint8_t storeInProcess;
+
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
 	}
@@ -2630,7 +2758,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					// We just use an itype of maybe we need to get the instruciton ad addr and get its type??
 
-					rc = caTrace->consume(caFlags,TraceDqr::INST_SCALER,pipeCycles,viStartCycles,viFinishCycles);
+					rc = caTrace->consume(caFlags,TraceDqr::INST_SCALER,pipeCycles,viStartCycles,viFinishCycles,qDepth,arithInProcess,loadInProcess,storeInProcess);
 
 					if (rc == TraceDqr::DQERR_EOF) {
 						state[currentCore = TRACE_STATE_DONE];
@@ -2965,6 +3093,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					Disassemble(lastFaddr[currentCore]);
 
 					if (instInfo != nullptr) {
+						instructionInfo.qDepth = 0;
+						instructionInfo.arithInProcess = 0;
+						instructionInfo.loadInProcess = 0;
+						instructionInfo.storeInProcess = 0;
+
 						instructionInfo.coreId = currentCore;
 						*instInfo = &instructionInfo;
 						(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
@@ -3110,6 +3243,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						Disassemble(lastFaddr[currentCore]);
 
 						if (instInfo != nullptr) {
+
+							instructionInfo.qDepth = 0;
+							instructionInfo.arithInProcess = 0;
+							instructionInfo.loadInProcess = 0;
+							instructionInfo.storeInProcess = 0;
+
 							instructionInfo.coreId = currentCore;
 							*instInfo = &instructionInfo;
 							(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
@@ -3535,7 +3674,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				if (syncCount == 0) {
-					status = caTrace->consume(caFlags,inst_type,pipeCycles,viStartCycles,viFinishCycles);
+					status = caTrace->consume(caFlags,inst_type,pipeCycles,viStartCycles,viFinishCycles,qDepth,arithInProcess,loadInProcess,storeInProcess);
 
 					if (status == TraceDqr::DQERR_EOF) {
 						state[currentCore] = TRACE_STATE_DONE;
@@ -3558,6 +3697,16 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 
 			if (instInfo != nullptr) {
+				instructionInfo.qDepth = qDepth;
+				instructionInfo.arithInProcess = arithInProcess;
+				instructionInfo.loadInProcess = loadInProcess;
+				instructionInfo.storeInProcess = storeInProcess;
+
+				qDepth = 0;
+				arithInProcess = 0;
+				loadInProcess = 0;
+				storeInProcess = 0;
+
 				instructionInfo.coreId = currentCore;
 				*instInfo = &instructionInfo;
 				(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);

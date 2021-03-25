@@ -798,19 +798,19 @@ int main(int argc, char *argv[])
 						}
 
 						if (instInfo->caFlags & TraceDqr::CAFLAG_VSTART) {
-							n += printf("-%d",instInfo->VIStartCycles);
+							n += printf("(%d)-%d(%dA,%dL,%dS)",instInfo->qDepth,instInfo->VIStartCycles,instInfo->arithInProcess,instInfo->loadInProcess,instInfo->storeInProcess);
 						}
 
 						if (instInfo->caFlags & TraceDqr::CAFLAG_VARITH) {
-							n += printf("-%d",instInfo->VIFinishCycles);
+							n += printf("-%dA",instInfo->VIFinishCycles);
 						}
 
 						if (instInfo->caFlags & TraceDqr::CAFLAG_VLOAD) {
-							n += printf("-%d",instInfo->VIFinishCycles);
+							n += printf("-%dL",instInfo->VIFinishCycles);
 						}
 
 						if (instInfo->caFlags & TraceDqr::CAFLAG_VSTORE) {
-							n += printf("-%d",instInfo->VIFinishCycles);
+							n += printf("-%dS",instInfo->VIFinishCycles);
 						}
 
 						n += printf("] ");

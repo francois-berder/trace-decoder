@@ -346,6 +346,11 @@ public:
 	uint32_t            VIStartCycles;
 	uint32_t            VIFinishCycles;
 
+	uint8_t             qDepth;
+	uint8_t             arithInProcess;
+	uint8_t             loadInProcess;
+	uint8_t             storeInProcess;
+
 	uint32_t r0Val;
 	uint32_t r1Val;
 	uint32_t wVal;
@@ -652,7 +657,7 @@ class CATrace {
 public:
 	CATrace(char *caf_name,TraceDqr::CATraceType catype);
 	~CATrace();
-	TraceDqr::DQErr consume(uint32_t &caFlags,TraceDqr::InstType iType,uint32_t &pipeCycles,uint32_t &viStartCycles,uint32_t &viFinishCycles);
+	TraceDqr::DQErr consume(uint32_t &caFlags,TraceDqr::InstType iType,uint32_t &pipeCycles,uint32_t &viStartCycles,uint32_t &viFinishCycles,uint8_t &qDepth,uint8_t &arithDepth,uint8_t &loadDepth,uint8_t &storeDepth);
 	TraceDqr::DQErr getStatus() {return status;}
 
 	TraceDqr::ADDRESS getCATraceStartAddr();
@@ -662,6 +667,10 @@ private:
 	struct CATraceQItem {
 		uint32_t cycle;
 		uint8_t record;
+		uint8_t qDepth;
+		uint8_t arithInProcess;
+		uint8_t loadInProcess;
+		uint8_t storeInProcess;
 	};
 
 	TraceDqr::DQErr status;
@@ -692,7 +701,7 @@ private:
 	TraceDqr::DQErr dumpCurrentCARecord(int level);
 	TraceDqr::DQErr consumeCAInstruction(uint32_t &pipe,uint32_t &cycles);
 	TraceDqr::DQErr consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pipe);
-	TraceDqr::DQErr consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlags type,uint32_t &cycles);
+	TraceDqr::DQErr consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlags type,uint32_t &cycles,uint8_t &qInfo,uint8_t &arithInfo,uint8_t &loadInfo,uint8_t &storeInfo);
 };
 
 class ObjFile {
