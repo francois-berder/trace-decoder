@@ -489,10 +489,10 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 //	should cache this (as part of other instruction stuff cached)!!
 
 	if (instSize == 32) {
-		n = snprintf(dst,len,"%08x           %s",instruction,instructionText);
+		n = snprintf(dst,len,"%08x    %s",instruction,instructionText);
 	}
 	else {
-		n = snprintf(dst,len,"%04x               %s",instruction,instructionText);
+		n = snprintf(dst,len,"%04x        %s",instruction,instructionText);
 	}
 
 	if (haveOperandAddress) {
