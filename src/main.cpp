@@ -36,7 +36,7 @@ using namespace std;
 
 static void usage(char *name)
 {
-	printf("Usage: dqr -t tracefile -e elffile [-ca cafile] | -n basename) [-ca cafile] [-catype [none | instruction | vector]\n");
+	printf("Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] -basename name\n");
 	printf("           [-srcbits=nn] [-start mn] [-stop mn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]\n");
 	printf("           [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]\n");
 	printf("           [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]\n");

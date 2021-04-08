@@ -1259,6 +1259,11 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
     	return;
     }
   }
+  else {
+ 	elfReader = nullptr;
+	disassembler = nullptr;
+	symtab = nullptr;
+  }
 
   for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++ ) {
 	lastFaddr[i] = 0;
