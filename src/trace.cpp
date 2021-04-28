@@ -1580,105 +1580,91 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 
-		printf("boink: need to handle two addresses in some cases!!\n");
-		printf("should we update pc here?? maybe in some cases based on cksrc??\n");
-		// update faddr but not pc
-
-		printf("maybe pc should be the next addr? Take into account the number of addresses?\n");
-
 		switch (nm.ict.cksrc) {
 		case TraceDqr::ICT_EXT_TRIG:
-			if (nm.ict.ckdf == 0) {
+			if (nm.ict.ckdf <= 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
-			}
-			else if (nm.ict.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
-				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_WATCHPOINT:
-			if (nm.ict.ckdf == 0) {
+			if (nm.ict.ckdf <= 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
-			}
-			else if (nm.ict.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
-				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_INFERABLECALL:
 			if (nm.ict.ckdf == 0) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
+				pc = faddr;
 			}
 			else if (nm.ict.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
-				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
+				pc = faddr ^ (nm.ict.ckdata[0] << 1);
+				faddr = pc ^ (nm.ict.ckdata[1] << 1);
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_EXCEPTION:
 			if (nm.ict.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_INTERRUPT:
 			if (nm.ict.ckdf == 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_CONTEXT:
 			if (nm.ict.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_PC_SAMPLE:
 			if (nm.ict.ckdf == 0) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
-			}
-			else if (nm.ict.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
-				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_CONTROL:
 			if (nm.ict.ckdf == 0) {
-				printf("ProcessTraceMessage(): need to do someting with control\n");
+				// nothing to do - no address
 			}
 			else if (nm.ict.ckdf == 1) {
-				printf("ProcessTraceMessage(): need to do someting with control\n");
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
@@ -1692,103 +1678,91 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 
-		printf("boink: need to handle two addresses in some cases!!\n");
-		printf("should we update pc here?? maybe in some cases based on cksrc??\n");
-		// update faddr but not pc
-
 		switch (nm.ictWS.cksrc) {
 		case TraceDqr::ICT_EXT_TRIG:
-			if (nm.ictWS.ckdf == 0) {
+			if (nm.ictWS.ckdf <= 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
-			}
-			else if (nm.ictWS.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
-				faddr = nm.ictWS.ckdata[0] << 1;
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_WATCHPOINT:
-			if (nm.ictWS.ckdf == 0) {
+			if (nm.ictWS.ckdf <= 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
-			}
-			else if (nm.ictWS.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
-				faddr = nm.ictWS.ckdata[0] << 1;
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_INFERABLECALL:
 			if (nm.ictWS.ckdf == 0) {
 				faddr = nm.ictWS.ckdata[0] << 1;
+				pc = faddr;
 			}
 			else if (nm.ictWS.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
-				faddr = nm.ictWS.ckdata[0] << 1;
+				pc = nm.ict.ckdata[0] << 1;
+				faddr = pc ^ (nm.ict.ckdata[1] << 1);
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_EXCEPTION:
 			if (nm.ictWS.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
 				faddr = nm.ictWS.ckdata[0] << 1;
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_INTERRUPT:
 			if (nm.ictWS.ckdf == 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_CONTEXT:
 			if (nm.ictWS.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
 				faddr = nm.ictWS.ckdata[0] << 1;
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_PC_SAMPLE:
 			if (nm.ictWS.ckdf == 0) {
 				faddr = nm.ictWS.ckdata[0] << 1;
-			}
-			else if (nm.ictWS.ckdf == 1) {
-				printf("processTraceMessage(): need to do something with second ckdata[]\n");
-				faddr = nm.ictWS.ckdata[0] << 1;
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
 		case TraceDqr::ICT_CONTROL:
 			if (nm.ictWS.ckdf == 0) {
-				printf("ProcessTraceMessage(): need to do someting with control\n");
+				// nothing to do
 			}
 			else if (nm.ictWS.ckdf == 1) {
-				printf("ProcessTraceMessage(): need to do someting with control\n");
 				faddr = nm.ictWS.ckdata[0] << 1;
+				pc = faddr;
 			}
 			else {
-				printf("processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
+				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
 			break;
@@ -1796,11 +1770,6 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			printf("Error: processTraceMessage(): Invalid ICT Event: %d\n",nm.ictWS.cksrc);
 			return TraceDqr::DQERR_ERR;
 		}
-
-		// don't update PC
-
-		//		pc = faddr;
-		// don't reset call/return stack for this message - not a normal sync!
 		break;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
@@ -2638,7 +2607,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		case TRACE_STATE_GETFIRSTSYNCMSG:
 			// start here for normal traces
 
-			printf("TRACE_STATE_GETFIRSTSYNCMSG\n");
+//			printf("TRACE_STATE_GETFIRSTSYNCMSG\n");
 
 			// read trace messages until a sync is found. Should be the first message normally
 			// unless the wrapped buffer
@@ -2682,9 +2651,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_GETMSGWITHCOUNT;
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-			case TraceDqr::TCODE_INCIRCUITTRACE:
 				state[currentCore] = TRACE_STATE_EVENT;
 				break;
+			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 			case TraceDqr::TCODE_DIRECT_BRANCH:
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
@@ -2755,7 +2724,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// ERROR, ICT (all forms), ITC
 			// any other messages and we are in an event trace anymore: switch back to normal (get first sync)
 
-			printf("TRACE_STATE_EVENT\n");
+			// printf("TRACE_STATE_EVENT\n");
 
 			switch (nm.tcode) {
 			case TraceDqr::TCODE_SYNC:
@@ -2780,19 +2749,25 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
 				return status;
-			case TraceDqr::TCODE_DATA_ACQUISITION:
+			case TraceDqr::TCODE_DATA_ACQUISITION:	// need to handle itc messages
+				// ITC messages are handled at the end of this state case
 				break;
 			case TraceDqr::TCODE_ERROR:
+			case TraceDqr::TCODE_CORRELATION:
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
-				nm.timestamp = 0;	// don't start clock until we have a sync and a full time
-				lastTime[currentCore] = 0;
+				// nm.timestamp = 0;	// don't start clock until we have a sync and a full time
+				// lastTime[currentCore] = 0;
 				currentAddress[currentCore] = 0;
 				break;
-			case TraceDqr::TCODE_CORRELATION:
 			case TraceDqr::TCODE_INCIRCUITTRACE:
+				// we will not get here unless we have already found a sync
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-				// If we are looking for a starting sync and see this, all is cool!!
-				printf("pre current address %08x, faddr: %08x\n",currentAddress[currentCore],lastFaddr[currentCore]);
+				// note: currentAddress will be the pc of where we are at. lastFaddr will be a
+				// full address that can be used for computing new addresses from uaddrs.
+				// they are not always the same - for example, they are not the same for call/return
+				// ict messages (maybe the only case where they are not. For call/return, currentAddress
+				// is the address of the call/return instruction. faddr is the dst of the call return
+				// and is used from computing new addresses from messages with a uaddr.
 
 				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -2804,11 +2779,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 
-				printf("post current address %08x, faddr: %08x\n",currentAddress[currentCore],lastFaddr[currentCore]);
-				printf("boink: need to check for two addresses, depending on cksrc/ckdf!\n");
-
 				if ((instInfo != nullptr) || (srcInfo != nullptr)) {
-					Disassemble(lastFaddr[currentCore]);
+					Disassemble(currentAddress[currentCore]);
 
 					if (instInfo != nullptr) {
 						// we set instinfo here because we will never get a count for
@@ -2844,13 +2816,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// if doing pc-sampling and msg type is INCIRCUITTRACE_WS, we want to use faddr
 				// and not currentAddress
 
-				if (nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE_WS) {
-					messageInfo.currentAddress = lastFaddr[currentCore]; here it is! fix in process trace?
-				}
-				else {
-					messageInfo.currentAddress = currentAddress[currentCore]; should current address be next address? Don't know it if it is an uninferrable call'
-				}
-
+				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
 
 				if (messageInfo.processITCPrintData(itcPrint) == false) {
@@ -2912,15 +2878,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-				// These message are event messages.
-				// this message has no count info, but does have address info. May have two addresses
-				// ICT PC Sampling traces should never exit this state
-
-				printf("Error: unexpected tcode in state TRACE_STATE_GETMSGWITHCOUNT: INCIRCUITTRACE or INCIRCUITTRACE_WS\n");
-				state[currentCore] = TRACE_STATE_ERROR;
-
-				status = TraceDqr::DQERR_ERR;
-				return status;
+				state[currentCore] = TRACE_STATE_EVENT;
+				break;
 			case TraceDqr::TCODE_ERROR:
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 
@@ -3166,12 +3125,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-				printf("Error: Unexpected tcode of INCIRCUTTRACE or INCIRCUTTRACE_WS in state TRACE_STATE_GETNEXTMSG\n");
-
-				state[currentCore] = TRACE_STATE_ERROR;
-
-				status = TraceDqr::DQERR_ERR;
-				return status;
+				state[currentCore] = TRACE_STATE_EVENT;
+				break;
 			case TraceDqr::TCODE_ERROR:
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 

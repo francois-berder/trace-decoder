@@ -4,6 +4,7 @@
 
 set te_control_offset      0x00
 set te_impl_offset         0x04
+set ev_control_offset      0x0C
 set te_sinkbase_offset     0x10
 set te_sinkbasehigh_offset 0x14
 set te_sinklimit_offset    0x18
@@ -38,6 +39,7 @@ set pcs_sample_hi       0x178
 set num_cores  0
 set has_funnel 0
 set have_htm 0
+set has_event 0
 
 set trace_buffer_width 0
 
@@ -65,7 +67,7 @@ proc setAllTeControls {offset val} {
 #    echo "setAllTeControls([format 0x%08lx $offset] [format 0x%08lx $val])"
 
     foreach controlReg $traceBaseAddresses {
-	mww [expr $controlReg + $offset] $val
+    mww [expr $controlReg + $offset] $val
     }
 }
 
@@ -75,7 +77,7 @@ proc setAllTfControls {offset val} {
 #    echo "setAllTfControls([format 0x%08lx $offset] [format 0x%08lx $val])"
 
     if {$traceFunnelAddress != 0} {
-	mww [expr $traceFunnelAddress + $offset] $val
+    mww [expr $traceFunnelAddress + $offset] $val
     }
 }
 
@@ -89,12 +91,12 @@ proc getAllCoreFunnelList {} {
     set index 0
 
     foreach controlReg $traceBaseAddresses {
-	lappend cores $index
-	set index [expr $index + 1]
+    lappend cores $index
+    set index [expr $index + 1]
     }
 
     if {$traceFunnelAddress != "0x00000000" && $traceFunnelAddress != ""} {
-	lappend cores funnel
+    lappend cores funnel
     }
 
     return $cores
@@ -110,8 +112,8 @@ proc getAllCoreList {} {
     set index 0
 
     foreach controlReg $traceBaseAddresses {
-	lappend cores $index
-	set index [expr $index + 1]
+    lappend cores $index
+    set index [expr $index + 1]
     }
 
     return $cores
@@ -126,21 +128,21 @@ proc parseCoreFunnelList {cores} {
     # parse core and build list of cores
 
     if {$cores == "all" || $cores == ""} {
-	return [getAllCoreFunnelList]
+    return [getAllCoreFunnelList]
     }
 
     set t [split $cores ","]
 
     foreach core $t {
-	if {$core == "funnel"} {
-	    # only accept funnel if one is present
+    if {$core == "funnel"} {
+        # only accept funnel if one is present
 
-	    if {$has_funnel == 0} {
-		return "error"
-	    }
-	} elseif {$core < 0 || $core > $num_cores} {
-	    return "error"
-	}
+        if {$has_funnel == 0} {
+        return "error"
+        }
+    } elseif {$core < 0 || $core > $num_cores} {
+        return "error"
+    }
     }
 
     # t is now a list of cores
@@ -154,15 +156,15 @@ proc parseCoreList {cores} {
     # parse core and build list of cores
 
     if {$cores == "all" || $cores == ""} {
-	return [getAllCoreList]
+        return [getAllCoreList]
     }
 
     set t [split $cores ","]
 
     foreach core $t {
-	if {($core < 0 || $core >= $num_cores)} {
-	    return "error"
-	}
+        if {($core < 0 || $core >= $num_cores)} {
+            return "error"
+        }
     }
 
     # t is now a list of cores
@@ -177,7 +179,7 @@ proc cores {} {
 proc checkHaveHTM {} {
     global traceBaseAddresses
     global te_control_offset
-	global verbose
+    global verbose
 
 #    echo "checkHaveHTM()"
 
@@ -194,15 +196,47 @@ proc checkHaveHTM {} {
     mww [expr $baseAddress + $te_control_offset] $saved
 
     if {(($tmp & 0x00000070) >> 4) == 0x7} {
-		if {$verbose > 0} {
-        	echo "supports htm"
-		}
+        if {$verbose > 0} {
+            echo "supports htm"
+        }
         return 1
     }
 
-	if {$verbose > 0} {
-	    echo "does not support htm"
-	}
+    if {$verbose > 0} {
+        echo "does not support htm"
+    }
+
+    return 0
+}
+
+proc checkHaveEvent {} {
+    global traceBaseAddresses
+    global ev_control_offset
+    global verbose
+
+#    echo "checkHaveEvent()"
+
+    set baseAddress [lindex $traceBaseAddresses 0]
+    set evctl [word [expr $baseAddress + $ev_control_offset]]
+    set saved $evctl
+    set evctl 0x03f
+    mww [expr $baseAddress + $ev_control_offset] $evctl
+    set evctl [word [expr $baseAddress + $ev_control_offset]]
+
+    # restore ev_control
+
+    mww [expr $baseAddress + $ev_control_offset] $saved
+
+    if {$evctl != 07} {
+        if {$verbose > 0} {
+            echo "supports event"
+        }
+        return 1
+    }
+
+    if {$verbose > 0} {
+        echo "does not support event"
+    }
 
     return 0
 }
@@ -218,17 +252,17 @@ proc ite {} {
 #    echo "ite()"
 
     foreach baseAddress $traceBaseAddresses {
-		set tracectl [word [expr $baseAddress + $te_control_offset]]
-		if {($tracectl & 0x6) != 0} {
-			return 1
-		}
+        set tracectl [word [expr $baseAddress + $te_control_offset]]
+        if {($tracectl & 0x6) != 0} {
+            return 1
+        }
     }
 
     if {$traceFunnelAddress != 0} {
-		set tracectl [word [expr $traceFunnelAddress + $te_control_offset]]
-		if {($tracectl & 0x6) != 0} {
-			return 1
-		}
+        set tracectl [word [expr $traceFunnelAddress + $te_control_offset]]
+        if {($tracectl & 0x6) != 0} {
+            return 1
+        }
     }
 
     return 0
@@ -244,41 +278,41 @@ proc setTraceBufferWidth {} {
 #    echo "setTraceBufferWidth()"
 
     if {$has_funnel != 0} {
-		set impl [word [expr $traceBaseAddrArray(funnel) + $te_impl_offset]]
-		if {($impl & (1 << 7))} {
-			set t [word [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset]]
-			mww [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset] 0xffffffff
-			set w [word [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset]]
-			mww [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset] $t
+        set impl [word [expr $traceBaseAddrArray(funnel) + $te_impl_offset]]
+        if {($impl & (1 << 7))} {
+            set t [word [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset]]
+            mww [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset] 0xffffffff
+            set w [word [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset]]
+            mww [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset] $t
 
-			if {$w == 0} {
-			set trace_buffer_width 0
-			return 0
-			}
+            if {$w == 0} {
+            set trace_buffer_width 0
+            return 0
+            }
 
-			for {set i 0} {($w & (1 << $i)) == 0} {incr i} { }
+            for {set i 0} {($w & (1 << $i)) == 0} {incr i} { }
 
-			set trace_buffer_width [expr 1 << $i]
-			return $trace_buffer_width
-		}
+            set trace_buffer_width [expr 1 << $i]
+            return $trace_buffer_width
+        }
     }
 
     set impl [word [expr $traceBaseAddrArray(0) + $te_impl_offset]]
     if {($impl & (1 << 7))} {
-		set t [word [expr $traceBaseAddrArray(0) + $te_sinkbase_offset]]
-		mww [expr $traceBaseAddrArray(0) + $te_sinkbase_offset] 0xffffffff
-		set w [word [expr $traceBaseAddrArray(0) + $te_sinkbase_offset]]
-		mww [expr $traceBaseAddrArray(0) + $te_sinkbase_offset] $t
+        set t [word [expr $traceBaseAddrArray(0) + $te_sinkbase_offset]]
+        mww [expr $traceBaseAddrArray(0) + $te_sinkbase_offset] 0xffffffff
+        set w [word [expr $traceBaseAddrArray(0) + $te_sinkbase_offset]]
+        mww [expr $traceBaseAddrArray(0) + $te_sinkbase_offset] $t
 
-		if {$w == 0} {
-			set trace_buffer_width 0
-			return 0
-		}
+        if {$w == 0} {
+            set trace_buffer_width 0
+            return 0
+        }
 
-		for {set i 0} {($w & (1 << $i)) == 0} {incr i} { }
+        for {set i 0} {($w & (1 << $i)) == 0} {incr i} { }
 
-		set trace_buffer_width [expr 1 << $i]
-		return $trace_buffer_width
+        set trace_buffer_width [expr 1 << $i]
+        return $trace_buffer_width
     }
 
     set trace_buffer_width 0
@@ -294,7 +328,7 @@ proc getTraceEnable {core} {
     set tracectl [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
 
     if {($tracectl & 0x2) != 0} {
-		return "on"
+        return "on"
     }
 
     return "off"
@@ -302,12 +336,21 @@ proc getTraceEnable {core} {
 proc getSBABaseAddress {core} {
     global traceBaseAddrArray
     global te_sinkbase_offset
+    global te_sinkbasehigh_offset
+    global verbose
 
 #    echo "getSBABaseAddress($core)"
 
     set tracebase [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+    set tracebasehi [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
 
-    return $tracebase
+    set baseAddr [expr $tracebase + ($tracebasehi << 32)]
+    
+    if { $verbose > 1 } {
+        echo "getSBABaseAddress: [format 0x%016lx $baseAddr]"
+    }
+
+    return $baseAddr
 }
 
 proc getTracingEnable {core} {
@@ -319,7 +362,7 @@ proc getTracingEnable {core} {
     set tracectl [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
 
     if {($tracectl & 0x4) != 0} {
-		return "on"
+        return "on"
     }
 
     return "off"
@@ -408,30 +451,105 @@ proc enableTracingManual {core} {
 }
 
 proc disableTraceEncoder {core} {
-    global traceBaseAddrArray
-    global te_control_offset
     global fs_enable_trace
 
 #    echo "disableTraceEncoder($core)"
 
     if {$fs_enable_trace == "on"} {
-        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-        set t [expr $t & ~0x00000002]
-        set t [expr $t | 0x00000001]
-        mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+        disableTraceEncoderManual $core
     }
 }
 
 proc disableTraceEncoderManual {core} {
-    global traceBaseAddrArray
+#    global traceBaseAddrArray
+    global traceBaseAddresses
     global te_control_offset
+    global fs_enable_trace
+    global traceFunnelAddress
 
-#    echo "disableTraceEncoderManual($core)"
+#    echo "disableTraceEncoderNManual($core)"
 
-    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr $t & ~0x00000002]
-    set t [expr $t | 0x00000001]
-    mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    # need to flush all cores and funnel, not just $core
+
+    set flushFunnel "false"
+    set flushPIB "false"
+    set flushATB "false"
+
+    set currentCore 0
+
+    foreach controlReg $traceBaseAddresses {
+        set te [word [expr $controlReg + $te_control_offset]]
+        set t [expr $te & ~0x00000004]
+        set t [expr $t | 0x00000001]
+
+        # clear teTracing, make sure not in reset
+        mww [expr $controlReg + $te_control_offset] $t
+        set t [expr $t & ~0x00000002]
+
+        # clear teEnable
+        mww [expr $controlReg + $te_control_offset] $t
+
+        # need to poll teEmpty here until it reads 1
+
+        set t [word [expr $controlReg + $te_control_offset]]
+        while {($t & 0x00000008) == 0} {
+            set t [word [expr $controlReg + $te_control_offset]]
+        }
+
+        if {$currentCore != $core} {
+            # restore teControl
+            mww [expr $controlReg + $te_control_offset] $te
+        }
+
+        incr currentCore
+
+        set sink [expr ($te >> 28) & 0x0f]
+
+        switch $sink {
+        5 { set flushATB "true"    }
+        6 { set flushPIB "true"    }
+        8 { set flushFunnel "true" }
+        }
+    }
+
+    if {$flushFunnel != "false"} {
+        set tf [word [expr $traceFunnelAddress + $te_control_offset]]
+    set t [expr $tf & ~0x00000004]
+        set t [expr $t | 0x00000001]
+
+    # clear teTracing, make sure not in reset
+        mww [expr $traceFunnelAddress + $te_control_offset] $t
+        set t [expr $t & ~0x00000002]
+    # clear teEnable
+        mww [expr $traceFunnelAddress + $te_control_offset] $t
+
+        # need to poll teEmpty here until it reads 1
+
+        set t [word [expr $controlReg + $te_control_offset]]
+        while {($t & 0x00000008) == 0} {
+            set t [word [expr $controlReg + $te_control_offset]]
+        }
+
+        if {$core != "funnel"} {
+            # restore tfControl
+            mww [expr $traceFunnelAddress + $te_control_offset] $tf
+        }
+
+        set sink [expr ($tf >> 28) & 0x0f]
+
+        switch $sink {
+    5 { set flushATB true    }
+    6 { set flushPIB true    }
+        }
+    }
+
+    if {$flushPIB != "false"} {
+        # flesh this out later
+    }
+
+    if {$flushATB != "false"} {
+        # flesh this out later
+    }
 }
 
 proc disableTracing {core} {
@@ -455,9 +573,8 @@ proc resetTrace {core} {
 
 #    echo "resetTrace($core)"
 
-    mww [expr $traceBaseAddrArray($core) + $te_control_offset] 0
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr $t & ~0x00000001]
+    mww [expr $traceBaseAddrArray($core) + $te_control_offset] 0
     set t [expr $t | 0x00000001]
     mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
 }
@@ -471,7 +588,7 @@ proc getSinkError {core} {
     set tracectl [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
 
     if {(($tracectl >> 27) & 1) != 0} {
-		return "Error"
+        return "Error"
     }
 
     return "Ok"
@@ -493,12 +610,12 @@ proc isTsEnabled {core} {
     global ts_control_offset
 
     if {$core != "funnel"} {
-		set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
-	if {[expr $tsctl & 0x00008003] == 0x00008003} {
-	    return "on"
-	}
+        set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
+    if {[expr $tsctl & 0x00008003] == 0x00008003} {
+        return "on"
+    }
 
-	return "off"
+    return "off"
     }
 }
 
@@ -509,9 +626,9 @@ proc enableTs {core} {
 #    echo "enableTs($core)"
 
     if {$core != "funnel"} {
-		set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
-		set tsctl [expr $tsctl | 0x00008003]
-		mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
+        set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
+        set tsctl [expr $tsctl | 0x00008003]
+        mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
     }
 }
 
@@ -533,11 +650,11 @@ proc resetTs {core} {
 #    echo "resetTs($core)"
 
     if {$core != "funnel"} {
-		set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
-		set tsctl [expr $tsctl | 0x00008004]
-		mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
-		set t [expr $tsctl & ~0x00008004]
-		mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
+        set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
+        set tsctl [expr $tsctl | 0x00008004]
+        mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
+        set t [expr $tsctl & ~0x00008004]
+        mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
     }
 }
 
@@ -549,7 +666,7 @@ proc getTsDebug {core} {
 
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     if {[expr $tsctl & 0x00000008] != 0} {
-		return "on"
+        return "on"
     }
 
     return "off"
@@ -595,12 +712,12 @@ proc getTsClockSrc {core} {
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set t [expr ($t >> 4) & 0x7]
     switch $t {
-		0       { return "none"     }
-		1       { return "external" }
-		2       { return "bus"      }
-		3       { return "core"     }
-		4       { return "slave"    }
-		default { return "reserved" }
+        0       { return "none"     }
+        1       { return "external" }
+        2       { return "bus"      }
+        3       { return "core"     }
+        4       { return "slave"    }
+        default { return "reserved" }
     }
 }
 
@@ -634,10 +751,10 @@ proc getTsPrescale {core} {
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set t [expr ($t >> 8) & 0x3]
     switch $t {
-		0 { return 1  }
-		1 { return 4  }
-		2 { return 16 }
-		3 { return 64 }
+        0 { return 1  }
+        1 { return 4  }
+        2 { return 16 }
+        3 { return 64 }
     }
 }
 
@@ -648,11 +765,11 @@ proc setTsPrescale {core prescl} {
 #    echo "setTsPrescale($core $prescl)"
 
     switch $prescl {
-		1       { set ps 0 }
-		4       { set ps 1 }
-		16      { set ps 2 }
-		64      { set ps 3 }
-		default { set ps 0 }
+        1       { set ps 0 }
+        4       { set ps 1 }
+        16      { set ps 2 }
+        64      { set ps 3 }
+        default { set ps 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
@@ -670,10 +787,10 @@ proc getTsBranch {core} {
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set t [expr ($t >> 16) & 0x3]
     switch $t {
-		0 { return "off"  }
-		1 { return "indirect+exception"  }
-		2 { return "reserved" }
-		3 { return "all" }
+        0 { return "off"  }
+        1 { return "indirect+exception"  }
+        2 { return "reserved" }
+        3 { return "all" }
     }
 }
 
@@ -684,11 +801,11 @@ proc setTsBranch {core branch} {
 #    echo "setTsBranch($core $branch)"
 
     switch $branch {
-		"off"                { set br 0 }
-		"indirect+exception" { set br 1 }
-		"reserved"           { set br 1 }
-		"all"                { set br 3 }
-		default              { set br 0 }
+        "off"                { set br 0 }
+        "indirect+exception" { set br 1 }
+        "reserved"           { set br 2 }
+        "all"                { set br 3 }
+        default              { set br 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
@@ -704,9 +821,9 @@ proc setTsITC {core itc} {
 #    echo "setTsITC($core $itc)"
 
     switch $itc {
-		"on"    { set f 1 }
-		"off"   { set f 0 }
-		default { set f 0 }
+        "on"    { set f 1 }
+        "off"   { set f 0 }
+        default { set f 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
@@ -725,8 +842,8 @@ proc getTsITC {core} {
     set t [expr ($t >> 18) & 0x1]
 
     switch $t {
-		0 { return "off"  }
-		1 { return "on"  }
+        0 { return "off"  }
+        1 { return "on"  }
     }
 }
 
@@ -737,9 +854,9 @@ proc setTsOwner {core owner} {
 #    echo "setTsOwner($core $owner)"
 
     switch $owner {
-		"on"    { set f 1 }
-		"off"   { set f 0 }
-		default { set f 0 }
+        "on"    { set f 1 }
+        "off"   { set f 0 }
+        default { set f 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
@@ -758,8 +875,8 @@ proc getTsOwner {core} {
     set t [expr ($t >> 19) & 0x1]
 
     switch $t {
-		0 { return "off"  }
-		1 { return "on"  }
+        0 { return "off"  }
+        1 { return "on"  }
     }
 }
 
@@ -770,9 +887,9 @@ proc setTeStopOnWrap {core wrap} {
 #    echo "setTeStopOnWrap($core $wrap)"
 
     switch $wrap {
-		"on"    { set sow 1 }
-		"off"   { set sow 0 }
-		default { set sow 0 }
+        "on"    { set sow 1 }
+        "off"   { set sow 0 }
+        default { set sow 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -818,9 +935,9 @@ proc setTeStallEnable {core enable} {
 #    echo "setTeStallEnable($core $enable)"
 
     switch $enable {
-		"on"    { set en 1 }
-		"off"   { set en 0 }
-		default { set en 0 }
+        "on"    { set en 1 }
+        "off"   { set en 0 }
+        default { set en 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -839,46 +956,53 @@ proc getTeStallEnable {core} {
     set t [expr ($t >> 13) & 0x1]
 
     switch $t {
-		0 { return "off"  }
-		1 { return "on"  }
+        0 { return "off"  }
+        1 { return "on"  }
     }
 }
 
 proc setTraceMode { core usermode } {
-	global have_htm
+    global have_htm
 
 #    echo "setTraceMode($core $usermode)"
 
-	switch $usermode {
-		"off" 
-		{
-			setTargetTraceMode $core "none"
-		}
-		"instruction" 
-		{
-			if {$have_htm == 1} {
-				setTargetTraceMode $core "htm+sync"
-			} else {
-				setTargetTraceMode $core "btm+sync"
-			}
-		}
-		"sample" 
-		{
-			setTargetTraceMode $core "sample"
-		}
-		#"events" {}
-	}
+    switch $usermode {
+        "off" 
+        {
+            setTargetTraceMode $core "none"
+        }
+        "instruction" 
+        {
+            if {$have_htm == 1} {
+                setTargetTraceMode $core "htm+sync"
+            } else {
+                setTargetTraceMode $core "btm+sync"
+            }
+        }
+        "sample" 
+        {
+            setTargetTraceMode $core "sample"
+        }
+        "event"
+        {
+            setTargetTraceMode $core "event"
+        }
+    }
 }
 
 proc setTargetTraceMode {core mode} {
     global traceBaseAddrArray
     global te_control_offset
+    global has_event
 
 #    echo "setTargetTraceMode($core $mode)"
 
     switch $mode {
        "none"       { set tm 0 }
-       "sample"     { set tm 1 }
+       "sample"     { set tm 1
+	              setEventControl $core "sample" }
+       "event"      { set tm 1
+	              setEventControl $core "all" }
        "btm+sync"   { set tm 3 }
        "btm"        { set tm 3 }
        "htmc+sync"  { set tm 6 }
@@ -891,27 +1015,31 @@ proc setTargetTraceMode {core mode} {
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t & ~0x0070]
     set t [expr $t | ($tm << 4)]
+
     mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
 }
 
 proc getTraceMode {core} {
-	set tm [getTargetTraceMode $core]
+    set tm [getTargetTraceMode $core]
 
 #	echo "getTraceMode($core)"
 
-	switch $tm {
+    switch $tm {
        "none"       { return "off" }
        "sample"     { return "sample" }
+       "event"      { return "event" }
        "btm+sync"   { return "instruction" }
        "htmc+sync"  { return "instruction" }
        "htm+sync"   { return "instruction" }
-	}
-	return "off"
+    }
+    return "off"
 }
 
 proc getTargetTraceMode {core} {
     global traceBaseAddrArray
     global te_control_offset
+    global ev_control_offset
+    global has_event
 
 #    echo "getTargetTraceMode($core)"
 
@@ -920,12 +1048,107 @@ proc getTargetTraceMode {core} {
 
     switch $t {
        0       { return "none" }
-       1       { return "sample" }
+       1       { if {[word [expr $traceBaseAddrArray($core) + $ev_control_offset]] == 0} {
+		       if {[getMaxIcnt $core] == 15} {
+			       return "none"
+		       }
+                    return "sample"
+                 } else {
+                    return "event"
+                 }
+               }
        3       { return "btm+sync"  }
        6       { return "htmc+sync" }
        7       { return "htm+sync"  }
        default { return "reserved" }
     }
+}
+
+proc getEventControl {core} {
+    global traceBaseAddrArray
+    global ev_control_offset
+    global has_event
+
+    if {$has_event== 0} {
+        if {[getMaxIcnt $core] == 15} {
+            return "none"
+        }
+
+        return "sample"
+    }
+
+    if {[getMaxIcnt $core] == 15} {
+        set eventl ""
+    } else {
+        set eventl "sample"
+    }
+
+    set events [word [expr $traceBaseAddrArray($core) + $ev_control_offset]]
+
+    if {($events & (1 << 0)) != 0} {
+        append eventl " trigger"
+    }
+
+    if {($events & (1 << 1)) != 0} {
+        append eventl " watchpoint"
+    }
+
+    if {($events & (1 << 2)) != 0} {
+        append eventl " call"
+    }
+
+    if {($events & (1 << 3)) != 0} {
+        append eventl " interrupt"
+    }
+
+    if {($events & (1 << 4)) != 0} {
+        append eventl " exception"
+    }
+
+    if {($events & (1 << 5)) != 0} {
+        append eventl " context"
+    }
+
+    if {$eventl == ""} {
+        return "none"
+    }
+
+    return $eventl
+}
+
+proc setEventControl {core opts} {
+    global traceBaseAddrArray
+    global ev_control_offset
+    global has_event
+
+    if {$has_event == 0} {
+        return 1
+    }
+
+    set reg 0
+    set icnt 15
+
+    foreach opt $opts {
+        switch $opt {
+        "none"       { set reg 0
+		       set icnt 15 }
+        "all"        { set reg 0x3f
+                       set icnt 0}
+	"sample"     { set icnt 0 }
+        "trigger"    { set reg [expr $reg | (1 << 0)] }
+        "watchpoint" { set reg [expr $reg | (1 << 1)] }
+        "call"       { set reg [expr $reg | (1 << 2)] }
+        "interrupt"  { set reg [expr $reg | (1 << 3)] }
+        "exception"  { set reg [expr $reg | (1 << 4)] }
+        "context"    { set reg [expr $reg | (1 << 5)] }
+        default      { return 1 }
+        }
+    }
+
+    mww [expr $traceBaseAddrArray($core) + $ev_control_offset] $reg
+    setMaxIcnt $core $icnt
+
+    return 0
 }
 
 proc setITC {core mode} {
@@ -935,11 +1158,11 @@ proc setITC {core mode} {
 #    echo "setITC($core $mode)"
 
     switch $mode {
-		"off"           { set itc 0 }
-		"all"           { set itc 1 }
-		"ownership"     { set itc 2 }
-		"all+ownership" { set itc 3 }
-		default         { set itc 0 }
+        "off"           { set itc 0 }
+        "all"           { set itc 1 }
+        "ownership"     { set itc 2 }
+        "all+ownership" { set itc 3 }
+        default         { set itc 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -958,11 +1181,11 @@ proc getITC {core} {
     set t [expr ($t >> 7) & 0x3]
 
     switch $t {
-		0       { return "none" }
-		1       { return "all"  }
-		2       { return "ownership" }
-		3       { return "all+ownership" }
-		default { return "reserved" }
+        0       { return "none" }
+        1       { return "all"  }
+        2       { return "ownership" }
+        3       { return "all+ownership" }
+        default { return "reserved" }
     }
 }
 
@@ -1034,14 +1257,14 @@ proc getMaxIcnt {core} {
 proc findMaxICnt { core }  {
 #	echo "findMaxIcnt($core)"
 
-	# Start at 15 and work down until one sticks.
-	for {set x 15} { $x > 0 } {set x [expr {$x - 1}]} {
-		setMaxIcnt $core $x
-		set y [getMaxIcnt $core]
-		if {$x == $y} {
-			return $x;
-		}
-	}
+    # Start at 15 and work down until one sticks.
+    for {set x 15} { $x > 0 } {set x [expr {$x - 1}]} {
+        setMaxIcnt $core $x
+        set y [getMaxIcnt $core]
+        if {$x == $y} {
+            return $x;
+        }
+    }
 }
 proc setMaxBTM {core maxicnt} {
     global traceBaseAddrArray
@@ -1076,14 +1299,14 @@ proc setPibEnable {core bool_enable} {
 
     # activate if not already
     if { ($t & 0x1) == 0 } {
-	set t [expr $t | 0x1]
-	mww [expr $traceBaseAddrArray($core) + $pib_control_offset] $t	
+    set t [expr $t | 0x1]
+    mww [expr $traceBaseAddrArray($core) + $pib_control_offset] $t	
     }
     
     if { $bool_enable } {
-	set t [expr $t | 0x2]	
+    set t [expr $t | 0x2]	
     } else {
-	set t [expr $t & ~0x2]		
+    set t [expr $t & ~0x2]		
     }
     mww [expr $traceBaseAddrArray($core) + $pib_control_offset] $t
 }
@@ -1095,14 +1318,14 @@ proc setPibMode {core mode} {
     setPibEnable $core 1
 
     switch $mode {
-		"off"               { set intmode 0 }
-		"swt_manchester"    { set intmode 4 }
-		"swt_uart"          { set intmode 5 }
-		"tref_plus_1_tdata" { set intmode 8 }
-		"tref_plus_1_tdata" { set intmode 9 }
-		"tref_plus_1_tdata" { set intmode 10 }
-		"tref_plus_1_tdata" { set intmode 11 }				
-		default             { set intmode 0 }
+        "off"               { set intmode 0 }
+        "swt_manchester"    { set intmode 4 }
+        "swt_uart"          { set intmode 5 }
+        "tref_plus_1_tdata" { set intmode 8 }
+        "tref_plus_1_tdata" { set intmode 9 }
+        "tref_plus_1_tdata" { set intmode 10 }
+        "tref_plus_1_tdata" { set intmode 11 }				
+        default             { set intmode 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $pib_control_offset]]
@@ -1119,14 +1342,14 @@ proc getPibMode {core} {
     set t [expr ($t >> 4) & 0xF]
 
     switch $t {
-		0       { return "off" }
-		4       { return "swt_manchester"  }
-		5       { return "swt_uart" }
-		8       { return "tref_plus_1_tdata" }
-		9       { return "tref_plus_2_tdata" }
-		10      { return "tref_plus_4_tdata" }
-		11      { return "tref_plus_8_tdata" }		
-		default { return "reserved" }
+        0       { return "off" }
+        4       { return "swt_manchester"  }
+        5       { return "swt_uart" }
+        8       { return "tref_plus_1_tdata" }
+        9       { return "tref_plus_2_tdata" }
+        10      { return "tref_plus_4_tdata" }
+        11      { return "tref_plus_8_tdata" }		
+        default { return "reserved" }
     }
 }
 
@@ -1201,512 +1424,53 @@ proc teversion {{cores "all"} {opt ""}} {
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
 
-			set coreList [parseCoreList $cores]
-		}
+            set coreList [parseCoreList $cores]
+        }
 
-		if {$coreList == "error"} {
-			echo {Error: Usage: teversion [corelist] [help]]}
-			return "error"
-		}
+        if {$coreList == "error"} {
+            echo {Error: Usage: teversion [corelist] [help]]}
+            return "error"
+        }
     }
 
     if {$opt == ""} {
-		# display current status of ts enable
-		set rv ""
+        # display current status of ts enable
+        set rv ""
 
-		foreach core $coreList {
-			set tev "core $core: "
+        foreach core $coreList {
+            set tev "core $core: "
 
-			lappend tev [getTeVersion $core]
+            lappend tev [getTeVersion $core]
 
-			if {$rv != ""} {
-				append rv "; "
-			}
+            if {$rv != ""} {
+                append rv "; "
+            }
 
-			append rv $tev
-		}
+            append rv $tev
+        }
 
-		return $rv
+        return $rv
     } elseif {$opt == "help"} {
-		echo "teversion: display trace encoder version"
-		echo {Usage: teversion [corelist] [help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is"
-		echo "            equivalent to all"
-		echo "  help:     Display this message"
-		echo ""
-		echo "teversion with no arguments will display the trace encoder version for all cores"
-		echo ""
+        echo "teversion: display trace encoder version"
+        echo {Usage: teversion [corelist] [help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is"
+        echo "            equivalent to all"
+        echo "  help:     Display this message"
+        echo ""
+        echo "teversion with no arguments will display the trace encoder version for all cores"
+        echo ""
     } else {
-		echo {Usage: teversion [corelist] [help]}
+        echo {Usage: teversion [corelist] [help]}
     }
 }
 
 proc ts {{cores "all"} {opt ""}} {
     global ts_control_offset
 
-    set coreList [parseCoreList $cores]
-
-    if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
-
-			set coreList [parseCoreList $cores]
-		}
-
-		if {$coreList == "error"} {
-			echo {Error: Usage: ts [corelist] [on | off | reset | help]]}
-			return "error"
-		}
-    }
-
-    if {$opt == ""} {
-		# display current status of ts enable
-		set rv ""
-
-		foreach core $coreList {
-			set tse "core $core: "
-
-			lappend tse [isTsEnabled $core]
-
-			if {$rv != ""} {
-				append rv "; "
-			}
-
-			append rv $tse
-		}
-
-		return $rv
-    } elseif {$opt == "help"} {
-		echo "ts: set or display timestamp mode"
-		echo {Usage: ts [corelist] [on | off | reset | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is"
-		echo "            equivalent to all"
-		echo "  on:       Enable timestamps in trace messages"
-		echo "  off:      Disable timstamps in trace messages"
-		echo "  reset:    Reset the internal timestamp to 0"
-		echo "  help:     Display this message"
-		echo ""
-		echo "ts with no arguments will display the current status of timestamps (on or off)"
-		echo ""
-    } elseif {$opt == "on"} {
-		# iterate through coreList and enable timestamps
-		foreach core $coreList {
-			enableTs $core
-		}
-		echo -n ""
-    } elseif {$opt == "off"} {
-		foreach core $coreList {
-			disableTs $core
-		}
-		echo -n ""
-    } elseif {$opt == "reset"} {
-		foreach core $coreList {
-			resetTs $core
-		}
-		echo "timestamp reset"
-    } else {
-		echo {Error: Usage: ts [corelist] [on | off | reset | help]]}
-    }
-}
-
-proc tsdebug {{cores "all"} {opt ""}} {
-    set coreList [parseCoreList $cores]
-
-    if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
-
-			set coreList [parseCoreList $cores]
-		}
-
-		if {$coreList == "error"} {
-			echo {Error: Usage: tsdebug [corelist] [on | off | reset | help]}
-			return "error"
-		}
-    }
-
-    if {$opt == ""} {
-		# display current status of ts enable
-		set rv ""
-
-		foreach core $coreList {
-			set tsd "core $core: "
-
-			lappend tsd [getTsDebug $core]
-
-			if {$rv != ""} {
-				append rv "; "
-			}
-
-			append rv $tsd
-		}
-
-		return $rv
-    }
-
-    if {$opt == "help"} {
-		echo "tsdebug: set or display if timestamp internal clock runs while in debug"
-		echo {Usage: tsdebug [corelist] [on | off | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is"
-		echo "            equivalent to all"
-		echo "  on:       Timestamp clock continues to run while in debug"
-		echo "  off:      Timnestamp clock halts while in debug"
-		echo "  help:     Display this message"
-		echo ""
-		echo "tsdebug with no arguments will display the current status of timstamp debug"
-		echo "(on or off)"
-		echo ""
-    } elseif {$opt == "on"} {
-		# iterate through coreList and enable timestamps
-		foreach core $coreList {
-			enableTsDebug $core
-		}
-		echo -n ""
-    } elseif {$opt == "off"} {
-		foreach core $coreList {
-			disableTsDebug $core
-		}
-		echo -n ""
-    } else {
-		echo {Error: Usage: tsdebug [corelist] [on | off | help]}
-    }
-}
-
-proc tsclock {{cores "all"} {opt ""}} {
-    set coreList [parseCoreList $cores]
-
-    if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
-
-			set coreList [parseCoreList $cores]
-		}
-
-		if {$coreList == "error"} {
-			echo {Error: Usage: tsclock [corelist] [help]}
-			return "error"
-		}
-    }
-
-    if {$opt == ""} {
-		# display current status of ts enable
-		set rv ""
-
-		foreach core $coreList {
-			set tsd "core $core: "
-
-			lappend tsd [getTsClockSrc $core]
-
-			if {$rv != ""} {
-			append rv "; "
-			}
-
-			append rv $tsd
-		}
-		return $rv
-    }
-
-    if {$opt == "help"} {
-		echo "tsclock: display the source of the timestamp clock (none, external, bus, core, or slave)"
-		echo {Usage: tsclock [corelist] [none | external | bus | core | slave | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all."
-		echo "  none:     No source for the timestampe clock"
-		echo "  internal: Set the source of the timestamp clock to internal"
-		echo "  external: Set the srouce of the timestamp clock to external"
-		echo "  help:     Display this message"
-		echo ""
-    } else {
-		echo {Error: Usage: tsclock [corelist] [help]}
-    }
-}
-
-proc tsprescale {{cores "all"} {opt ""}} {
-    set coreList [parseCoreList $cores]
-
-    if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
-
-			set coreList [parseCoreList $cores]
-		}
-
-		if {$coreList == "error"} {
-			echo {Error: Usage: tsprescale [corelist] [1 | 4 | 16 | 64 | help]}
-			return "error"
-		}
-    }
-
-    if {$opt == ""} {
-		# display current status of ts enable
-		set rv ""
-
-		foreach core $coreList {
-			set tsd "core $core: "
-
-			lappend tsd [getTsPrescale $core]
-
-			if {$rv != ""} {
-			append rv "; "
-			}
-
-			append rv $tsd
-		}
-		return $rv
-    }
-
-    if {$opt == "help"} {
-		echo "tsprescale: set or display the timesampe clock prescalser (1, 4, 16, or 64)"
-		echo {Usage: tsprescale [corelist] [1 | 4 | 16 | 64 | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-		echo "   1:       Set the prescaler to 1"
-		echo "   4:       Set the prescaler to 4"
-		echo "  16:       Set the prescaler to 16"
-		echo "  64:       Set the prescaler to 64"
-		echo "  help:     Display this message"
-		echo ""
-		echo "tspresacle with no arguments will display the current timestamp clock prescaler value (1, 4, 16, or 64)"
-		echo ""
-    } elseif {($opt == 1) || ($opt == 4) || ($opt == 16) || ($opt == 64)} {
-		foreach core $coreList {
-			setTsPrescale $core $opt
-		}
-		echo -n ""
-    } else {
-		echo {Error: Usage: tsprescale [corelist] [1 | 4 | 16 | 64 | help]}
-    }
-}
-
-proc tsbranch {{cores "all"} {opt ""}} {
-    set coreList [parseCoreList $cores]
-
-    if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
-
-			set coreList [parseCoreList $cores]
-		}
-
-		if {$coreList == "error"} {
-			echo {Error: Usage: tsbranch [coreslist] [off | indirect | all | help]}
-			return "error"
-		}
-    }
-
-    if {$opt == ""} {
-		# display current status of ts enable
-		set rv ""
-
-		foreach core $coreList {
-			set tsd "core $core: "
-
-			lappend tsd [getTsBranch $core]
-
-			if {$rv != ""} {
-			append rv "; "
-			}
-
-			append rv $tsd
-		}
-		return $rv
-    }
-
-    if {$opt == "help"} {
-		echo "tsbranch: set or display if timestamps are generated for branch messages"
-		echo {Usage: tsbranch [corelist] [off | indirect | all | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-		echo "  off:      Timestamps are not generated for branch messages"
-		echo "  indirect: Generate timestamps for all indirect branch and exception messages"
-		echo "  all:      Generate timestamps for all branch, exception, PTCM, and Error messages"
-		echo "  help:     Display this message"
-		echo ""
-		echo "tsbranch with no arguments will display the current setting for tsbranch (off, indirect, all)"
-		echo ""
-    } elseif {($opt == "off") || ($opt == "indirect") || ($opt == "indirect+exception") || ($opt == "all")} {
-		foreach core $coreList {
-			setTsBranch $core $opt
-		}
-		echo -n ""
-    } else {
-		echo {Error: Usage: tsbranch [corelist] [off | indirect | all | help]}
-    }
-}
-
-proc tsitc {{cores "all"} {opt ""}} {
-    set coreList [parseCoreList $cores]
-
-    if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
-
-			set coreList [parseCoreList $cores]
-		}
-
-		if {$coreList == "error"} {
-			echo {Error: Usage: tsitc [corelist] [on | off | help]}
-			return "error"
-		}
-    }
-
-    if {$opt == ""} {
-		# display current status of ts enable
-		set rv ""
-
-		foreach core $coreList {
-			set tsd "core $core: "
-
-			lappend tsd [getTsITC $core]
-
-			if {$rv != ""} {
-			append rv "; "
-			}
-
-			append rv $tsd
-		}
-		return $rv
-    }
-
-    if {$opt == "help"} {
-		echo "tsitc: set or display if timestamp messages are generated for itc messages"
-		echo {Usage: tsitc [corelist] [on | off | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-		echo "  on:       Timestamp are generated for itc messages"
-		echo "  off:      Timestamp are not generated for itc messages"
-		echo "  help:     Display this message"
-		echo ""
-		echo "tsitc with no arguments will display whether or not timestamps are generated for itc messages (on or off)"
-		echo ""
-    } elseif {($opt == "on") || ($opt == "off")} {
-		foreach core $coreList {
-			setTsITC $core $opt
-		}
-		echo -n ""
-    } else {
-		echo {Error: Usage: tsitc [corelist] [on | off | help]}
-    }
-}
-
-proc tsowner {{cores "all"} {opt ""}} {
-    set coreList [parseCoreList $cores]
-
-    if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
-
-			set coreList [parseCoreList $cores]
-		}
-
-		if {$coreList == "error"} {
-			echo {Error: Usage: tsowner [corelist] [on | off | help]}
-			return "error"
-		}
-    }
-
-    if {$opt == ""} {
-		# display current status of ts enable
-		set rv ""
-
-		foreach core $coreList {
-			set tsd "core $core: "
-
-			lappend tsd [getTsOwner $core]
-
-			if {$rv != ""} {
-			append rv "; "
-			}
-
-			append rv $tsd
-		}
-		return $rv
-    }
-
-    if {$opt == "help"} {
-		echo "tsowner: set or display if timestamp messages are generated for ownership messages"
-		echo {Usage: tsowner [on | off | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-		echo "  on:   Timestamp are generated for ownership messages"
-		echo "  off:  Timestamp are not generated for ownership messages"
-		echo "  help: Display this message"
-		echo ""
-		echo "tsowner with no arguments will display whether or not timestamps are generated"
-		echo "for ownership messages (on or off)"
-		echo ""
-    } elseif {($opt == "on") || ($opt == "off")} {
-		foreach core $coreList {
-			setTsOwner $core $opt
-		}
-		echo -n ""
-    } else {
-		echo {Error: Usage: tsowner [corelist] [on | off | help]}
-    }
-}
-
-proc stoponwrap {{cores "all"} {opt ""}} {
-    set coreList [parseCoreFunnelList $cores]
-
-    if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
-
-			set coreList [parseCoreFunnelList $cores]
-		}
-
-		if {$coreList == "error"} {
-			echo {Error: Usage: stoponwrap [corelist] [on | off | help]}
-			return "error"
-		}
-    }
-
-    if {$opt == ""} {
-		set rv ""
-
-		foreach core $coreList {
-			set tsd "core $core: "
-
-			lappend tsd [getTeStopOnWrap $core]
-
-			if {$rv != ""} {
-			append rv "; "
-			}
-
-			append rv $tsd
-		}
-		return $rv
-    }
-
-    if {$opt == "help"} {
-		echo "stoponwrap: set or display trace buffer wrap mode"
-		echo {Usage: stoponwrap [corelist] [on | off | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-		echo "  on:       Enable stop trace collection when buffer is full (default)"
-		echo "  off:      Continue tracing when the buffer fills, causing it to wrap"
-		echo "  help:     Display this message"
-		echo ""
-		echo "stoponwrap with no arguments will display the current status of trace buffer"
-		echo "wrap (on or off)"
-		echo ""
-    } elseif {($opt == "on") || ($opt == "off")} {
-		foreach core $coreList {
-			setTeStopOnWrap $core $opt
-		}
-		echo -n ""
-    } else {
-		echo {Error: Usage: stoponwrap [corelist] [on | off | help]}
-    }
-}
-
-proc tracemode {{cores "all"} {opt ""}} {
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
@@ -1718,7 +1482,74 @@ proc tracemode {{cores "all"} {opt ""}} {
         }
 
         if {$coreList == "error"} {
-            echo {Error: Usage: tracemode [corelist] [none | all | btm | htm | htmc | sample | help]}
+            echo {Error: Usage: ts [corelist] [on | off | reset | help]]}
+            return "error"
+        }
+    }
+
+    if {$opt == ""} {
+        # display current status of ts enable
+        set rv ""
+
+        foreach core $coreList {
+            set tse "core $core: "
+
+            lappend tse [isTsEnabled $core]
+
+            if {$rv != ""} {
+                append rv "; "
+            }
+
+            append rv $tse
+        }
+
+        return $rv
+    } elseif {$opt == "help"} {
+        echo "ts: set or display timestamp mode"
+        echo {Usage: ts [corelist] [on | off | reset | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is"
+        echo "            equivalent to all"
+        echo "  on:       Enable timestamps in trace messages"
+        echo "  off:      Disable timstamps in trace messages"
+        echo "  reset:    Reset the internal timestamp to 0"
+        echo "  help:     Display this message"
+        echo ""
+        echo "ts with no arguments will display the current status of timestamps (on or off)"
+        echo ""
+    } elseif {$opt == "on"} {
+        # iterate through coreList and enable timestamps
+        foreach core $coreList {
+            enableTs $core
+        }
+        echo -n ""
+    } elseif {$opt == "off"} {
+        foreach core $coreList {
+            disableTs $core
+        }
+        echo -n ""
+    } elseif {$opt == "reset"} {
+        foreach core $coreList {
+            resetTs $core
+        }
+        echo "timestamp reset"
+    } else {
+        echo {Error: Usage: ts [corelist] [on | off | reset | help]]}
+    }
+}
+
+proc tsdebug {{cores "all"} {opt ""}} {
+    set coreList [parseCoreList $cores]
+
+    if {$coreList == "error"} {
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
+
+            set coreList [parseCoreList $cores]
+        }
+
+        if {$coreList == "error"} {
+            echo {Error: Usage: tsdebug [corelist] [on | off | reset | help]}
             return "error"
         }
     }
@@ -1730,7 +1561,462 @@ proc tracemode {{cores "all"} {opt ""}} {
         foreach core $coreList {
             set tsd "core $core: "
 
-            lappend tsd [getTargetTraceMode $core]
+            lappend tsd [getTsDebug $core]
+
+            if {$rv != ""} {
+                append rv "; "
+            }
+
+            append rv $tsd
+        }
+
+        return $rv
+    }
+
+    if {$opt == "help"} {
+        echo "tsdebug: set or display if timestamp internal clock runs while in debug"
+        echo {Usage: tsdebug [corelist] [on | off | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is"
+        echo "            equivalent to all"
+        echo "  on:       Timestamp clock continues to run while in debug"
+        echo "  off:      Timnestamp clock halts while in debug"
+        echo "  help:     Display this message"
+        echo ""
+        echo "tsdebug with no arguments will display the current status of timstamp debug"
+        echo "(on or off)"
+        echo ""
+    } elseif {$opt == "on"} {
+        # iterate through coreList and enable timestamps
+        foreach core $coreList {
+            enableTsDebug $core
+        }
+        echo -n ""
+    } elseif {$opt == "off"} {
+        foreach core $coreList {
+            disableTsDebug $core
+        }
+        echo -n ""
+    } else {
+        echo {Error: Usage: tsdebug [corelist] [on | off | help]}
+    }
+}
+
+proc tsclock {{cores "all"} {opt ""}} {
+    set coreList [parseCoreList $cores]
+
+    if {$coreList == "error"} {
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
+
+            set coreList [parseCoreList $cores]
+        }
+
+        if {$coreList == "error"} {
+            echo {Error: Usage: tsclock [corelist] [help]}
+            return "error"
+        }
+    }
+
+    if {$opt == ""} {
+        # display current status of ts enable
+        set rv ""
+
+        foreach core $coreList {
+            set tsd "core $core: "
+
+            lappend tsd [getTsClockSrc $core]
+
+            if {$rv != ""} {
+            append rv "; "
+            }
+
+            append rv $tsd
+        }
+        return $rv
+    }
+
+    if {$opt == "help"} {
+        echo "tsclock: display the source of the timestamp clock (none, external, bus, core, or slave)"
+        echo {Usage: tsclock [corelist] [none | external | bus | core | slave | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all."
+        echo "  none:     No source for the timestampe clock"
+        echo "  internal: Set the source of the timestamp clock to internal"
+        echo "  external: Set the srouce of the timestamp clock to external"
+        echo "  help:     Display this message"
+        echo ""
+    } else {
+        echo {Error: Usage: tsclock [corelist] [help]}
+    }
+}
+
+proc tsprescale {{cores "all"} {opt ""}} {
+    set coreList [parseCoreList $cores]
+
+    if {$coreList == "error"} {
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
+
+            set coreList [parseCoreList $cores]
+        }
+
+        if {$coreList == "error"} {
+            echo {Error: Usage: tsprescale [corelist] [1 | 4 | 16 | 64 | help]}
+            return "error"
+        }
+    }
+
+    if {$opt == ""} {
+        # display current status of ts enable
+        set rv ""
+
+        foreach core $coreList {
+            set tsd "core $core: "
+
+            lappend tsd [getTsPrescale $core]
+
+            if {$rv != ""} {
+            append rv "; "
+            }
+
+            append rv $tsd
+        }
+        return $rv
+    }
+
+    if {$opt == "help"} {
+        echo "tsprescale: set or display the timesampe clock prescalser (1, 4, 16, or 64)"
+        echo {Usage: tsprescale [corelist] [1 | 4 | 16 | 64 | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "   1:       Set the prescaler to 1"
+        echo "   4:       Set the prescaler to 4"
+        echo "  16:       Set the prescaler to 16"
+        echo "  64:       Set the prescaler to 64"
+        echo "  help:     Display this message"
+        echo ""
+        echo "tspresacle with no arguments will display the current timestamp clock prescaler value (1, 4, 16, or 64)"
+        echo ""
+    } elseif {($opt == 1) || ($opt == 4) || ($opt == 16) || ($opt == 64)} {
+        foreach core $coreList {
+            setTsPrescale $core $opt
+        }
+        echo -n ""
+    } else {
+        echo {Error: Usage: tsprescale [corelist] [1 | 4 | 16 | 64 | help]}
+    }
+}
+
+proc tsbranch {{cores "all"} {opt ""}} {
+    set coreList [parseCoreList $cores]
+
+    if {$coreList == "error"} {
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
+
+            set coreList [parseCoreList $cores]
+        }
+
+        if {$coreList == "error"} {
+            echo {Error: Usage: tsbranch [coreslist] [off | indirect | all | help]}
+            return "error"
+        }
+    }
+
+    if {$opt == ""} {
+        # display current status of ts enable
+        set rv ""
+
+        foreach core $coreList {
+            set tsd "core $core: "
+
+            lappend tsd [getTsBranch $core]
+
+            if {$rv != ""} {
+            append rv "; "
+            }
+
+            append rv $tsd
+        }
+        return $rv
+    }
+
+    if {$opt == "help"} {
+        echo "tsbranch: set or display if timestamps are generated for branch messages"
+        echo {Usage: tsbranch [corelist] [off | indirect | all | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  off:      Timestamps are not generated for branch messages"
+        echo "  indirect: Generate timestamps for all indirect branch and exception messages"
+        echo "  all:      Generate timestamps for all branch, exception, PTCM, and Error messages"
+        echo "  help:     Display this message"
+        echo ""
+        echo "tsbranch with no arguments will display the current setting for tsbranch (off, indirect, all)"
+        echo ""
+    } elseif {($opt == "off") || ($opt == "indirect") || ($opt == "indirect+exception") || ($opt == "all")} {
+        foreach core $coreList {
+            setTsBranch $core $opt
+        }
+        echo -n ""
+    } else {
+        echo {Error: Usage: tsbranch [corelist] [off | indirect | all | help]}
+    }
+}
+
+proc tsitc {{cores "all"} {opt ""}} {
+    set coreList [parseCoreList $cores]
+
+    if {$coreList == "error"} {
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
+
+            set coreList [parseCoreList $cores]
+        }
+
+        if {$coreList == "error"} {
+            echo {Error: Usage: tsitc [corelist] [on | off | help]}
+            return "error"
+        }
+    }
+
+    if {$opt == ""} {
+        # display current status of ts enable
+        set rv ""
+
+        foreach core $coreList {
+            set tsd "core $core: "
+
+            lappend tsd [getTsITC $core]
+
+            if {$rv != ""} {
+            append rv "; "
+            }
+
+            append rv $tsd
+        }
+        return $rv
+    }
+
+    if {$opt == "help"} {
+        echo "tsitc: set or display if timestamp messages are generated for itc messages"
+        echo {Usage: tsitc [corelist] [on | off | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  on:       Timestamp are generated for itc messages"
+        echo "  off:      Timestamp are not generated for itc messages"
+        echo "  help:     Display this message"
+        echo ""
+        echo "tsitc with no arguments will display whether or not timestamps are generated for itc messages (on or off)"
+        echo ""
+    } elseif {($opt == "on") || ($opt == "off")} {
+        foreach core $coreList {
+            setTsITC $core $opt
+        }
+        echo -n ""
+    } else {
+        echo {Error: Usage: tsitc [corelist] [on | off | help]}
+    }
+}
+
+proc tsowner {{cores "all"} {opt ""}} {
+    set coreList [parseCoreList $cores]
+
+    if {$coreList == "error"} {
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
+
+            set coreList [parseCoreList $cores]
+        }
+
+        if {$coreList == "error"} {
+            echo {Error: Usage: tsowner [corelist] [on | off | help]}
+            return "error"
+        }
+    }
+
+    if {$opt == ""} {
+        # display current status of ts enable
+        set rv ""
+
+        foreach core $coreList {
+            set tsd "core $core: "
+
+            lappend tsd [getTsOwner $core]
+
+            if {$rv != ""} {
+            append rv "; "
+            }
+
+            append rv $tsd
+        }
+        return $rv
+    }
+
+    if {$opt == "help"} {
+        echo "tsowner: set or display if timestamp messages are generated for ownership messages"
+        echo {Usage: tsowner [on | off | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  on:   Timestamp are generated for ownership messages"
+        echo "  off:  Timestamp are not generated for ownership messages"
+        echo "  help: Display this message"
+        echo ""
+        echo "tsowner with no arguments will display whether or not timestamps are generated"
+        echo "for ownership messages (on or off)"
+        echo ""
+    } elseif {($opt == "on") || ($opt == "off")} {
+        foreach core $coreList {
+            setTsOwner $core $opt
+        }
+        echo -n ""
+    } else {
+        echo {Error: Usage: tsowner [corelist] [on | off | help]}
+    }
+}
+
+proc stoponwrap {{cores "all"} {opt ""}} {
+    set coreList [parseCoreFunnelList $cores]
+
+    if {$coreList == "error"} {
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
+
+            set coreList [parseCoreFunnelList $cores]
+        }
+
+        if {$coreList == "error"} {
+            echo {Error: Usage: stoponwrap [corelist] [on | off | help]}
+            return "error"
+        }
+    }
+
+    if {$opt == ""} {
+        set rv ""
+
+        foreach core $coreList {
+            set tsd "core $core: "
+
+            lappend tsd [getTeStopOnWrap $core]
+
+            if {$rv != ""} {
+            append rv "; "
+            }
+
+            append rv $tsd
+        }
+        return $rv
+    }
+
+    if {$opt == "help"} {
+        echo "stoponwrap: set or display trace buffer wrap mode"
+        echo {Usage: stoponwrap [corelist] [on | off | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  on:       Enable stop trace collection when buffer is full (default)"
+        echo "  off:      Continue tracing when the buffer fills, causing it to wrap"
+        echo "  help:     Display this message"
+        echo ""
+        echo "stoponwrap with no arguments will display the current status of trace buffer"
+        echo "wrap (on or off)"
+        echo ""
+    } elseif {($opt == "on") || ($opt == "off")} {
+        foreach core $coreList {
+            setTeStopOnWrap $core $opt
+        }
+        echo -n ""
+    } else {
+        echo {Error: Usage: stoponwrap [corelist] [on | off | help]}
+    }
+}
+
+proc eventmode {{cores "all"} args} {
+    set coreList [parseCoreList $cores]
+
+    if {$coreList == "error"} {
+        set args [concat $cores $args]
+	set cores "all"
+	set coreList [parseCoreList $cores]
+
+	if {$coreList == "error"} {
+            echo {Error: Usage: eventmode [corelist] [none | all | sample | trigger | watchpoint | call | interrupt | exception | context | help]}
+            return ""
+	}
+    }
+
+    if {$args == ""} {
+        # display current status of evControl
+        set rv ""
+
+        foreach core $coreList {
+            set tsd "core $core: "
+
+            lappend tsd [getEventControl $core]
+
+            if {$rv != ""} {
+                append rv "; "
+            }
+
+            append rv $tsd
+        }
+
+        return $rv
+    }
+
+    if {$args == "help"} {
+        echo "eventmode: set or display event enabled mode"
+        echo {Usage: eventmode [corelist] [none | all | sample | trigger | watchpoint | call | interrupt | exception | context]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  sample:     Enable pc sampling"
+        echo "  trigger:    Enable trigger event messagaging"
+        echo "  watchpoint: Enable watchpoint event messaging"
+        echo "  call:       Enable call event messaging"
+        echo "  interrupt:  Enable interrupt event messaging"
+        echo "  exception:  Enable exception event messaging"
+        echo "  context:    Enable context switch event messaging"
+        echo "  all:        Enable all event messaging"
+        echo "  none:       Do not generate any event messaging"
+        echo "  help:     Display this message"
+        echo ""
+        echo "eventmode with no arguments will display the current setting for event messaging"
+        echo "To enable multiple events, separate the event types with a space"
+        echo ""
+    } else {
+        foreach core $coreList {
+            set rc [setEventControl $core $args]
+            if {$rc != 0} {
+                echo {Error: Usage: eventmode [corelist] [none | all | sample | trigger | watchpoint | call | interrupt | exception | context | help]}
+                return ""
+            }
+        }
+    }
+    echo -n ""
+}
+
+
+proc tracemode {{cores "all"} {opt ""}} {
+    set coreList [parseCoreList $cores]
+
+    if {$coreList == "error"} {
+        if {$opt == ""} {
+            set opt $cores
+	    set cores "all"
+
+	    set coreList [parseCoreList $cores]
+        }
+
+	if {$coreList == "error"} {
+            echo {Error: Usage: tracemode [corelist] [all | btm | htm | htmc | none | sample | event | help]}
+	    return "error"
+        }
+    }
+
+    if {$opt == ""} {
+        set rv ""
+
+	foreach core $coreList {
+            set tsd "core $core: "
+
+	    lappend tsd [getTargetTraceMode $core]
 
             if {$rv != ""} {
                 append rv "; "
@@ -1744,12 +2030,13 @@ proc tracemode {{cores "all"} {opt ""}} {
 
     if {$opt == "help"} {
         echo "tracemode: set or display trace type (sync, sync+btm)"
-        echo {Usage: tracemode [corelist] [none | all | btm | htm | htmc | sample | help]}
+        echo {Usage: tracemode [corelist] [none | all | btm | htm | htmc | sample | event | help]}
         echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
         echo "  btm:      Generate both sync and btm trace messages"
         echo "  htm:      Generate sync and htm trace messages (with return stack optimization or repeat branch optimization)"
         echo "  htmc      Generate sync and conservitive htm trace messages (without return stack optimization or repeat branch optimization)"
-	echo "  sample    Generate PC sample trace using In Circuit Trace mode"
+        echo "  sample    Generate PC sample trace using In Circuit Trace mode"
+        echo "  event     Generate event trace. Use eventmode to select events"
         echo "  all:      Generate both sync and btm or htm trace messages (whichever is supported by hardware)"
         echo "  none:     Do not generate sync or btm trace messages"
         echo "  help:     Display this message"
@@ -1757,13 +2044,13 @@ proc tracemode {{cores "all"} {opt ""}} {
         echo "tracemode with no arguments will display the current setting for the type"
         echo "of messages to generate (none, sync, or all)"
         echo ""
-    } elseif {($opt == "sample") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc") || ($opt == "btm+sync") || ($opt == "htm+sync") || ($opt == "htmc+sync")} {
+    } elseif {($opt == "sample") || ($opt == "event") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc") || ($opt == "btm+sync") || ($opt == "htm+sync") || ($opt == "htmc+sync")} {
         foreach core $coreList {
             setTargetTraceMode $core $opt
         }
         echo -n ""
     } else {
-        echo {Error: Usage: tracemode [corelist] [all | btm | htm | htmc | none | sample | help]}
+        echo {Error: Usage: tracemode [corelist] [all | btm | htm | htmc | none | sample | event | help]}
     }
 }
 
@@ -1771,118 +2058,118 @@ proc itc {{cores "all"} {opt ""} {mask ""}} {
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-		if {$mask == ""} {
-			set mask $opt
-			set opt $cores
-			set cores "all"
+        if {$mask == ""} {
+            set mask $opt
+            set opt $cores
+            set cores "all"
 
-			set coreList [parseCoreList $cores]
-		}
+            set coreList [parseCoreList $cores]
+        }
 
-		if {$coreList == "error"} {
-			echo {Error: Usage: itc [corelist] [off | ownership | all | all+ownership | mask [ nn ] | trigmask [ nn ] | help]}
-			return "error"
-		}
+        if {$coreList == "error"} {
+            echo {Error: Usage: itc [corelist] [off | ownership | all | all+ownership | mask [ nn ] | trigmask [ nn ] | help]}
+            return "error"
+        }
     }
 
     if {$opt == ""} {
-		set rv ""
+        set rv ""
 
-		foreach core $coreList {
-			set tsd "core $core: "
+        foreach core $coreList {
+            set tsd "core $core: "
 
-			lappend tsd [getITC $core]
+            lappend tsd [getITC $core]
 
-			if {$rv != ""} {
-			append rv "; "
-			}
+            if {$rv != ""} {
+            append rv "; "
+            }
 
-			append rv $tsd
-		}
-		return $rv
+            append rv $tsd
+        }
+        return $rv
     }
 
     if {$opt == "help"} {
-		echo "itc: set or display itc settings"
-		echo {Usage: itc [corelist] [off | ownership | all | all+ownership | mask [ nn ] | trigmask [ nn ] | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-		echo "  off:           Disable ITC message generation"
-		echo "  ownership:     Enable ITC messages for stiumlus 15 and 31 only. Set the stimulus"
-		echo "                 mask to 0x80008000"
-		echo "  all:           Enable ITC messages for all stimulus 0 - 31. Set the stimulus"
-		echo "                 mask to 0xffffffff"
-		echo "  all+ownership: Generate ownership messages for stimulus 15 and 32, and"
-		echo "                 ITC messages for all other stimulus. Set the stimulus mask to"
-		echo "                 0xffffffff"
-		echo "  mask nn:       Set the stimulus mask to nn, where nn is a 32 bit number. Note"
-		echo "                 nn should be prefixed with 0x if it is a hex number, or just 0 if"
-		echo "                 it is an octal number; otherwise it will be interpreted as a decimal"
-		echo "                 number. Does not effect the ITC mode (off, ownership, all, all+ownership)."
-		echo "                 itc mask without nn displays the current value of the mask"
-		echo "  trigmask nn:   Set the trigger enable mask to nn, where nn is a 32 bit number. Note"
-		echo "                 nn should be prefixed with 0x if it is a hex number, or just 0 if"
-		echo "                 it is an octal number; othwise it will be interpreted as a decimal"
-		echo "                 number. Does not effect the ITC mode (off, ownership, all, all+ownership)."
-		echo "                 itc trigmask without nn displays the current value of the trigger enable mask"
-		echo "  help:          Display this message"
-		echo ""
-		echo "itc with no arguments will display the current itc settings"
-		echo ""
+        echo "itc: set or display itc settings"
+        echo {Usage: itc [corelist] [off | ownership | all | all+ownership | mask [ nn ] | trigmask [ nn ] | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  off:           Disable ITC message generation"
+        echo "  ownership:     Enable ITC messages for stiumlus 15 and 31 only. Set the stimulus"
+        echo "                 mask to 0x80008000"
+        echo "  all:           Enable ITC messages for all stimulus 0 - 31. Set the stimulus"
+        echo "                 mask to 0xffffffff"
+        echo "  all+ownership: Generate ownership messages for stimulus 15 and 32, and"
+        echo "                 ITC messages for all other stimulus. Set the stimulus mask to"
+        echo "                 0xffffffff"
+        echo "  mask nn:       Set the stimulus mask to nn, where nn is a 32 bit number. Note"
+        echo "                 nn should be prefixed with 0x if it is a hex number, or just 0 if"
+        echo "                 it is an octal number; otherwise it will be interpreted as a decimal"
+        echo "                 number. Does not effect the ITC mode (off, ownership, all, all+ownership)."
+        echo "                 itc mask without nn displays the current value of the mask"
+        echo "  trigmask nn:   Set the trigger enable mask to nn, where nn is a 32 bit number. Note"
+        echo "                 nn should be prefixed with 0x if it is a hex number, or just 0 if"
+        echo "                 it is an octal number; othwise it will be interpreted as a decimal"
+        echo "                 number. Does not effect the ITC mode (off, ownership, all, all+ownership)."
+        echo "                 itc trigmask without nn displays the current value of the trigger enable mask"
+        echo "  help:          Display this message"
+        echo ""
+        echo "itc with no arguments will display the current itc settings"
+        echo ""
     } elseif {$opt == "mask"} {
-		if {$mask == "" } {
-			foreach core $coreList {
-				set rv ""
+        if {$mask == "" } {
+            foreach core $coreList {
+                set rv ""
 
-				foreach core $coreList {
-					set tsd "core $core: "
+                foreach core $coreList {
+                    set tsd "core $core: "
 
-					lappend tsd [getITCMask $core]
+                    lappend tsd [getITCMask $core]
 
-					if {$rv != ""} {
-					append rv "; "
-					}
+                    if {$rv != ""} {
+                    append rv "; "
+                    }
 
-					append rv $tsd
-				}
+                    append rv $tsd
+                }
 
-				return $rv
-			}
-		} else {
-			foreach core $coreList {
-				setITCMask $core $mask
-			}
-		}
+                return $rv
+            }
+        } else {
+            foreach core $coreList {
+                setITCMask $core $mask
+            }
+        }
     } elseif {$opt == "trigmask"} {
-		if {$mask == ""} {
-			foreach core $coreList {
-				set rv ""
+        if {$mask == ""} {
+            foreach core $coreList {
+                set rv ""
 
-				foreach core $coreList {
-					set tsd "core $core: "
+                foreach core $coreList {
+                    set tsd "core $core: "
 
-					lappend tsd [getITCTriggerMask $core]
+                    lappend tsd [getITCTriggerMask $core]
 
-					if {$rv != ""} {
-					append rv "; "
-					}
+                    if {$rv != ""} {
+                    append rv "; "
+                    }
 
-					append rv $tsd
-				}
+                    append rv $tsd
+                }
 
-				return $rv
-			}
-		} else {
-			foreach core $coreList {
-				setITCTriggerMask $core $mask
-			}
-		}
+                return $rv
+            }
+        } else {
+            foreach core $coreList {
+                setITCTriggerMask $core $mask
+            }
+        }
     } elseif {($opt == "off") || ($opt == "all") || ($opt == "ownership") || ($opt == "all+ownership")} {
-		foreach core $coreList {
-			setITC $core $opt
-		}
-		echo -n ""
+        foreach core $coreList {
+            setITC $core $opt
+        }
+        echo -n ""
     } else {
-		echo {Error: Usage: itc [corelist] [off | ownership | all | all+ownership | mask [ nn ] | trigmask [ nn ] | help]}
+        echo {Error: Usage: itc [corelist] [off | ownership | all | all+ownership | mask [ nn ] | trigmask [ nn ] | help]}
     }
 }
 
@@ -1890,53 +2177,53 @@ proc maxicnt {{cores "all"} {opt ""}} {
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
 
-			set coreList [parseCoreList $cores]
-		}
+            set coreList [parseCoreList $cores]
+        }
 
-		if {$coreList == "error"} {
-			echo {Error: Usage: maxicnt [corelist] [5 - 10 | help]}
-			return "error"
-		}
+        if {$coreList == "error"} {
+            echo {Error: Usage: maxicnt [corelist] [5 - 10 | help]}
+            return "error"
+        }
     }
 
     if {$opt == ""} {
-		set rv ""
+        set rv ""
 
-		foreach core $coreList {
-			set tsd "core $core: "
+        foreach core $coreList {
+            set tsd "core $core: "
 
-			lappend tsd [expr [getMaxIcnt $core] + 5]
+            lappend tsd [expr [getMaxIcnt $core] + 5]
 
-			if {$rv != ""} {
-			append rv "; "
-			}
+            if {$rv != ""} {
+            append rv "; "
+            }
 
-			append rv $tsd
-		}
-		return $rv
+            append rv $tsd
+        }
+        return $rv
     }
 
     if {$opt == "help"} {
-		echo "maxicnt: set or dipspaly the maximum i-cnt field"
-		echo {Usage: maxicnt [corelist] [nn | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-		echo "  nn:       Set max i-cnt value to 2^(nn+5). nn must be between 5 and 10 for"
-		echo "            a range between 32 and 1024"
-		echo "  help:     Display this message"
-		echo ""
-		echo "maxicnt with no arguments will display the current maximum i-cnt value"
-		echo ""
+        echo "maxicnt: set or dipspaly the maximum i-cnt field"
+        echo {Usage: maxicnt [corelist] [nn | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  nn:       Set max i-cnt value to 2^(nn+5). nn must be between 5 and 10 for"
+        echo "            a range between 32 and 1024"
+        echo "  help:     Display this message"
+        echo ""
+        echo "maxicnt with no arguments will display the current maximum i-cnt value"
+        echo ""
     } elseif {$opt >= 5 && $opt <= 10} {
-		foreach core $coreList {
-			setMaxIcnt $core [expr $opt - 5]
-		}
-		echo -n ""
+        foreach core $coreList {
+            setMaxIcnt $core [expr $opt - 5]
+        }
+        echo -n ""
     } else {
-		echo {Error: Usage: maxicnt [corelist] [5 - 10 | help]}
+        echo {Error: Usage: maxicnt [corelist] [5 - 10 | help]}
     }
 }
 
@@ -1944,54 +2231,54 @@ proc maxbtm {{cores "all"} {opt ""}} {
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
 
-			set coreList [parseCoreList $cores]
-		}
+            set coreList [parseCoreList $cores]
+        }
 
-		if {$coreList == "error"} {
-			echo {Error: Usage: maxbtm [corelist] [5 - 16 | help]}
-			return "error"
-		}
+        if {$coreList == "error"} {
+            echo {Error: Usage: maxbtm [corelist] [5 - 16 | help]}
+            return "error"
+        }
     }
 
     if {$opt == ""} {
-		set rv ""
+        set rv ""
 
-		foreach core $coreList {
-			set tsd "core $core: "
+        foreach core $coreList {
+            set tsd "core $core: "
 
-			lappend tsd [expr [getMaxBTM $core] + 5]
+            lappend tsd [expr [getMaxBTM $core] + 5]
 
-			if {$rv != ""} {
-			append rv "; "
-			}
+            if {$rv != ""} {
+            append rv "; "
+            }
 
-			append rv $tsd
-		}
-		return $rv
+            append rv $tsd
+        }
+        return $rv
     }
 
     if {$opt == "help"} {
-		echo "maxbtm: set or display the maximum number of BTMs between Sync messages"
-		echo {Usage: maxbtm [corelist] [nn | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-		echo "  nn:       Set the maximum number of BTMs between Syncs to nn. nn must be between"
-		echo "            5 and 16 for a range between 32 and 65536"
-		echo "  help:     Display this message"
-		echo ""
-		echo "maxbtm with no arguments will display the current maximum number of BTMs"
-		echo "between sync messages"
-		echo ""
+        echo "maxbtm: set or display the maximum number of BTMs between Sync messages"
+        echo {Usage: maxbtm [corelist] [nn | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  nn:       Set the maximum number of BTMs between Syncs to nn. nn must be between"
+        echo "            5 and 16 for a range between 32 and 65536"
+        echo "  help:     Display this message"
+        echo ""
+        echo "maxbtm with no arguments will display the current maximum number of BTMs"
+        echo "between sync messages"
+        echo ""
     } elseif {$opt >= 5 && $opt <= 16} {
-		foreach core $coreList {
-			setMaxBTM $core [expr $opt - 5]
-		}
-		echo -n ""
+        foreach core $coreList {
+            setMaxBTM $core [expr $opt - 5]
+        }
+        echo -n ""
     } else {
-		echo {Error: Usage: maxbtm [corelist] [5 - 16 | help]}
+        echo {Error: Usage: maxbtm [corelist] [5 - 16 | help]}
     }
 }
 
@@ -2032,6 +2319,11 @@ proc readCASRAMData {core} {
 proc computeStartEnd {buffStart writePtr buffSize wrap sow numWant start1 end1 start2 end2} {
 # if sow == on, want oldest (first - forwards from beginning (0) )
 # if sow == off, want newest (last - backwards from end (writePtr))
+    global verbose
+
+    if {$verbose > 1} {
+        echo "cse: start=[format 0x%016lx $buffStart] wp=[format 0x%08lx $writePtr] bs=[format 0x%08lx $buffSize] wrap=$wrap sow=$sow limit=[format 0x%08lx $numWant]"
+    }
 
     upvar $start1 s1
     upvar $end1 e1
@@ -2042,12 +2334,19 @@ proc computeStartEnd {buffStart writePtr buffSize wrap sow numWant start1 end1 s
 
     if {$wrap == 0 } {
         # buffer has not wrapped
+        set s2 0;
+        set e2 0;
 
         if {$numWant == 0} {
             # want whole buffer buffStart to writePtr
 
             set s1 $buffStart
             set e1 $writePtr
+
+            if {$verbose > 1} {
+                echo "cse-1: s1=[format 0x%016lx $s1] e1=[format 0x%016lx $e1]  s2=[format 0x%016lx $s2] e2=[format 0x%016lx $e2]"
+            }
+
         } else {
             # numWant != 0
 
@@ -2056,23 +2355,34 @@ proc computeStartEnd {buffStart writePtr buffSize wrap sow numWant start1 end1 s
 
                 set s1 $buffStart
                 set e1 $writePtr
+
+                if {$verbose > 1} {
+                    echo "cse-2: s1=[format 0x%016lx $s1] e1=[format 0x%016lx $e1]  s2=[format 0x%016lx $s2] e2=[format 0x%016lx $e2]"
+                }
+
             } elseif {$sow == "on"} {
                 # want beginning of buffer (oldest) buffStart to buffStart + numwant
 
                 set s1 $buffStart
                 set e1 [expr $buffStart + $numWant]
+
+                if {$verbose > 1} {
+                    echo "cse-3: s1=[format 0x%016lx $s1] e1=[format 0x%016lx $e1]  s2=[format 0x%016lx $s2] e2=[format 0x%016lx $e2]"
+                }
+
             } else {
                 # want end of buffer (newest) want writPtr - numWant to writePtr
 
                 set s1 [expr $writePtr - $numWant]
                 set e1 $writePtr
+
+                if {$verbose > 1} {
+                    echo "cse-4: s1=[format 0x%016lx $s1] e1=[format 0x%016lx $e1]  s2=[format 0x%016lx $s2] e2=[format 0x%016lx $e2]"
+                }
             }
         }
-        set s2 0;
-        set e2 0;
     } else {
         # buffer has wrapped
-
         if {($numWant == 0) || ($numWant >= $buffSize)} {
             # want it all want writePtr to buffEnd, then buffStart to writePtr
 
@@ -2080,6 +2390,9 @@ proc computeStartEnd {buffStart writePtr buffSize wrap sow numWant start1 end1 s
             set e1 $buffEnd
             set s2 $buffStart
             set e2 $writePtr
+            if {$verbose > 1} {
+                echo "cse-5: s1=[format 0x%016lx $s1] e1=[format 0x%016lx $e1] s2=[format 0x%016lx $s2] e2=[format 0x%016lx $e2]"
+            }
         } else {
             if {$sow == "on"} {
                 # want beginning of buffer (oldest)
@@ -2092,31 +2405,36 @@ proc computeStartEnd {buffStart writePtr buffSize wrap sow numWant start1 end1 s
                     set e1 $buffEnd
                     set s2 $buffStart
                     set e2 $writePtr
+                    if {$verbose > 1} {
+                        echo "cse-6: s1=[format 0x%016lx $s1] e1=[format 0x%016lx $e1] s2=[format 0x%016lx $s2] e2=[format 0x%016lx $e2]"
+                    }
                 } else {
                     # numWant < buffSize
 
-		    if {($writePtr + $numWant) > $buffEnd} {
-			# want writePtr to buffEnd, buffSart to (buffStart + (buffEnd - writePtr)
-
+                    if {($writePtr + $numWant) > $buffEnd} {
+                    # want writePtr to buffEnd, buffSart to (buffStart + (buffEnd - writePtr)
                         set s1 $writePtr
                         set e1 $buffEnd
-			set s2 $buffStart
-			set remaining [expr $numWant - ($buffEnd - $writePtr)]
-			set e2 [expr $buffStart + $remaining]
-		    } else {
-			# want writePtr to writePtr + numWant
-
+                        set s2 $buffStart
+                        set remaining [expr $numWant - ($buffEnd - $writePtr)]
+                        set e2 [expr $buffStart + $remaining]
+                        if {$verbose > 1} {
+                            echo "cse-7: s1=[format 0x%016lx $s1] e1=[format 0x%016lx $e1] s2=[format 0x%016lx $s2] e2=[format 0x%016lx $e2]"
+                        }
+                    } else {
+                        # want writePtr to writePtr + numWant
                         set s1 $writePtr
                         set e1 [expr $writePtr + $numWant]
                         set s2 0
                         set e2 0
-		    }
+                        if {$verbose > 1} {
+                            echo "cse-8: s1=[format 0x%016lx $s1] e1=[format 0x%016lx $e1] s2=[format 0x%016lx $s2] e2=[format 0x%016lx $e2]"
+                        }
+                    }
                 }
             } else {
                 # want end of buffer (newest)
-
-		# remember, buffer has wrapped, numWant < buffSize
-
+                # remember, buffer has wrapped, numWant < buffSize
                 if {($buffStart + $numWant) > $writePtr} {
                     # want buffEnd - (numWant - (writePtr - BuffSart) to buffEnd, buffStart to writePtr
 
@@ -2125,13 +2443,19 @@ proc computeStartEnd {buffStart writePtr buffSize wrap sow numWant start1 end1 s
 
                     set s2 $buffStart
                     set e2 $writePtr
+                    if {$verbose > 1} {
+                        echo "cse-9: s1=[format 0x%016lx $s1] e1=[format 0x%016lx $e1] s2=[format 0x%016lx $s2] e2=[format 0x%016lx $e2]"
+                    }
                 } else {
-	            # want writePtr - numWant to writePtr
+                    # want writePtr - numWant to writePtr
 
                     set s1 [expr $writePtr - $numWant]
                     set e1 $writePtr
                     set e2 0
                     set s2 0
+                    if {$verbose > 1} {
+                        echo "cse-10: s1=[format 0x%016lx $s1] e1=[format 0x%016lx $e1] s2=[format 0x%016lx $s2] e2=[format 0x%016lx $e2]"
+                    }
                 }
             }
         }
@@ -2140,7 +2464,7 @@ proc computeStartEnd {buffStart writePtr buffSize wrap sow numWant start1 end1 s
 
 proc writeSRAM {core file limit} {
     global verbose
-	
+    
     if { $verbose > 1 } {
         echo ""
     }
@@ -2159,22 +2483,18 @@ proc writeSRAM {core file limit} {
 
     set stop_on_wrap [getTeStopOnWrap $core]
 
-    if {$verbose > 1} {
-        echo "computeStartEnd: [format 0x%08lx 0] [format 0x%08lx $tracewp] [format 0x%08lx $buffersize] $wrap $stop_on_wrap [format 0x%08lx $limit]"
-    }
-
     computeStartEnd 0 $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
 
     if {$verbose > 1} {
-	echo "start1: [format 0x%08lx $start1] end1: [format 0x%08lx $end1] start2: [format 0x%08lx $start2] end2: [format 0x%08lx $end2]"
+    echo "start1: [format 0x%08lx $start1] end1: [format 0x%08lx $end1] start2: [format 0x%08lx $start2] end2: [format 0x%08lx $end2]"
     }
 
     if {$file == "stdout"} {
-	# write start1 to end1, start2 to end2
+    # write start1 to end1, start2 to end2
 
         # this version reads a word at a time from the trace buffer
 
-       	if {$verbose > 1} {
+           if {$verbose > 1} {
             if {$star1 != $end1} {
                 echo "Trace from [format 0x%08x $start1] to [format %08x $end1], [expr $end1 - $start1] bytes"
             }
@@ -2188,7 +2508,7 @@ proc writeSRAM {core file limit} {
             append f $w
         }
 
-       	if {$verbose > 1} {
+           if {$verbose > 1} {
             if {$star2 != $end2} {
                 echo "Trace from [format 0x%08x $start2] to [format 0x%08x $end2], [expr $end2 - $start2] bytes"
             }
@@ -2223,13 +2543,13 @@ proc writeSRAM {core file limit} {
 
         close $fp
 
-	return ""
+    return ""
     }
 }
 
 proc writeCASRAM {core file limit} {
     global verbose
-	
+    
     if { $verbose > 1 } {
         echo ""
     }
@@ -2251,11 +2571,11 @@ proc writeCASRAM {core file limit} {
     computeStartEnd 0 $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
 
     if {$file == "stdout"} {
-	# write start1 to end1, start2 to end2
+    # write start1 to end1, start2 to end2
 
         # this version reads a word at a time from the trace buffer
 
-       	if {$verbose > 1} {
+           if {$verbose > 1} {
             if {$star1 != $end1} {
                 echo "Trace from [format 0x%08x $start1] to [format %08x $end1], [expr $end1 - $start1] bytes"
             }
@@ -2269,7 +2589,7 @@ proc writeCASRAM {core file limit} {
             append f $w
         }
 
-       	if {$verbose > 1} {
+           if {$verbose > 1} {
             if {$star2 != $end2} {
                 echo "Trace from [format 0x%08x $start2] to [format 0x%08x $end2], [expr $end2 - $start2] bytes"
             }
@@ -2304,15 +2624,15 @@ proc writeCASRAM {core file limit} {
 
         close $fp
 
-	return ""
+    return ""
     }
 }
 
 proc _writeSRAMdata { core tracebegin traceend fp } {
-	for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-		pack w [eval readSRAMData $core] -intle 32
-		puts -nonewline $fp $w
-	}
+    for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+        pack w [eval readSRAMData $core] -intle 32
+        puts -nonewline $fp $w
+    }
 }
 
 proc writeSRAMdata { core tracebegin traceend fp } {
@@ -2370,33 +2690,33 @@ proc getCapturedTraceSize { core } {
 #    echo "getCapturedTraceSize($core)"
 
     if {$has_funnel != 0} {
-		set s [getSink funnel]
-		switch [string toupper $s] {
-			"SRAM" { return [getTraceBufferSizeSRAM funnel]}
-			"SBA"  { return [getTraceBufferSizeSBA funnel]}
-		}
+        set s [getSink funnel]
+        switch [string toupper $s] {
+            "SRAM" { return [getTraceBufferSizeSRAM funnel]}
+            "SBA"  { return [getTraceBufferSizeSBA funnel]}
+        }
     } else {
-		set s [getSink $core]
-		switch [string toupper $s] {
-			"SRAM" { return [getTraceBufferSizeSRAM $core]}
-			"SBA"  { return [getTraceBufferSizeSBA $core]}
-		}
+        set s [getSink $core]
+        switch [string toupper $s] {
+            "SRAM" { return [getTraceBufferSizeSRAM $core]}
+            "SBA"  { return [getTraceBufferSizeSBA $core]}
+        }
     }
 }
 
 proc getTraceBufferSizeSRAM {core} {
-	set tracewp [gettracewp $core]
+    set tracewp [gettracewp $core]
 
 #	echo "getTraceBufferSizeSRAM($core)"
 
-	if {($tracewp & 1) == 0 } { ;
-		# buffer has not wrapped
-		set tracebegin 0
-		set traceend $tracewp
-		return [expr $traceend - $tracebegin]
-	}
+    if {($tracewp & 1) == 0 } { ;
+        # buffer has not wrapped
+        set tracebegin 0
+        set traceend $tracewp
+        return [expr $traceend - $tracebegin]
+    }
 
-	return [getTraceBufferSize $core]
+    return [getTraceBufferSize $core]
 }
 
 proc getTraceBufferSizeSBA {core} {
@@ -2408,41 +2728,35 @@ proc getTraceBufferSizeSBA {core} {
 
     set tracewp [gettracewp $core]
     if { ($tracewp & 1) == 0 } { 
-		# buffer has not wrapped
-		set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-		set traceend $tracewp
-		return [expr $traceend - $tracebegin]
-	} 
-	return [getTraceBufferSize $core]
+        # buffer has not wrapped
+        set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+        set traceend $tracewp
+        return [expr $traceend - $tracebegin]
+    } 
+    return [getTraceBufferSize $core]
 }
 
 proc writeSBA {core file limit} {
     global verbose
-	
+    
     if { $verbose > 1 } {
-		echo ""
+        echo ""
         echo "limit: $limit"
     }
 
+    set baseAddr [getSBABaseAddress $core]
     set tracewp [gettracewp $core]
+
     if {($tracewp & 1) == 0} {
         set wrap 0
     } else {
         set wrap 1
-        set tracewp [expr $tracewp & 0xfffffffe]
+        set tracewp [expr $tracewp & 0xfffffffffffffffe]
     }
 
     set buffersize [getTraceBufferSize $core]
 
-    set tracewp [expr $tracewp & 0xfffffffe]
-
     set stop_on_wrap [getTeStopOnWrap $core]
-
-    set baseAddr [getSBABaseAddress $core]
-
-    if {$verbose > 1} {
-        echo "computeStartEnd: [format 0x%08lx $baseAddr] [format 0x%08lx $tracewp] [format 0x%08lx $buffersize] $wrap $stop_on_wrap [format 0x%08lx $limit]"
-    }
 
     computeStartEnd $baseAddr $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
 
@@ -2451,11 +2765,11 @@ proc writeSBA {core file limit} {
     }
 
     if {$file == "stdout"} {
-	# write start1 to end1, start2 to end2
+    # write start1 to end1, start2 to end2
 
         # this version reads a word at a time from the trace buffer
 
-       	if {$verbose > 1} {
+           if {$verbose > 1} {
             if {$star1 != $end1} {
                 echo "Trace from [format 0x%08x $start1] to [format %08x $end1], [expr $end1 - $start1] bytes"
             }
@@ -2469,7 +2783,7 @@ proc writeSBA {core file limit} {
             append f $w
         }
 
-       	if {$verbose > 1} {
+           if {$verbose > 1} {
             if {$star2 != $end2} {
                 echo "Trace from [format 0x%08x $start2] to [format 0x%08x $end2], [expr $end2 - $start2] bytes"
             }
@@ -2504,85 +2818,85 @@ proc writeSBA {core file limit} {
 
         close $fp
 
-	return ""
+    return ""
     }
 }
 
 # The slow way...not used, but left here for posterity.
 
 proc writeSBAdata { tb te fp } {
-	for {set i $tb} {$i < $te} {incr i 4} {
-	    pack w [word $i] -intle 32
-	    puts -nonewline $fp $w
-	}
+    for {set i $tb} {$i < $te} {incr i 4} {
+        pack w [word $i] -intle 32
+        puts -nonewline $fp $w
+    }
 }
 
 proc writeSBAdataXcs { tb te cs fp } {
-	global verbose
+    global verbose
 
-	set length [expr $te - $tb]
-	if {$length < $cs} {
-		# total length is less than chunk size, return and
-		# process next smallest chunk
-		return $tb
-	}
+    set length [expr $te - $tb]
+    if {$length < $cs} {
+        # total length is less than chunk size, return and
+        # process next smallest chunk
+        return $tb
+    }
 
-	set extra [expr [expr $te - $tb] % $cs]
-	set extra_start [expr $te - $extra]
-	set length [expr $extra_start - $tb]
-	set chunks [expr $length / $cs]
-	if {$verbose > 1} {
-		echo [format "Range : %08X to %08X" $tb $extra_start]
-		echo "Chunks: $chunks @ $cs bytes/ea with $extra remaining byte"
-	}
+    set extra [expr [expr $te - $tb] % $cs]
+    set extra_start [expr $te - $extra]
+    set length [expr $extra_start - $tb]
+    set chunks [expr $length / $cs]
+    if {$verbose > 1} {
+        echo [format "Range : %08X to %08X" $tb $extra_start]
+        echo "Chunks: $chunks @ $cs bytes/ea with $extra remaining byte"
+    }
 
-	set elems [expr $cs >> 2]
-	for {set i $tb} {$i < $extra_start} {incr i $cs} {
-		if {$verbose > 2} {
-			echo [format "Chunk: %08X to %08X" $i [expr $i +$cs]
-		}
+    set elems [expr $cs >> 2]
+    for {set i $tb} {$i < $extra_start} {incr i $cs} {
+        if {$verbose > 2} {
+            echo [format "Chunk: %08X to %08X" $i [expr $i +$cs]]
+        }
 
 
-		mem2array x 32 $i $elems
-		for {set j 0} {$j < $elems} {incr j 1} {
-			pack w $x($j) -intle 32
-			puts -nonewline $fp $w
-		}
-	}
+        mem2array x 32 $i $elems
+        for {set j 0} {$j < $elems} {incr j 1} {
+            pack w $x($j) -intle 32
+            puts -nonewline $fp $w
+        }
+    }
 
-	return $extra_start
+    return $extra_start
 }
 
 proc writeSBAdataX { tb te fp } {
-	global verbose
+    global verbose
 
-	# Set the chunk size, must be power of 2
-	set cs 256
+    # Set the chunk size, must be power of 2
+    set cs 256
 
-	set start_addr $tb
+    set start_addr $tb
 
-	# See if our buffer is a multiple of 256 bytes, if not
-	# figure out how many extra bytes at the end we need to
-	# cpature.
-	set length [expr $te - $start_addr]
-	set extra [expr $length % $cs]
+    # See if our buffer is a multiple of 256 bytes, if not
+    # figure out how many extra bytes at the end we need to
+    # cpature.
+    set length [expr $te - $start_addr]
+    set extra [expr $length % $cs]
 
-	if {$verbose > 1} {
-		echo [format "Capturing from %08X to %08X" $start_addr $te]
-	}
+    if {$verbose > 1} {
+        echo [format "Capturing from %08X to %08X" $start_addr $te]
+    }
 
-	while {$start_addr <= $te && $cs > 0} {
-		set start_addr [writeSBAdataXcs $start_addr $te $cs $fp]
-		set length [expr $te - $start_addr]
-		set cs [expr $cs >> 1]
-		set mod4 [expr $length % 4]
-		if {$mod4 == 0} {
-			set cs $length
-			if {$verbose > 1} {
-				echo "Set final cs = $cs"
-			}
-		}
-	}
+    while {$start_addr <= $te && $cs > 0} {
+        set start_addr [writeSBAdataXcs $start_addr $te $cs $fp]
+        set length [expr $te - $start_addr]
+        set cs [expr $cs >> 1]
+        set mod4 [expr $length % 4]
+        if {$mod4 == 0} {
+            set cs $length
+            if {$verbose > 1} {
+                echo "Set final cs = $cs"
+            }
+        }
+    }
 
 }
 
@@ -2689,15 +3003,15 @@ proc clearTraceBuffer {core} {
 
     set s [getSink $core]
     switch [string toupper $s] {
-		"SRAM" { 
-			mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] 0
-	    	mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0
-		}
-		"SBA" { 
-			set t [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-	    	mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
-	    	mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] $t
-		}
+        "SRAM" { 
+            mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] 0
+            mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0
+        }
+        "SBA" { 
+            set t [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+            mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
+            mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] $t
+        }
     }
 }
 
@@ -2707,12 +3021,12 @@ proc cleartrace {{cores "all"}} {
 #    echo "cleartrace($cores)"
 
     if {$coreList == "error"} {
-		echo {Error: Usage: cleartrace [corelist]}
-		return "error"
+        echo {Error: Usage: cleartrace [corelist]}
+        return "error"
     }
 
     foreach core $coreList {
-		clearTraceBuffer $core
+        clearTraceBuffer $core
     }
 }
 
@@ -2728,12 +3042,22 @@ proc readts {} {
 proc gettracewp {core} {
     global te_sinkwp_offset
     global traceBaseAddrArray
+    global te_sinkbasehigh_offset
+    global verbose
 
 #    echo "gettracewp($core)"
 
     set tracewp [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
 
-    return $tracewp
+    set tracebasehi [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
+
+    set baseAddr [expr $tracewp + ($tracebasehi << 32)]
+
+    if {$verbose > 1} {
+        echo "tracewp: [format 0x%016lx $baseAddr]"
+    }
+
+    return $baseAddr
 }
 
 proc getCASink {core} {
@@ -2773,24 +3097,24 @@ proc getSink {core} {
 #    echo "getSink($core)"
 
     switch $t {
-		0 { 
-			set t [word [expr $traceBaseAddrArray($core) + $te_impl_offset]]
-	    	set t [expr ($t >> 4) & 0x1f]
-	    	switch $t {
-				1    { return "SRAM" }
-				2    { return "ATB"  }
-				4    { return "PIB"  }
-				8    { return "SBA"  }
-				16   { return "FUNNEL" }
-				default { return "Reserved" }
-			}
-		}
-		4 { return "SRAM"   }
-		5 { return "ATB"    }
-		6 { return "PIB"    }
-		7 { return "SBA"    }
-		8 { return "FUNNEL" }
-		default { return "Reserved" }
+        0 { 
+            set t [word [expr $traceBaseAddrArray($core) + $te_impl_offset]]
+            set t [expr ($t >> 4) & 0x1f]
+            switch $t {
+                1    { return "SRAM" }
+                2    { return "ATB"  }
+                4    { return "PIB"  }
+                8    { return "SBA"  }
+                16   { return "FUNNEL" }
+                default { return "Reserved" }
+            }
+        }
+        4 { return "SRAM"   }
+        5 { return "ATB"    }
+        6 { return "PIB"    }
+        7 { return "SBA"    }
+        8 { return "FUNNEL" }
+        default { return "Reserved" }
     }
 }
 
@@ -2804,19 +3128,19 @@ proc getTraceBufferSize {core} {
 #    echo "getTraceBufferSize($core)"
 
     switch [string toupper [getSink $core]] {
-		"SRAM" { 
-			set t [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
-			mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0xfffffffc
-			set size [expr [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]] + $trace_buffer_width]
-			mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
-			return $size
-			}
-		"SBA"  { 
-			set start [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-			set end [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
-			set size [expr $end - $start + $trace_buffer_width]
-			return $size
-			}
+        "SRAM" { 
+            set t [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
+            mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0xfffffffc
+            set size [expr [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]] + $trace_buffer_width]
+            mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
+            return $size
+            }
+        "SBA"  { 
+            set start [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+            set end [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+            set size [expr $end - $start + $trace_buffer_width]
+            return $size
+            }
     }
 
     return 0
@@ -2856,12 +3180,12 @@ proc setSink {core type {base ""} {size ""}} {
 #    echo "setSink($core $type base: $base size: $size)"
 
     switch [string toupper $type] {
-		"SRAM"   { set b 4 }
-		"ATB"    { set b 5 }
-		"PIB"    { set b 6 }
-		"SBA"    { set b 7 }
-		"FUNNEL" { set b 8 }
-		default  { return "Error: setSink(): Invalid sync" }
+        "SRAM"   { set b 4 }
+        "ATB"    { set b 5 }
+        "PIB"    { set b 6 }
+        "SBA"    { set b 7 }
+        "FUNNEL" { set b 8 }
+        default  { return "Error: setSink(): Invalid sync" }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $te_impl_offset]]
@@ -2869,7 +3193,7 @@ proc setSink {core type {base ""} {size ""}} {
     set t [expr $t & (1 << $b)]
 
     if {$t == 0} {
-		return "Error: setSink(): sink type $type not supported on core $core"
+        return "Error: setSink(): sink type $type not supported on core $core"
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -2880,32 +3204,32 @@ proc setSink {core type {base ""} {size ""}} {
     mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
 
     if {[string compare -nocase $type "sba"] == 0} {
-		if {$base != ""} {
-			set limit [expr $base + $size - $trace_buffer_width];
+        if {$base != ""} {
+            set limit [expr $base + $size - $trace_buffer_width];
 
-			if {($limit >> 32) != ($base >> 32)} {
-				return "Error: setSink(): buffer can't span a 2^32 address boundry"
-			} else {
-				mww [expr $traceBaseAddrArray($core) + $te_sinkbase_offset] [expr $base & 0xffffffff]
-				set b [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-				if {$b != [expr $base & 0xffffffff]} {
-					return "Error: setSink(): invalid buffer address for SBA"
-				}
-				mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] [expr $base & 0xffffffff]
+            if {($limit >> 32) != ($base >> 32)} {
+                return "Error: setSink(): buffer can't span a 2^32 address boundry"
+            } else {
+                mww [expr $traceBaseAddrArray($core) + $te_sinkbase_offset] [expr $base & 0xffffffff]
+                set b [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+                if {$b != [expr $base & 0xffffffff]} {
+                    return "Error: setSink(): invalid buffer address for SBA"
+                }
+                mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] [expr $base & 0xffffffff]
 
-				mww [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset] [expr $base >> 32]
-				set b [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
-				if {$b != [expr $base >> 32]} {
-					return "Error: setSink(): invalid buffer address for SBA"
-				}
+                mww [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset] [expr $base >> 32]
+                set b [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
+                if {$b != [expr $base >> 32]} {
+                    return "Error: setSink(): invalid buffer address for SBA"
+                }
 
-				mww [expr $traceBaseAddrArray($core) + $te_sinklimit_offset] [expr $limit & 0xffffffff]
-				set b [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
-				if {$b != [expr $limit & 0xffffffff]} {
-					return "Error: setSink(): invalid buffer size for SBA"
-				}
-			}
-		}
+                mww [expr $traceBaseAddrArray($core) + $te_sinklimit_offset] [expr $limit & 0xffffffff]
+                set b [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+                if {$b != [expr $limit & 0xffffffff]} {
+                    return "Error: setSink(): invalid buffer size for SBA"
+                }
+            }
+        }
     }
 
     return ""
@@ -2917,55 +3241,55 @@ proc sinkstatus {{cores "all"} {action ""}} {
 #    echo "sinkstatus($cores $action)";
 
     if {$coreList == "error"} {
-		if {$action == ""} {
-			set action $cores
-			set cores "all"
+        if {$action == ""} {
+            set action $cores
+            set cores "all"
 
-			set coreList [parseCoreFunnelList $cores]
-		}
+            set coreList [parseCoreFunnelList $cores]
+        }
 
-		if {$coreList == "error"} {
-			echo {Error: Usage: sinkstatus [corelist] [reset | help]}
-			return "error"
-		}
+        if {$coreList == "error"} {
+            echo {Error: Usage: sinkstatus [corelist] [reset | help]}
+            return "error"
+        }
     }
 
     if {$action == ""} {
-		# display current status of teSinkError
-		set rv ""
+        # display current status of teSinkError
+        set rv ""
 
-		foreach core $coreList {
-			if {$core == "funnel"} {
-				set te "$core: "
-			} else {
-				set te "core $core: "
-			}
+        foreach core $coreList {
+            if {$core == "funnel"} {
+                set te "$core: "
+            } else {
+                set te "core $core: "
+            }
 
-			lappend te [getSinkError $core]
+            lappend te [getSinkError $core]
 
-			if {$rv != ""} {
-				append rv "; "
-			}
+            if {$rv != ""} {
+                append rv "; "
+            }
 
-			append rv $te
-		}
+            append rv $te
+        }
 
-		return $rv
+        return $rv
     }
 
     if {$action == "help"} {
-		echo "sinkstatus: display or clear status of teSinkError bit in the teControl register"
-		echo {Usage: sinkstatus [corelist] [clear | help]}
-		echo "  clear:    Clear the teSinkError bit"
-		echo "  help:     Display this message"
-		echo ""
-		echo "sinkstatus with no arguments will display the status of the teSinkError bit for"
-		echo "all cores and the funnel (if present)"
-		echo ""
+        echo "sinkstatus: display or clear status of teSinkError bit in the teControl register"
+        echo {Usage: sinkstatus [corelist] [clear | help]}
+        echo "  clear:    Clear the teSinkError bit"
+        echo "  help:     Display this message"
+        echo ""
+        echo "sinkstatus with no arguments will display the status of the teSinkError bit for"
+        echo "all cores and the funnel (if present)"
+        echo ""
     } elseif {$action == "clear"} {
-		foreach core $coreList {
-			clearSinkError $core
-		}
+        foreach core $coreList {
+            clearSinkError $core
+        }
     }
 }
 
@@ -2982,248 +3306,248 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
     global trace_buffer_width
 
     switch [string toupper $cores] {
-		""       { 
-			set cores "all" }
-		"SBA"    { 
-			set size $addr
-			set addr $dst
-			set dst "sba"
-			set cores "all" 
-		}
-		"SRAM"   { 
-			set dst "sram"
-			set cores "all" 
-		}
-		"ATB"    { 
-			set dst "atb"
-			set cores "all" 
-		}
-		"PIB"    { 
-			set dst "pib"
-			set cores "all" 
-		}
-		"HELP"   { 
-			set dst "help"
-			set cores "all" 
-		}
-		"FUNNEL" { 
-			switch [string toupper $dst] {
-				""     {}
-				"SBA"  {}
-				"SRAM" {}
-				"ATB"  {}
-				"PIB"  {}
-				"HELP" {}
-				"FUNNEL" {}
-				default { set size $addr
-					set addr $dst
-					set dst $cores
-					set cores "all"
-				}
-			}
-		}
-		default  {}
+        ""       { 
+            set cores "all" }
+        "SBA"    { 
+            set size $addr
+            set addr $dst
+            set dst "sba"
+            set cores "all" 
+        }
+        "SRAM"   { 
+            set dst "sram"
+            set cores "all" 
+        }
+        "ATB"    { 
+            set dst "atb"
+            set cores "all" 
+        }
+        "PIB"    { 
+            set dst "pib"
+            set cores "all" 
+        }
+        "HELP"   { 
+            set dst "help"
+            set cores "all" 
+        }
+        "FUNNEL" { 
+            switch [string toupper $dst] {
+                ""     {}
+                "SBA"  {}
+                "SRAM" {}
+                "ATB"  {}
+                "PIB"  {}
+                "HELP" {}
+                "FUNNEL" {}
+                default { set size $addr
+                    set addr $dst
+                    set dst $cores
+                    set cores "all"
+                }
+            }
+        }
+        default  {}
     }
 
     set coreFunnelList [parseCoreFunnelList $cores]
     set coreList [parseCoreList $cores]
 
     if {$dst == ""} {
-		set teSink {}
-		foreach core $coreFunnelList {
-			set sink [getSink $core]
+        set teSink {}
+        foreach core $coreFunnelList {
+            set sink [getSink $core]
 
-			if {$teSink != ""} {
-				append teSink "; "
-			}
+            if {$teSink != ""} {
+                append teSink "; "
+            }
 
-			append teSink " core: $core $sink"
+            append teSink " core: $core $sink"
 
-			switch [string toupper $sink] {
-				"SRAM"  { 
-					# get size of SRAM
-					set t [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
-					mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0xfffffffc
-					set size [expr [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]] + $trace_buffer_width]
-					mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
-					set teSink "$teSink , size: $size bytes" }
-				"SBA"   { 
-					set sinkBase [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-					set sinkLimit [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
-					set sinkBaseHigh [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
-					set sinkBase [expr ($sinkBaseHigh << 32) + $sinkBase]
-					set sinkLimit [expr ($sinkBaseHigh << 32) + $sinkLimit]
-					set teSink "$teSink ,base: [format 0x%08x $sinkBase], size: [expr $sinkLimit - $sinkBase + $trace_buffer_width] bytes"
-				}
-			}
-		}
+            switch [string toupper $sink] {
+                "SRAM"  { 
+                    # get size of SRAM
+                    set t [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
+                    mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0xfffffffc
+                    set size [expr [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]] + $trace_buffer_width]
+                    mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
+                    set teSink "$teSink , size: $size bytes" }
+                "SBA"   { 
+                    set sinkBase [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+                    set sinkLimit [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+                    set sinkBaseHigh [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
+                    set sinkBase [expr ($sinkBaseHigh << 32) + $sinkBase]
+                    set sinkLimit [expr ($sinkBaseHigh << 32) + $sinkLimit]
+                    set teSink "$teSink ,base: [format 0x%08x $sinkBase], size: [expr $sinkLimit - $sinkBase + $trace_buffer_width] bytes"
+                }
+            }
+        }
 
-		return $teSink
+        return $teSink
     } elseif {[string compare -nocase $dst "help"] == 0} {
-		echo "tracedst: set or display trace sink for cores and funnel"
-		echo {Usage: tracedst [corelist] [sram | atb | pib | funnel | sba [base size] | help]}
-		echo "  corelist: Comma separated list of core numbers, funnel, or 'all'. Not specifying is equivalent to all"
-		echo "  sram:     Set the trace sink to on-chip sram"
-		echo "  atb:      Set the trace sink to the ATB"
-		echo "  pib:      Set the trace sink to the PIB"
-		echo "  funnel:   set the trtace sink to the funnel"
-		echo "  sba:      Set the trace sink to the system memory at the specified base and limit. If no specified"
-		echo "            they are left as previously programmed"
-		echo "  base:     The address to begin the sba trace buffer in system memory at"
-		echo "  size:     Size of the sba buffer in bytes. Must be a multiple of 4"
-		echo "  help:     Display this message"
-		echo ""
-		echo "tracedst with no arguments will display the trace sink for all cores and the funnel (if present)"
-		echo ""
-		echo "If no cores are specified and there is no trace funnel, all cores will be programed with the"
-		echo "sink specified. If no cores are specified and there is a trace funnel, all cores will be"
-		echo "programmed to sink to the funnel and the funnel will be programmed to use the sink specified"
-		echo ""
+        echo "tracedst: set or display trace sink for cores and funnel"
+        echo {Usage: tracedst [corelist] [sram | atb | pib | funnel | sba [base size] | help]}
+        echo "  corelist: Comma separated list of core numbers, funnel, or 'all'. Not specifying is equivalent to all"
+        echo "  sram:     Set the trace sink to on-chip sram"
+        echo "  atb:      Set the trace sink to the ATB"
+        echo "  pib:      Set the trace sink to the PIB"
+        echo "  funnel:   set the trtace sink to the funnel"
+        echo "  sba:      Set the trace sink to the system memory at the specified base and limit. If no specified"
+        echo "            they are left as previously programmed"
+        echo "  base:     The address to begin the sba trace buffer in system memory at"
+        echo "  size:     Size of the sba buffer in bytes. Must be a multiple of 4"
+        echo "  help:     Display this message"
+        echo ""
+        echo "tracedst with no arguments will display the trace sink for all cores and the funnel (if present)"
+        echo ""
+        echo "If no cores are specified and there is no trace funnel, all cores will be programed with the"
+        echo "sink specified. If no cores are specified and there is a trace funnel, all cores will be"
+        echo "programmed to sink to the funnel and the funnel will be programmed to use the sink specified"
+        echo ""
     } elseif {[string compare -nocase $dst "atb"] == 0} {
-		if {$cores == "all"} {
-			if {$has_funnel != 0} {
-			foreach core $coreList {
-				set rc [setSink $core funnel]
-				if {$rc != ""} {
-				return $rc
-				}
-			}
+        if {$cores == "all"} {
+            if {$has_funnel != 0} {
+            foreach core $coreList {
+                set rc [setSink $core funnel]
+                if {$rc != ""} {
+                return $rc
+                }
+            }
 
-			set rc [setSink funnel "atb"]
-			if {$rc != ""} {
-				return $rc
-			}
-			} else {
-			foreach core $coreList {
-				set rc [setSink $core "atb"]
-				if {$rc != ""} {
-				return $rc
-				}
-			}
-			}
-		} else {
-			foreach core $coreFunnelList {
-			set rc [setSink $core "atb"]
-			if {$rc != ""} {
-				return $rc
-			}
-			}
-		}
+            set rc [setSink funnel "atb"]
+            if {$rc != ""} {
+                return $rc
+            }
+            } else {
+            foreach core $coreList {
+                set rc [setSink $core "atb"]
+                if {$rc != ""} {
+                return $rc
+                }
+            }
+            }
+        } else {
+            foreach core $coreFunnelList {
+            set rc [setSink $core "atb"]
+            if {$rc != ""} {
+                return $rc
+            }
+            }
+        }
     } elseif {[string compare -nocase $dst "pib"] == 0} {
-		if {$cores == "all"} {
-			if {$has_funnel != 0} {
-				foreach core $coreList {
-					set rc [setSink $core funnel]
-					if {$rc != ""} {
-					return $rc
-					}
-				}
+        if {$cores == "all"} {
+            if {$has_funnel != 0} {
+                foreach core $coreList {
+                    set rc [setSink $core funnel]
+                    if {$rc != ""} {
+                    return $rc
+                    }
+                }
 
-				set rc [setSink funnel "pib"]
-				if {$rc != ""} {
-					return $rc
-				}
-			} else {
-				foreach core $coreList {
-					set rc [setSink $core "pib"]
-					if {$rc != ""} {
-					return $rc
-					}
-				}
-			}
-		} else {
-			foreach core $coreFunnelList {
-				set rc [setSink $core "pib"]
-				if {$rc != ""} {
-					return $rc
-				}
-			}
-		}
+                set rc [setSink funnel "pib"]
+                if {$rc != ""} {
+                    return $rc
+                }
+            } else {
+                foreach core $coreList {
+                    set rc [setSink $core "pib"]
+                    if {$rc != ""} {
+                    return $rc
+                    }
+                }
+            }
+        } else {
+            foreach core $coreFunnelList {
+                set rc [setSink $core "pib"]
+                if {$rc != ""} {
+                    return $rc
+                }
+            }
+        }
     } elseif {[string compare -nocase $dst "sram"] == 0} {
-		if {$cores == "all"} {
-			if {$has_funnel != 0} {
-				foreach core $coreList {
-					set rc [setSink $core funnel]
-					if {$rc != ""} {
-						return $rc
-					}
-					cleartrace $core
-				}
+        if {$cores == "all"} {
+            if {$has_funnel != 0} {
+                foreach core $coreList {
+                    set rc [setSink $core funnel]
+                    if {$rc != ""} {
+                        return $rc
+                    }
+                    cleartrace $core
+                }
 
-				set rc [setSink funnel "sram"]
-				if {$rc != ""} {
-					return $rc
-				}
-				cleartrace funnel
-			} else {
-				foreach core $coreList {
-					set rc [setSink $core "sram"]
-					if {$rc != ""} {
-					return $rc
-					}
-					cleartrace $core
-				}
-			}
-		} else {
-			foreach core $coreFunnelList {
-				set rc [setSink $core "sram"]
-				if {$rc != ""} {
-					return $rc
-				}
-				cleartrace $core
-			}
-		}
+                set rc [setSink funnel "sram"]
+                if {$rc != ""} {
+                    return $rc
+                }
+                cleartrace funnel
+            } else {
+                foreach core $coreList {
+                    set rc [setSink $core "sram"]
+                    if {$rc != ""} {
+                    return $rc
+                    }
+                    cleartrace $core
+                }
+            }
+        } else {
+            foreach core $coreFunnelList {
+                set rc [setSink $core "sram"]
+                if {$rc != ""} {
+                    return $rc
+                }
+                cleartrace $core
+            }
+        }
     } elseif {[string compare -nocase $dst "sba"] == 0} {
-	# set sink to system ram at address and size specified (if specified)
+    # set sink to system ram at address and size specified (if specified)
 
-	if {$cores == "all"} {
-	    if {$has_funnel != 0} {
-			foreach core $coreList {
-				set rc [setSink $core funnel]
-				if {$rc != ""} {
-				return $rc
-				}
-				cleartrace $core
-			}
+    if {$cores == "all"} {
+        if {$has_funnel != 0} {
+            foreach core $coreList {
+                set rc [setSink $core funnel]
+                if {$rc != ""} {
+                return $rc
+                }
+                cleartrace $core
+            }
 
-			set rc [setSink funnel "sba" $addr $size]
-			if {$rc != ""} {
-				return $rc
-			}
-			cleartrace funnel
-			} else {
-				foreach core $coreList {
-					set rc [setSink $core "sba" $addr $size]
-					if {$rc != ""} {
-					return $rc
-					}
-					cleartrace $core
-				}
-		    }
-		} else {
-			foreach core $coreFunnelList {
-				set rc [setSink $core "sba" $addr $size]
-				if {$rc != ""} {
-					return $rc
-				}
-				cleartrace $core
-			}
-		}
+            set rc [setSink funnel "sba" $addr $size]
+            if {$rc != ""} {
+                return $rc
+            }
+            cleartrace funnel
+            } else {
+                foreach core $coreList {
+                    set rc [setSink $core "sba" $addr $size]
+                    if {$rc != ""} {
+                    return $rc
+                    }
+                    cleartrace $core
+                }
+            }
+        } else {
+            foreach core $coreFunnelList {
+                set rc [setSink $core "sba" $addr $size]
+                if {$rc != ""} {
+                    return $rc
+                }
+                cleartrace $core
+            }
+        }
     } elseif {[string compare -nocase $dst funnel] == 0} {
-		if {$has_funnel == 0} {
-			return "Error: funnel not present"
-		}
+        if {$has_funnel == 0} {
+            return "Error: funnel not present"
+        }
 
-		foreach $core $coreList {
-			set rc [setSink $core funnel]
-			if {$rc != ""} {
-			echo $rc
-			return $rc
-			}
-			cleartrace $core
-		}
+        foreach $core $coreList {
+            set rc [setSink $core funnel]
+            if {$rc != ""} {
+            echo $rc
+            return $rc
+            }
+            cleartrace $core
+        }
     } else {
-		echo {Error: Usage: tracedst [sram | atb | pib | sba [base size] | help]}
+        echo {Error: Usage: tracedst [sram | atb | pib | sba [base size] | help]}
     }
 
     return ""
@@ -3233,102 +3557,102 @@ proc trace {{cores "all"} {opt ""}} {
     set coreList [parseCoreFunnelList $cores]
 
     if {$coreList == "error"} {
-		if {$opt == ""} {
-			set opt $cores
-			set cores "all"
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
 
-			set coreList [parseCoreFunnelList $cores]
-		}
+            set coreList [parseCoreFunnelList $cores]
+        }
 
-		if {$coreList == "error"} {
-			echo {Error: Usage: trace [corelist] [on | off | reset | settings | help]}
-			return "error"
-		}
+        if {$coreList == "error"} {
+            echo {Error: Usage: trace [corelist] [on | off | reset | settings | help]}
+            return "error"
+        }
     }
 
     if {$opt == ""} {
-		# display current status of ts enable
-		set rv ""
+        # display current status of ts enable
+        set rv ""
 
-		foreach core $coreList {
-			if {$core == "funnel"} {
-			set te "$core: "
-			} else {
-			set te "core $core: "
-			}
+        foreach core $coreList {
+            if {$core == "funnel"} {
+            set te "$core: "
+            } else {
+            set te "core $core: "
+            }
 
-			lappend te [getTraceEnable $core]
+            lappend te [getTraceEnable $core]
 
-			if {$rv != ""} {
-			append rv "; "
-			}
+            if {$rv != ""} {
+            append rv "; "
+            }
 
-			append rv $te
-		}
+            append rv $te
+        }
 
-		return $rv
+        return $rv
     }
 
     if {$opt == "help"} {
-		echo "trace: set or display the maximum number of BTMs between Sync messages"
-		echo {Usage: trace [corelist] [on | off | reset | settings | help]}
-		echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-		echo "  on:       Enable tracing"
-		echo "  off:      Disable tracing"
-		echo "  reset:    Reset trace encoder"
-		echo "  settings: Display current trace related settings"
-		echo "  help:     Display this message"
-		echo ""
-		echo "trace with no arguments will display if tracing is currently enabled for all cores (on or off)"
-		echo ""
+        echo "trace: set or display the maximum number of BTMs between Sync messages"
+        echo {Usage: trace [corelist] [on | off | reset | settings | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  on:       Enable tracing"
+        echo "  off:      Disable tracing"
+        echo "  reset:    Reset trace encoder"
+        echo "  settings: Display current trace related settings"
+        echo "  help:     Display this message"
+        echo ""
+        echo "trace with no arguments will display if tracing is currently enabled for all cores (on or off)"
+        echo ""
     } elseif {$opt == "on"} {
-		foreach core $coreList {
-			enableTraceEncoderManual $core
-			enableTracingManual $core
-		}
+        foreach core $coreList {
+            enableTraceEncoderManual $core
+            enableTracingManual $core
+        }
     } elseif {$opt == "off"} {
-		foreach core $coreList {
-			disableTraceEncoderManual $core
-		}
+        foreach core $coreList {
+            disableTraceEncoderManual $core
+        }
     } elseif {$opt == "reset"} {
-		foreach core $coreList {
-			resetTrace $core
-		}
+        foreach core $coreList {
+            resetTrace $core
+        }
     } elseif {$opt == "settings"} {
-		# build a cores option without funnel
+        # build a cores option without funnel
 
-		set cores2 ""
+        set cores2 ""
 
-		foreach core $coreList {
-			if {$core != "funnel"} {
-			if {$cores2 != ""} {
-				append cores2 ","
-			}
-			append cores2 $core
-			}
-		}
+        foreach core $coreList {
+            if {$core != "funnel"} {
+            if {$cores2 != ""} {
+                append cores2 ","
+            }
+            append cores2 $core
+            }
+        }
 
-		cores
-		srcbits
+        cores
+        srcbits
 
-		trace $cores
-		stoponwrap $cores
+        trace $cores
+        stoponwrap $cores
 
-		if {$cores2 != ""} {
-			echo "ts: [ts $cores2]"
-			echo "tsdebug: [tsdebug $cores2]"
-			echo "tsclock: [tsclock $cores2]"
-			echo "tsprescale: [tsprescale $cores2]"
-			echo "tsbranch: [tsbranch $cores2]"
-			echo "tsitc: [tsitc $cores2]"
-			echo "tsowner: [tsowner $cores2]"
-			echo "tracemode: [tracemode $cores2]"
-			echo "itc: [itc $cores2]"
-			echo "maxicnt: [maxicnt $cores2]"
-			echo "maxbtm: [maxbtm $cores2]"
-		}
+        if {$cores2 != ""} {
+            echo "ts: [ts $cores2]"
+            echo "tsdebug: [tsdebug $cores2]"
+            echo "tsclock: [tsclock $cores2]"
+            echo "tsprescale: [tsprescale $cores2]"
+            echo "tsbranch: [tsbranch $cores2]"
+            echo "tsitc: [tsitc $cores2]"
+            echo "tsowner: [tsowner $cores2]"
+            echo "tracemode: [tracemode $cores2]"
+            echo "itc: [itc $cores2]"
+            echo "maxicnt: [maxicnt $cores2]"
+            echo "maxbtm: [maxbtm $cores2]"
+        }
     } else {
-		echo {Error: Usage: trace [corelist] [on | off | reset | settings | help]}
+        echo {Error: Usage: trace [corelist] [on | off | reset | settings | help]}
     }
 }
 
@@ -3342,23 +3666,23 @@ proc wordscollected {core} {
     set tracewp [gettracewp $core]
 
     switch [string toupper [getSink $core]] {
-		"SRAM" { if {$tracewp & 1} {
-			set size [getTraceBufferSize $core]
-			return "[expr $size / 4] trace words collected"
-			}
+        "SRAM" { if {$tracewp & 1} {
+            set size [getTraceBufferSize $core]
+            return "[expr $size / 4] trace words collected"
+            }
 
-			return "[expr $tracewp / 4] trace words collected"
-		}
-		"SBA"  { if {$tracewp & 1} {
-			set size [getTraceBufferSize $core]
-			return "[expr $size / 4] trace words collected"
-			}
+            return "[expr $tracewp / 4] trace words collected"
+        }
+        "SBA"  { if {$tracewp & 1} {
+            set size [getTraceBufferSize $core]
+            return "[expr $size / 4] trace words collected"
+            }
 
-			set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-			set traceend $tracewp
+            set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+            set traceend $tracewp
 
-			return "[expr ($traceend - $tracebegin) / 4] trace words collected"
-		}
+            return "[expr ($traceend - $tracebegin) / 4] trace words collected"
+        }
     }
 
     return "unknown trace words collected"
@@ -3405,10 +3729,10 @@ proc get_num_external_trigger_outputs {core} {
 
     set result 0
     for {set i 0} {$i < 8} {incr i} {
-		if {($readback & 0xF) == 1} {
-			incr result
-		}
-		set readback [expr $readback >> 4]
+        if {($readback & 0xF) == 1} {
+            incr result
+        }
+        set readback [expr $readback >> 4]
     }
     return $result
 }
@@ -3433,10 +3757,10 @@ proc get_num_external_trigger_inputs {core} {
 
     set result 0
     for {set i 0} {$i < 8} {incr i} {
-		if {($readback & 0xF) == 0x2} {
-			incr result
-		}
-		set readback [expr $readback >> 4]
+        if {($readback & 0xF) == 0x2} {
+            incr result
+        }
+        set readback [expr $readback >> 4]
     }
     return $result
 }
@@ -3460,8 +3784,8 @@ proc wp_control_set {core bit} {
 #    echo "wp_control_set($core $bit)"
 
     foreach baseAddress $traceBaseAddresses {
-		set newval [expr [word [expr $baseAddress + $wp_control_offset]] | (1 << $bit)]
-		mww [expr $baseAddress + $wp_control_offset] $newval
+        set newval [expr [word [expr $baseAddress + $wp_control_offset]] | (1 << $bit)]
+        mww [expr $baseAddress + $wp_control_offset] $newval
     }
 }
 
@@ -3472,8 +3796,8 @@ proc wp_control_clear {core bit} {
 #    echo "wp_control_clear($core $bit)"
 
     foreach baseAddress $traceBaseAddresses {
-		set newval [expr [word [expr $baseAddress + $wp_control_offset]] & ~(1 << $bit)]
-		mww [expr $baseAddress + $wp_control_offset] $newval
+        set newval [expr [word [expr $baseAddress + $wp_control_offset]] & ~(1 << $bit)]
+        mww [expr $baseAddress + $wp_control_offset] $newval
     }
 }
 
@@ -3491,55 +3815,55 @@ proc wp_control {cores {bit ""} {val ""}} {
 #    echo "wp_control($cores $bit $val)"
 
     if {$bit == ""} {
-		set bit $cores
-		set cores "all"
+        set bit $cores
+        set cores "all"
     }
 
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-		echo {Error: Usage: wp_control corelist (wpnum [edge | range]) | help}
-		return "error"
+        echo {Error: Usage: wp_control corelist (wpnum [edge | range]) | help}
+        return "error"
     }
 
     if {$bit == "help"} {
-		echo "wp_control: set or display edge or range mode for slected watchpoint"
-		echo {Usage: wp_control corelist (wpnum [edge | range]) | help}
-		echo "  corelist: Comma separated list of core numbers, or 'all'."
-		echo "  wpnum:    Watchpoint number (0-31)"
-		echo "  edge:     Select edge mode"
-		echo "  range:    Select range mode"
-		echo "  help:     Display this message"
-		echo ""
+        echo "wp_control: set or display edge or range mode for slected watchpoint"
+        echo {Usage: wp_control corelist (wpnum [edge | range]) | help}
+        echo "  corelist: Comma separated list of core numbers, or 'all'."
+        echo "  wpnum:    Watchpoint number (0-31)"
+        echo "  edge:     Select edge mode"
+        echo "  range:    Select range mode"
+        echo "  help:     Display this message"
+        echo ""
     } elseif {$val == ""} {
-		set rv ""
+        set rv ""
 
-		foreach core $coreList {
-			set b [wp_control_get_bit $core $bit]
-			if {$b != 0} {
-				set wp "core $core: range"
-			} else {
-				set wp "core $core: edge"
-			}
+        foreach core $coreList {
+            set b [wp_control_get_bit $core $bit]
+            if {$b != 0} {
+                set wp "core $core: range"
+            } else {
+                set wp "core $core: edge"
+            }
 
-			if {$rv != ""} {
-				append rv "; "
-			}
+            if {$rv != ""} {
+                append rv "; "
+            }
 
-			append rv $wp
-		}
+            append rv $wp
+        }
 
-		return $rv
-	} elseif {$val == "edge"} {
-		foreach core $coreList {
-			wp_control_clear $core $bit
-		}
-	} elseif {$val == "range"} {
-		foreach core $coreList {
-			wp_control_set $core $bit
-		}
+        return $rv
+    } elseif {$val == "edge"} {
+        foreach core $coreList {
+            wp_control_clear $core $bit
+        }
+    } elseif {$val == "range"} {
+        foreach core $coreList {
+            wp_control_set $core $bit
+        }
     } else {
-		echo {Error: Usage: wp_control corelist (wpnum [edge | range]) | help}
+        echo {Error: Usage: wp_control corelist (wpnum [edge | range]) | help}
     }
 }
 
@@ -3587,67 +3911,67 @@ proc xti_action {cores {idx ""} {val ""}} {
 #    echo "xti_action($cores $idx $val)"
 
     if {$idx == ""} {
-		set idx $cores
-		set cores "all"
+        set idx $cores
+        set cores "all"
     }
 
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-		echo {Error: Usage: xti_action corelist (xtireg [none | start | stop | record] | help)}
-		return "error"
+        echo {Error: Usage: xti_action corelist (xtireg [none | start | stop | record] | help)}
+        return "error"
     }
 
     if {$idx == "help"} {
-		echo "xti_action: set or display external trigger input action type (none, start, stop record)"
-		echo {Usage: xti_action corelist (xtireg [none | start | stop | record] | help)}
-		echo "  corelist: Comma separated list of core numbers, or 'all'."
-		echo "  xtireg:   XTI action number (0 - 7)"
-		echo "  none:     no action"
-		echo "  start:    start tracing"
-		echo "  stop:     stop tracing"
-		echo "  record:   emot program trace sync message"
-		echo "  help:     Display this message"
-		echo ""
+        echo "xti_action: set or display external trigger input action type (none, start, stop record)"
+        echo {Usage: xti_action corelist (xtireg [none | start | stop | record] | help)}
+        echo "  corelist: Comma separated list of core numbers, or 'all'."
+        echo "  xtireg:   XTI action number (0 - 7)"
+        echo "  none:     no action"
+        echo "  start:    start tracing"
+        echo "  stop:     stop tracing"
+        echo "  record:   emot program trace sync message"
+        echo "  help:     Display this message"
+        echo ""
     } elseif {$val == ""} {
-		# display current state of xti reg
-		set rv ""
+        # display current state of xti reg
+        set rv ""
 
-		foreach core $coreList {
-			switch [xti_action_read $core $idx] {
-				0       { set action "none"   }
-				2       { set action "start"  }
-				3       { set action "stop"   }
-				4       { set action "record" }
-				default { set action "reserved" }
-			}
+        foreach core $coreList {
+            switch [xti_action_read $core $idx] {
+                0       { set action "none"   }
+                2       { set action "start"  }
+                3       { set action "stop"   }
+                4       { set action "record" }
+                default { set action "reserved" }
+            }
 
-			set tsd "core $core: $action"
+            set tsd "core $core: $action"
 
-			if {$rv != ""} {
-				append rv "; "
-			}
+            if {$rv != ""} {
+                append rv "; "
+            }
 
-			append rv $tsd
-		}
+            append rv $tsd
+        }
 
-		return $rv
+        return $rv
     } else {
-		# set current state of xti reg
-		set rv ""
+        # set current state of xti reg
+        set rv ""
 
-		foreach core $coreList {
-			switch $val {
-				"none"   { set action 0 }
-				"start"  { set action 2 }
-				"stop"   { set action 3 }
-				"record" { set action 4 }
-				default  { set action 0 }
-			}
+        foreach core $coreList {
+            switch $val {
+                "none"   { set action 0 }
+                "start"  { set action 2 }
+                "stop"   { set action 3 }
+                "record" { set action 4 }
+                default  { set action 0 }
+            }
 
-			xti_action_write $core $idx $action
-		}
-		echo -n ""
+            xti_action_write $core $idx $action
+        }
+        echo -n ""
     }
 }
 
@@ -3662,6 +3986,7 @@ proc init {} {
     global CABaseAddrArray
     global num_cores
     global has_funnel
+    global has_event
     global have_htm
 
 #    echo "init()"
@@ -3680,29 +4005,33 @@ proc init {} {
     set core 0
 
     foreach addr $traceBaseAddresses {
-		set traceBaseAddrArray($core) $addr
-		setSink $core "SRAM"
-		incr core
+        set traceBaseAddrArray($core) $addr
+        setSink $core "SRAM"
+        incr core
     }
 
     set num_cores $core
     set core 0
 
     foreach addr $caBaseAddresses {
-		set CABaseAddrArray($core) $addr
-		incr core
+        set CABaseAddrArray($core) $addr
+        incr core
     }
 
     if {($traceFunnelAddress != 0x00000000) && ($traceFunnelAddress != "")} {
-		set traceBaseAddrArray(funnel) $traceFunnelAddress
-		set has_funnel 1
-		setSink funnel "SRAM"
+        set traceBaseAddrArray(funnel) $traceFunnelAddress
+        set has_funnel 1
+        setSink funnel "SRAM"
     } else {
-		set has_funnel 0
+        set has_funnel 0
     }
 
     set have_htm [checkHaveHTM]
-	
+
+    # see if we have an evControl reg
+
+    set has_event [checkHaveEvent]
+    
     setTraceBufferWidth
 
     echo -n ""
@@ -3717,25 +4046,25 @@ proc qts {{cores "all"}} {
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-		echo "Error: Usage: qts [<cores>]"
-		return "error"
+        echo "Error: Usage: qts [<cores>]"
+        return "error"
     }
 
     # display current status of ts enable
     set rv ""
 
     foreach core $coreList {
-		if {$core != "funnel"} {
-			set tse "core $core: "
+        if {$core != "funnel"} {
+            set tse "core $core: "
 
-			lappend tse [wordhex [expr $traceBaseAddrArray($core) + $ts_control_offset]]
+            lappend tse [wordhex [expr $traceBaseAddrArray($core) + $ts_control_offset]]
 
-			if {$rv != ""} {
-				append rv "; $tse"
-			} else {
-				set rv $tse
-			}
-		}
+            if {$rv != ""} {
+                append rv "; $tse"
+            } else {
+                set rv $tse
+            }
+        }
     }
 
     return $rv
@@ -3748,23 +4077,23 @@ proc qte {{cores "all"}} {
     set coreList [parseCoreFunnelList $cores]
 
     if {$coreList == "error"} {
-		echo "Error: Usage: qte [<cores>]"
-		return "error"
+        echo "Error: Usage: qte [<cores>]"
+        return "error"
     }
 
     # display current status of ts enable
     set rv ""
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_control_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_control_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     return $rv
@@ -3777,23 +4106,23 @@ proc qtw {{cores "all"}} {
     set coreList [parseCoreFunnelList $cores]
 
     if {$coreList == "error"} {
-		echo "Error: Usage: qtw [<cores>]"
-		return "error"
+        echo "Error: Usage: qtw [<cores>]"
+        return "error"
     }
 
     # display current status of ts enable
     set rv ""
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     return $rv
@@ -3806,23 +4135,23 @@ proc qtb {{cores "all"}} {
     set coreList [parseCoreFunnelList $cores]
 
     if {$coreList == "error"} {
-		echo "Error: Usage: qtb [<cores>]"
-		return "error"
+        echo "Error: Usage: qtb [<cores>]"
+        return "error"
     }
 
     # display current status of ts enable
     set rv ""
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     return $rv
@@ -3835,23 +4164,23 @@ proc qtl {{cores "all"}} {
     set coreList [parseCoreFunnelList $cores]
 
     if {$coreList == "error"} {
-		echo "Error: Usage: qte [<cores>]"
-		return "error"
+        echo "Error: Usage: qte [<cores>]"
+        return "error"
     }
 
     # display current status of ts enable
     set rv ""
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     return $rv
@@ -3864,23 +4193,23 @@ proc qitctraceenable {{cores "all"}} {
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-		echo "Error: Usage: qitctraceenable [corelist]"
-		return "error"
+        echo "Error: Usage: qitctraceenable [corelist]"
+        return "error"
     }
 
     # display current status of itctraceenable
     set rv ""
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $itc_traceenable_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $itc_traceenable_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     return $rv
@@ -3893,23 +4222,23 @@ proc qitctriggerenable {{cores "all"}} {
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-		echo "Error: Usage: qitctriggerenable [corelist]"
-		return "error"
+        echo "Error: Usage: qitctriggerenable [corelist]"
+        return "error"
     }
 
     # display current status of itctriggerenable
     set rv ""
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_triggerenable_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_triggerenable_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     return $rv
@@ -3922,6 +4251,7 @@ proc qitctriggerenable {{cores "all"}} {
 proc dtr {{cores "all"}} {
     global traceBaseAddrArray
     global te_control_offset
+    global ev_control_offset
     global te_impl_offset
     global te_sinkbase_offset
     global te_sinkbasehigh_offset
@@ -3936,11 +4266,14 @@ proc dtr {{cores "all"}} {
     global itc_trigenable_offset
     global ts_control_offset
 
+    global has_funnel 
+    global has_event
+
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-		echo "Error: Usage: dtr [corelist]"
-		return "error"
+        echo "Error: Usage: dtr [corelist]"
+        return "error"
     }
 
     # display current status of teenable
@@ -3948,15 +4281,15 @@ proc dtr {{cores "all"}} {
     set rv "teControl: "
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_control_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_control_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
@@ -3964,15 +4297,15 @@ proc dtr {{cores "all"}} {
     set rv "teImpl:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_impl_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_impl_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
@@ -3980,15 +4313,15 @@ proc dtr {{cores "all"}} {
     set rv "te_sinkBase:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
@@ -3996,15 +4329,15 @@ proc dtr {{cores "all"}} {
     set rv "te_sinkBaseHigh:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
@@ -4012,15 +4345,15 @@ proc dtr {{cores "all"}} {
     set rv "te_sinkLimit:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
@@ -4028,15 +4361,15 @@ proc dtr {{cores "all"}} {
     set rv "te_sinkwp:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
@@ -4044,15 +4377,15 @@ proc dtr {{cores "all"}} {
     set rv "te_sinkrp:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkrp_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkrp_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
@@ -4060,15 +4393,15 @@ proc dtr {{cores "all"}} {
     set rv "itcTraceEnable:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $itc_traceenable_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $itc_traceenable_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
@@ -4076,15 +4409,15 @@ proc dtr {{cores "all"}} {
     set rv "itcTrigEnable:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $itc_trigenable_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $itc_trigenable_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
@@ -4092,31 +4425,49 @@ proc dtr {{cores "all"}} {
     set rv "tsControl:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $ts_control_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $ts_control_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
 
+    if {$has_event != 0} {
+        set rv "evControl:"
+
+        foreach core $coreList {
+            set tse "core $core: "
+
+            lappend tse [wordhex [expr $traceBaseAddrArray($core) + $ev_control_offset]]
+
+            if {$rv != ""} {
+                append rv "; $tse"
+            } else {
+                set rv $tse
+            }
+        }
+
+        echo "$rv"
+    }
+
     set rv "xtiControl:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $xti_control_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $xti_control_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
@@ -4124,82 +4475,141 @@ proc dtr {{cores "all"}} {
     set rv "xtoControl:"
 
     foreach core $coreList {
-		set tse "core $core: "
+        set tse "core $core: "
 
-		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $xto_control_offset]]
+        lappend tse [wordhex [expr $traceBaseAddrArray($core) + $xto_control_offset]]
 
-		if {$rv != ""} {
-			append rv "; $tse"
-		} else {
-			set rv $tse
-		}
+        if {$rv != ""} {
+            append rv "; $tse"
+        } else {
+            set rv $tse
+        }
     }
 
     echo "$rv"
 
+    if {$has_funnel != 0} {
+        # display current status of funnel regs
+  
+        set rv "tfControl: "
+
+    set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_control_offset]]
+
+        append rv $tse
+
+        echo "$rv"
+
+        set rv "tfImpl: "
+
+    set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_impl_offset]]
+
+    append rv $tse
+
+        echo "$rv"
+
+        set rv "tfSinkBase: "
+
+    set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset]]
+
+    append rv $tse
+
+        echo "$rv"
+
+        set rv "tfSinkBaseHigh: "
+
+    set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_sinkbasehigh_offset]]
+
+    append rv $tse
+
+        echo "$rv"
+
+        set rv "tfSinkLimit:"
+
+    set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_sinklimit_offset]]
+
+    append rv $tse
+
+        echo "$rv"
+
+        set rv "tfSinkwp:"
+
+    set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_sinkwp_offset]]
+
+    append rv $tse
+
+        echo "$rv"
+
+        set rv "tfSinkrp:"
+
+        set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_sinkrp_offset]]
+
+    append rv $tse
+
+        echo "$rv"
+    }
 }
 
 # program chip to collect a trace in the sba buffer
 
 proc sba {{addr ""} {size ""}} {
-	if {($addr == "") || ($size == "")} {
-		echo "Useage: sba addr size"
-	} else {
-		global verbose
-		set verbose 2
-		stoponwrap 0 on
-		setTeStallEnable 0 on
-		set htm [checkHaveHTM]
-		if {$htm != 0} {
-			tracemode 0 htm
-		} else {
-			tracemode 0 btm
-		}
-		tracedst 0 sba $addr $size
-	        cleartrace 0
-		trace 0 on
-	}
+    if {($addr == "") || ($size == "")} {
+        echo "Useage: sba addr size"
+    } else {
+        global verbose
+        set verbose 2
+        stoponwrap 0 on
+        setTeStallEnable 0 on
+        set htm [checkHaveHTM]
+        if {$htm != 0} {
+            tracemode 0 htm
+        } else {
+            tracemode 0 btm
+        }
+        tracedst 0 sba $addr $size
+            cleartrace 0
+        trace 0 on
+    }
 }
 
 # program chip to collect a trace in the sram buffer
 
 proc sram {} {
-	global verbose
-	set verbose 2
-	stoponwrap 0 on
-	setTeStallEnable 0 on
-	set htm [checkHaveHTM]
-	if {$htm != 0} {
-		tracemode 0 htm
-	} else {
-		tracemode 0 btm
-	}
-	tracedst 0 sram
-	cleartrace 0
-	trace 0 on
+    global verbose
+    set verbose 2
+    stoponwrap 0 on
+    setTeStallEnable 0 on
+    set htm [checkHaveHTM]
+    if {$htm != 0} {
+        tracemode 0 htm
+    } else {
+        tracemode 0 btm
+    }
+    tracedst 0 sram
+    cleartrace 0
+    trace 0 on
 }
 
 proc sample {} {
-	global verbose
+    global verbose
 
 #	echo "sample()"
 
-	set verbose 2
-	stoponwrap 0 on
-	setTeStallEnable 0 on
-	tracemode 0 sample
-	tracedst 0 sram
-	cleartrace
-	trace on
+    set verbose 2
+    stoponwrap 0 on
+    setTeStallEnable 0 on
+    tracemode 0 sample
+    tracedst 0 sram
+    cleartrace
+    trace on
 }
 
 proc tsallon {} {
 #	echo "tsallon()"
 
-	ts all on
-	tsbranch all all
-	tsitc all on
-	tsowner all on
+    ts all on
+    tsbranch all all
+    tsitc all on
+    tsowner all on
 }
 
 proc haspcsampling {core} {
@@ -4211,12 +4621,12 @@ proc haspcsampling {core} {
     set current [word [expr $traceBaseAddrArray($core) + $pcs_control_offset]]
 
     mww [expr $traceBaseAddrArray($core) + $pcs_control_offset] 0x1
-	set t [word [expr $traceBaseAddrArray($core) + $pcs_control_offset]]
+    set t [word [expr $traceBaseAddrArray($core) + $pcs_control_offset]]
 
-	mww [expr $traceBaseAddrArray($core) + $pcs_control_offset] $current
+    mww [expr $traceBaseAddrArray($core) + $pcs_control_offset] $current
 
-	if {($t & 0x1) != 0} {
-		return "true"
+    if {($t & 0x1) != 0} {
+        return "true"
     }
 
     return "false"
@@ -4229,9 +4639,9 @@ proc enablepcsampling {core size} {
 
 #    echo "enablepcsampoing($core [format 0x%08lx $size])"
 
-	set samp_ofs [expr $pcs_sample - $size + 4]
+    set samp_ofs [expr $pcs_sample - $size + 4]
 
-	riscv memory_sample ${core} [expr $traceBaseAddrArray($core) + $samp_ofs] $size
+    riscv memory_sample ${core} [expr $traceBaseAddrArray($core) + $samp_ofs] $size
     mww [expr $traceBaseAddrArray($core) + $pcs_control_offset] 0x1
 }
 
@@ -4245,14 +4655,14 @@ proc disablepcsampling {core} {
 }
 
 proc fetchsampledata {fn} {
-	#echo "fetching sample data to $fn"
+    #echo "fetching sample data to $fn"
 
 #    echo "fetchsampledata($fn)"
 
-	set fp [open $fn w]
-	set result [riscv dump_sample_buf base64]
-	puts -nonewline $fp $result
-	close $fp
+    set fp [open $fn w]
+    set result [riscv dump_sample_buf base64]
+    puts -nonewline $fp $result
+    close $fp
 }
 
 init

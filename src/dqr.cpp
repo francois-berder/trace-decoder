@@ -3449,7 +3449,6 @@ TraceDqr::ADDRESS NexusMessage::getU_Addr()
 	    	return ict.ckdata[0];
 	    case TraceDqr::ICT_CONTROL:
 	    	if (ict.ckdf == 1) {
-	    		// ckdata0 is the address of ???
 	    		return ict.ckdata[0];
 	    	}
 	    	break;
@@ -3459,7 +3458,6 @@ TraceDqr::ADDRESS NexusMessage::getU_Addr()
 	    		return ict.ckdata[0];
 	    	} else if (ict.ckdf == 1) { // call/return
 	    		// ckdata[0] is the address of the call instruction. destination is computed from ckdata[1]
-	    		printf("ckdata[1] is the transfer address. Need to handle it!\n");
 	    		return ict.ckdata[0];
 	    	}
 	    	break;
@@ -3532,41 +3530,40 @@ TraceDqr::ADDRESS NexusMessage::getF_Addr()
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 		return indirectHistoryWS.f_addr;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-		switch (ict.cksrc) {
+		switch (ictWS.cksrc) {
 		case TraceDqr::ICT_EXT_TRIG:
 			// ckdata0 is the address of the instruciton that retired before generating the exception
-			return ict.ckdata[0];
+			return ictWS.ckdata[0];
 		case TraceDqr::ICT_CONTROL:
-			if (ict.ckdf == 1) {
-				// ckdata0 is the address of ???
-				return ict.ckdata[0];
+			if (ictWS.ckdf == 1) {
+				return ictWS.ckdata[0];
 			}
 			break;
 		case TraceDqr::ICT_INFERABLECALL:
-			if (ict.ckdf == 0) { // inferrable call
+			if (ictWS.ckdf == 0) { // inferrable call
 				// ckdata[0] is the address of the call instruction. destination determined form program image
-				return ict.ckdata[0];
-			} else if (ict.ckdf == 1) { // call/return
+				return ictWS.ckdata[0];
+			} else if (ictWS.ckdf == 1) { // call/return
 	    		// ckdata[0] is the address of the call instruction. destination is computed from ckdata[1]
-	    		printf("ckdata[1] is the transfer address. Need to handle it!\n");
-	    		return ict.ckdata[0];
+				// for now, just return the faddr
+				return ictWS.ckdata[0];
 			}
     	break;
 		case TraceDqr::ICT_EXCEPTION:
 			// ckdata0 the address of the next mainline instruction to execute (will execute after the return from except)
-			return ict.ckdata[0];
+			return ictWS.ckdata[0];
 		case TraceDqr::ICT_INTERRUPT:
 			// ckdata0 is the address of the next instruction to execute in mainline code (will execute after the return from interrupt)
-			return ict.ckdata[0];
+			return ictWS.ckdata[0];
 		case TraceDqr::ICT_CONTEXT:
 			// ckdata[0] is the address of the instruction prior to doing the context switch
-			return ict.ckdata[0];
+			return ictWS.ckdata[0];
 		case TraceDqr::ICT_WATCHPOINT:
 			// ckdata0 is the address of the last instruction to retire??
-			return ict.ckdata[0];
+			return ictWS.ckdata[0];
 		case TraceDqr::ICT_PC_SAMPLE:
 			// periodic pc sample. Address of last instruciton to retire??
-			return ict.ckdata[0];
+			return ictWS.ckdata[0];
 		case TraceDqr::ICT_NONE:
 		default:
 			break;
@@ -4782,7 +4779,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
 				}
 				else if (ict.ckdf == 1) {
-					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger + ID (%d) ID %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger + ID (%d) Trigger ID %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
 				}
 				else {
 					printf("Error: messageToText(): ICT_EXTERNAL_TRIG: invalid ict.ckdf value: %d\n",ict.ckdf);
@@ -4794,7 +4791,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
 				}
 				else if (ict.ckdf == 1) {
-					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint + ID (%d) ID %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint + ID (%d) Trigger ID %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
 				}
 				else {
 					printf("Error: messageToText(): ICT_WATCHPOINT: invalid ict.ckdf value: %d\n",ict.ckdf);
@@ -4823,7 +4820,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 				snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) Context %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
 				break;
 			case TraceDqr::ICT_PC_SAMPLE:
-				snprintf(dst+n,dst_len-n," ICT Reason: Periodic (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata);
+				snprintf(dst+n,dst_len-n," ICT Reason: Periodic (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
 				break;
 			case TraceDqr::ICT_CONTROL:
 				if (ict.ckdf == 0) {
@@ -4848,70 +4845,70 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		n += snprintf(dst+n,dst_len-n,"INCIRCUITTRACE WS (%d)",tcode);
 
 		if (level >= 2) {
-			switch (ict.cksrc) {
+			switch (ictWS.cksrc) {
 			case TraceDqr::ICT_EXT_TRIG:
-				if (ict.ckdf == 0) {
-					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
+				if (ictWS.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger (%d) F-ADDR: 0x%08llx",ictWS.cksrc,ictWS.ckdata[0]);
 				}
-				else if (ict.ckdf == 1) {
-					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger + ID (%d) ID %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				else if (ictWS.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: External Trigger + ID (%d) Trigger ID %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],ictWS.ckdata[0]);
 				}
 				else {
-					printf("Error: messageToText(): ICT_EXTERNAL_TRIG: invalid ict.ckdf value: %d\n",ict.ckdf);
-					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_EXTERNAL_TRIG: invalid ict.ckdf value: %d",ict.ckdf);
+					printf("Error: messageToText(): ICT_EXTERNAL_TRIG: invalid ictWS.ckdf value: %d\n",ictWS.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_EXTERNAL_TRIG: invalid ictWS.ckdf value: %d",ictWS.ckdf);
 				}
 				break;
 			case TraceDqr::ICT_WATCHPOINT:
-				if (ict.ckdf == 0) {
-					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
+				if (ictWS.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint (%d) U-ADDR: 0x%08llx",ictWS.cksrc,ictWS.ckdata[0]);
 				}
-				else if (ict.ckdf == 1) {
-					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint + ID (%d) ID %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				else if (ictWS.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Watchpoint + ID (%d) Trigger ID %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],ictWS.ckdata[0]);
 				}
 				else {
-					printf("Error: messageToText(): ICT_WATCHPOINT: invalid ict.ckdf value: %d\n",ict.ckdf);
-					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_WATCHPOINT: invalid ict.ckdf value: %d",ict.ckdf);
+					printf("Error: messageToText(): ICT_WATCHPOINT: invalid ictWS.ckdf value: %d\n",ictWS.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_WATCHPOINT: invalid ictWS.ckdf value: %d",ictWS.ckdf);
 				}
 				break;
 			case TraceDqr::ICT_INFERABLECALL:
-				if (ict.ckdf == 0) {
-					snprintf(dst+n,dst_len-n," ICT Reason: Inferable Call (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
+				if (ictWS.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Inferable Call (%d) F-ADDR: 0x%08llx",ictWS.cksrc,ictWS.ckdata[0]);
 				}
-				else if (ict.ckdf == 1) {
-					snprintf(dst+n,dst_len-n," ICT Reason: Call/Return (%d) U-ADDR: 0x%08llx PCdest 0x%08llx",ict.cksrc,ict.ckdata[0],ict.ckdata[1]);
+				else if (ictWS.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Call/Return (%d) F-ADDR: 0x%08llx PCdest 0x%08llx",ictWS.cksrc,ictWS.ckdata[0],ictWS.ckdata[1]);
 				}
 				else {
-					printf("Error: messageToText(): ICT_INFERABLECALL: invalid ict.ckdf value: %d\n",ict.ckdf);
-					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_INFERABLECALL: invalid ict.ckdf value: %d",ict.ckdf);
+					printf("Error: messageToText(): ICT_INFERABLECALL: invalid ictWS.ckdf value: %d\n",ictWS.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_INFERABLECALL: invalid ictWS.ckdf value: %d",ictWS.ckdf);
 				}
 				break;
 			case TraceDqr::ICT_EXCEPTION:
-				snprintf(dst+n,dst_len-n," ICT Reason: Exception (%d) Cause %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				snprintf(dst+n,dst_len-n," ICT Reason: Exception (%d) Cause %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],ictWS.ckdata[0]);
 				break;
 			case TraceDqr::ICT_INTERRUPT:
-				snprintf(dst+n,dst_len-n," ICT Reason: Interrupt (%d) Cause %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				snprintf(dst+n,dst_len-n," ICT Reason: Interrupt (%d) Cause %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],ictWS.ckdata[0]);
 				break;
 			case TraceDqr::ICT_CONTEXT:
-				snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) Context %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) Context %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],ictWS.ckdata[0]);
 				break;
 			case TraceDqr::ICT_PC_SAMPLE:
-				snprintf(dst+n,dst_len-n," ICT Reason: Periodic (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata);
+				snprintf(dst+n,dst_len-n," ICT Reason: Periodic (%d) F-ADDR: 0x%08llx",ictWS.cksrc,ictWS.ckdata[0]);
 				break;
 			case TraceDqr::ICT_CONTROL:
-				if (ict.ckdf == 0) {
-					snprintf(dst+n,dst_len-n," ICT Reason: Control (%d) Control %d",ict.cksrc,(int)ict.ckdata[0]);
+				if (ictWS.ckdf == 0) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Control (%d) Control %d",ictWS.cksrc,(int)ictWS.ckdata[0]);
 				}
-				else if (ict.ckdf == 1) {
-					snprintf(dst+n,dst_len-n," ICT Reason: Control (%d) Control %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				else if (ictWS.ckdf == 1) {
+					snprintf(dst+n,dst_len-n," ICT Reason: Control (%d) Control %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],ictWS.ckdata[0]);
 				}
 				else {
-					printf("Error: messageToText(): ICT_CONTROL: invalid ict.ckdf value: %d\n",ict.ckdf);
-					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_CONTROL: invalid ict.ckdf value: %d",ict.ckdf);
+					printf("Error: messageToText(): ICT_CONTROL: invalid ictWS.ckdf value: %d\n",ictWS.ckdf);
+					snprintf(dst+n,dst_len-n," Error: messageToText(): ICT_CONTROL: invalid ictWS.ckdf value: %d",ictWS.ckdf);
 				}
 				break;
 			default:
-				printf("Error: messageToText(): Invalid ICT Event: %d\n",ict.cksrc);
-				snprintf(dst+n,dst_len-n," Error: messageToText(): Invalid ICT Event: %d",ict.cksrc);
+				printf("Error: messageToText(): Invalid ICT Event: %d\n",ictWS.cksrc);
+				snprintf(dst+n,dst_len-n," Error: messageToText(): Invalid ICT Event: %d",ictWS.cksrc);
 				break;
 			}
 		}
@@ -5567,7 +5564,7 @@ TraceDqr::DQErr SliceFileParser::parseICT(NexusMessage &nm,Analytics &analytics)
 
 	bits += 2;
 
-	if (tmp != 0) {
+	if (tmp > 1) {
 		status = TraceDqr::DQERR_ERR;
 
 		return status;
@@ -5676,7 +5673,7 @@ TraceDqr::DQErr SliceFileParser::parseICTWS(NexusMessage &nm,Analytics &analytic
 
 	bits += 2;
 
-	if (tmp != 0) {
+	if (tmp > 1) {
 		status = TraceDqr::DQERR_ERR;
 
 		return status;
