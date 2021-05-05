@@ -3275,17 +3275,20 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					return status;
 				}
-				else {
-					// if we get here, we don't know the address, and we have count types. Not good.
-					// should never happen?
-
-					printf("Error: State TRACE_STATE_GETNEXTINSTRUCTION. Internal Error\n");
-
-					state[currentCore] = TRACE_STATE_ERROR;
-					status = TraceDqr::DQERR_ERR;
-
-					return status;
-				}
+//				else {
+// this case is actually okay. See comments above. Will read another message
+//					// if we get here, we don't know the address, and we have count types. Not good.
+//					// should never happen?
+//
+//					printf("Error: State TRACE_STATE_GETNEXTINSTRUCTION. Internal Error\n");
+//
+//					printf("boink!! commenting out code below for debug\n");
+//
+//					state[currentCore] = TRACE_STATE_ERROR;
+//					status = TraceDqr::DQERR_ERR;
+//
+//					return status;
+//				}
 			}
 
 			currentAddress[currentCore] = addr;

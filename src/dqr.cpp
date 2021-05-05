@@ -4803,7 +4803,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 					snprintf(dst+n,dst_len-n," ICT Reason: Inferable Call (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
 				}
 				else if (ict.ckdf == 1) {
-					snprintf(dst+n,dst_len-n," ICT Reason: Call/Return (%d) U-ADDR: 0x%08llx PCdest 0x%08llx",ict.cksrc,ict.ckdata[0],ict.ckdata[1]);
+					snprintf(dst+n,dst_len-n," ICT Reason: Call/Return (%d) U-ADDR: 0x%08llx PCdest 0x%08llx",ict.cksrc,ict.ckdata[0],currentAddress ^ (ict.ckdata[1] << 1));
 				}
 				else {
 					printf("Error: messageToText(): ICT_INFERABLECALL: invalid ict.ckdf value: %d\n",ict.ckdf);
@@ -4875,7 +4875,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 					snprintf(dst+n,dst_len-n," ICT Reason: Inferable Call (%d) F-ADDR: 0x%08llx",ictWS.cksrc,ictWS.ckdata[0]);
 				}
 				else if (ictWS.ckdf == 1) {
-					snprintf(dst+n,dst_len-n," ICT Reason: Call/Return (%d) F-ADDR: 0x%08llx PCdest 0x%08llx",ictWS.cksrc,ictWS.ckdata[0],ictWS.ckdata[1]);
+					snprintf(dst+n,dst_len-n," ICT Reason: Call/Return (%d) F-ADDR: 0x%08llx PCdest 0x%08llx",ictWS.cksrc,ictWS.ckdata[0],currentAddress ^ (ictWS.ckdata[1] << 1));
 				}
 				else {
 					printf("Error: messageToText(): ICT_INFERABLECALL: invalid ictWS.ckdf value: %d\n",ictWS.ckdf);
