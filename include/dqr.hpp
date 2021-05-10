@@ -712,7 +712,7 @@ public:
 	int         getAddressSize();
 	void        analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
 	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
-	TraceDqr::TIMESTAMP adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
+	TraceDqr::TIMESTAMP processTS(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
 	int			getITCPrintMask();
 	int         getITCFlushMask();
 
@@ -755,7 +755,6 @@ private:
 	int              endMessageNum;
 
 	int              tsSize;
-	TraceDqr::TIMESTAMP tsBase;
 
 	Analytics        analytics;
 

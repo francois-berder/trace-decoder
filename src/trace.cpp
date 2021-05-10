@@ -581,7 +581,7 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
   NexusMessage::targetFrequency = freq;
 
   tsSize = 40;
-  tsBase = 0;
+//  tsBase = 0;
 
   for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
 	  enterISR[i] = TraceDqr::isNone;
@@ -779,20 +779,24 @@ TraceDqr::DQErr Trace::setLabelMode(bool labelsAreFuncs)
 	return status;
 }
 
-TraceDqr::TIMESTAMP Trace::adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs)
+TraceDqr::TIMESTAMP Trace::processTS(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs)
 {
 	TraceDqr::TIMESTAMP ts;
 
 	if (tstype == TraceDqr::TS_full) {
-		ts = lastTs + tsBase;
+		// add in the wrap from previous timestamps
+		ts = newTs + (lastTs & (~((((TraceDqr::TIMESTAMP)1) << tsSize)-1)));
+	}
+	else if (lastTs != 0) {
+		ts = lastTs ^ newTs;
 	}
 	else {
-		ts = (lastTs ^ newTs) + tsBase;
+		ts = 0;
 	}
 
 	if (ts < lastTs) {
-		ts += (1 << tsSize);
-		tsBase += (1 << tsSize);
+		// adjust for wrap
+		ts += ((TraceDqr::TIMESTAMP)1) << tsSize;
 	}
 
 	return ts;
@@ -1507,7 +1511,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 	switch (nm.tcode) {
 	case TraceDqr::TCODE_ERROR:
 		if (nm.haveTimestamp) {
-			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
+			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 
 		// set addrs to 0 because we have dropped some messages and don't know what is going on
@@ -1522,19 +1526,19 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 	case TraceDqr::TCODE_RESOURCEFULL:
 	case TraceDqr::TCODE_CORRELATION:
 		if (nm.haveTimestamp) {
-			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
+			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH:
 		if (nm.haveTimestamp) {
-			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
+			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 		faddr = faddr ^ (nm.indirectBranch.u_addr << 1);
 		pc = faddr;
 		break;
 	case TraceDqr::TCODE_SYNC:
 		if (nm.haveTimestamp) {
-			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
+			ts = processTS(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 		faddr = nm.sync.f_addr << 1;
 		pc = faddr;
@@ -1543,7 +1547,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 		if (nm.haveTimestamp) {
-			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
+			ts = processTS(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 		faddr = nm.directBranchWS.f_addr << 1;
 		pc = faddr;
@@ -1552,7 +1556,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 		if (nm.haveTimestamp) {
-			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
+			ts = processTS(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 		faddr = nm.indirectBranchWS.f_addr << 1;
 		pc = faddr;
@@ -1561,14 +1565,14 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 		if (nm.haveTimestamp) {
-			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
+			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 		faddr = faddr ^ (nm.indirectHistory.u_addr << 1);
 		pc = faddr;
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 		if (nm.haveTimestamp) {
-			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
+			ts = processTS(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 		faddr = nm.indirectHistoryWS.f_addr << 1;
 		pc = faddr;
@@ -1577,7 +1581,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 		if (nm.haveTimestamp) {
-			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
+			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 
 		switch (nm.ict.cksrc) {
@@ -1675,7 +1679,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 		if (nm.haveTimestamp) {
-			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
+			ts = processTS(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 
 		switch (nm.ictWS.cksrc) {
@@ -1758,6 +1762,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				// nothing to do
 			}
 			else if (nm.ictWS.ckdf == 1) {
+				printf("have address!! %08x, ts: %08x\n",nm.ictWS.ckdata[0] << 1, nm.timestamp);
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
 			}
@@ -2651,20 +2656,49 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_GETMSGWITHCOUNT;
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-				state[currentCore] = TRACE_STATE_EVENT;
+				if (nm.ictWS.cksrc != TraceDqr::ICT_CONTROL) {
+					// this will end up calling processTraceMessage()
+
+					state[currentCore] = TRACE_STATE_EVENT;
+				}
+				else {
+					// this is an ict control message. Control does not put it in event mode
+
+					//this may set the timestamp, and will set the address
+
+					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
+
+						status = TraceDqr::DQERR_ERR;
+						state[currentCore] = TRACE_STATE_ERROR;
+
+						return status;
+					}
+
+					if (srcInfo != nullptr) {
+						Disassemble(currentAddress[currentCore]);
+
+						sourceInfo.coreId = currentCore;
+						*srcInfo = &sourceInfo;
+					}
+				}
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 			case TraceDqr::TCODE_DIRECT_BRANCH:
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
 			case TraceDqr::TCODE_DATA_ACQUISITION:
-			case TraceDqr::TCODE_ERROR:
-			case TraceDqr::TCODE_CORRELATION:
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 			case TraceDqr::TCODE_RESOURCEFULL:
-				nm.timestamp = 0;	// don't start clock until we have a sync and a full time
+			case TraceDqr::TCODE_CORRELATION:
+				if (nm.timestamp) {
+					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
+				}
+				break;
+			case TraceDqr::TCODE_ERROR:
+				// reset time. Messages have been missed.
 				lastTime[currentCore] = 0;
-				currentAddress[currentCore] = 0;
 				break;
 			case TraceDqr::TCODE_DEBUG_STATUS:
 			case TraceDqr::TCODE_DEVICE_ID:
@@ -2749,14 +2783,27 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
 				return status;
-			case TraceDqr::TCODE_DATA_ACQUISITION:	// need to handle itc messages
+			case TraceDqr::TCODE_DATA_ACQUISITION:
 				// ITC messages are handled at the end of this state case
+				if (nm.timestamp) {
+					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
+				}
 				break;
 			case TraceDqr::TCODE_ERROR:
-			case TraceDqr::TCODE_CORRELATION:
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
-				// nm.timestamp = 0;	// don't start clock until we have a sync and a full time
-				// lastTime[currentCore] = 0;
+
+				nm.timestamp = 0;	// nolonger know time or address if we get an error
+				lastTime[currentCore] = 0;
+				currentAddress[currentCore] = 0;
+				break;
+			case TraceDqr::TCODE_CORRELATION:
+				// leaving trace mode. Debug, reset, trace disable
+
+				if (nm.haveTimestamp) {
+					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
+				}
+
+				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 				currentAddress[currentCore] = 0;
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE:
@@ -2883,6 +2930,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_ERROR:
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 
+				if (nm.haveTimestamp) {
+					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
+				}
+
 				nm.timestamp = 0;	// clear time becasue we have lost time
 				lastTime[currentCore] = 0;
 				currentAddress[currentCore] = 0;
@@ -2909,6 +2960,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// might want to keep track of process, but will add that later
 
 				// for now, return message;
+
+				if (nm.haveTimestamp) {
+					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
+				}
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
@@ -3034,7 +3089,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// correlation has i_cnt, but no address info
 
 				if (nm.haveTimestamp) {
-					lastTime[currentCore] = adjustTsForWrap(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
+					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
 				}
 
 				if (msgInfo != nullptr) {
@@ -3057,7 +3112,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 				break;
 			case TraceDqr::TCODE_ERROR:
-				printf("Error: Unexpected tecode TCODE_ERROR in state TRACE_STATE_RETIREMESSAGE\n");
+				printf("Error: Unexpected tcode TCODE_ERROR in state TRACE_STATE_RETIREMESSAGE\n");
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
@@ -3067,7 +3122,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 				// these messages have no address or i-cnt info and should have been
 				// instantly retired when they were read.
-
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
@@ -3130,8 +3184,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_ERROR:
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 
-				nm.timestamp = 0;	// we have lost time and address
-				lastTime[currentCore] = 0;
+				if (nm.haveTimestamp) {
+					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
+				}
+
 				currentAddress[currentCore] = 0;
 
 				if (msgInfo != nullptr) {
@@ -3153,7 +3209,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// retire these instantly by returning them through msgInfo
 
 				if (nm.haveTimestamp) {
-					lastTime[currentCore] = adjustTsForWrap(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
+					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
 				}
 
 				if (msgInfo != nullptr) {
