@@ -36,35 +36,30 @@ using namespace std;
 
 static void usage(char *name)
 {
-#ifdef foodog
-	printf("Usage: dqr -t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]\n");
-#endif // foodog
-	printf("Usage: dqr -t tracefile -e elffile | -n basename) [-src] [-nosrc]\n");
-	printf("           [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path]\n");
-	printf("           [-itcprint | -itcprint=n] [-noitcprint] [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+]\n");
-	printf("           [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n] [-noanalytics] [-freq nn] [-tssize=n]\n");
-	printf("           [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n] [-v] [-h]\n");
+	printf("Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-btm | -htm] -basename name\n");
+	printf("           [-srcbits=nn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]\n");
+	printf("           [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]\n");
+	printf("           [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]\n");
+	printf("           [-noanalytics] [-freq nn] [-tssize=n] [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n]\n");
+	printf("           [-s file] [-r addr] [-labels] [-nolables] [-debug] [-nodebug] [-v] [-h]\n");
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
 	printf("-s simfile:   Specify the name of the simulator output file. When using a simulator output file, cannot use\n");
 	printf("              a tracefile (-t option). Can provide an elf file (-e option), but is not required.\n");
 	printf("-ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.\n");
+	printf("-catype nn:   Specify the type of the CA trace file. Valid options are none, instruction, and vector\n");
+	printf("-btm:         Specify the type of the trace file as btm (branch trace messages). On by default.\n");
+	printf("-htm:         Specify the type of the trace file as htm (history trace messages).\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
-#ifdef foodog
-	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
-	printf("              not specified, continues to last trace message.\n");
-	printf("-stop nm:     Select the last Nexus trace message number to end DQing at. If -start is not specified, starts\n");
-	printf("              at trace message 1.\n");
-#endif // foodog
 	printf("-src:         Enable display of source lines in output if available (on by default).\n");
 	printf("-nosrc:       Disable display of source lines in output.\n");
 	printf("-file:        Display source file information in output (on by default).\n");
 	printf("-nofile:      Do not display source file information.\n");
 	printf("-dasm:        Display disassembled code in output (on by default).\n");
 	printf("-nodasm:      Do not display disassembled code in output.\n");
-	printf("-func:        Display function name with srouce information (off by default).\n");
+	printf("-func:        Display function name with source information (off by default).\n");
 	printf("-nofunc:      Do not display function information with source information.\n");
 	printf("-trace:       Display trace information in output (off by default).\n");
 	printf("-notrace:     Do not display trace information in output.\n");
@@ -72,8 +67,8 @@ static void usage(char *name)
 	printf("              Path may be enclosed in quotes if it contains spaces.\n");
 	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated\n");
 	printf("              and displayed as a string until a terminating \\0 is found\n");
-	printf("-itcprint=n:  Disaply ITC channel n data as a null terminated string. Data for consectutie ITC channel n's will be\n");
-	printf("              concatinated and display as a string until a terminating \\n or \\0 is found\n");
+	printf("-itcprint=n:  Display ITC channel n data as a null terminated string. Data for consecutive ITC channel n's will be\n");
+	printf("              concatenated and display as a string until a terminating \\n or \\0 is found\n");
 	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
 	printf("-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and\n");
 	printf("              cause the address field to be jagged. Overrides value address size read from elf file.\n");
@@ -82,7 +77,7 @@ static void usage(char *name)
 	printf("              (sticky) and will be again increased if a new larger value is encountered. Overrides the address size\n");
 	printf("              read from the elf file.\n");
 	printf("-32:          Display addresses as 32 bits. Values lager than 32 bits will print, but take more space and cause\n");
-    printf("              the address field to be jagged. Selected by default if elf file indicates 32 bit address size.\n");
+	printf("              the address field to be jagged. Selected by default if elf file indicates 32 bit address size.\n");
 	printf("              Specifying -32 overrides address size read from elf file\n");
 	printf("-32+          Display addresses as 32 bits until larger addresses are displayed and then adjust up to a larger\n");
 	printf("              enough size to display the entire address. When addresses are adjusted up, they do not later adjust\n");
@@ -90,6 +85,7 @@ static void usage(char *name)
 	printf("              if the elf file specifies > 32 bit address size (such as 64). Specifying -32+ overrides the value\n");
 	printf("              read from the elf file\n");
 	printf("-64:          Display addresses as 64 bits. Overrides value read from elf file\n");
+	printf("-archsize=nn: Set the architecture size to 32 or 64 bits instead of getting it from the elf file\n");
 	printf("-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'\n");
 	printf("-noaddrsep:   Do not add a separator for addresses greater than 32 bit between the upper bits and the lower 32 bits\n");
 	printf("              (default).\n");
@@ -113,7 +109,10 @@ static void usage(char *name)
 	printf("-pathwindows: Show all file paths using windows-type '\\' path separators\n");
 	printf("              Also cleans up path, removing // -> /, /./ -> /, and uplevels for each /../\n");
 	printf("-pathraw:     Show all file path in the format stored in the elf file\n");
-	printf("-msglevel=n:  Set the nexus trace message detail level. n must be >= 0, <= 3\n");
+	printf("-msglevel=n:  Set the Nexus trace message detail level. n must be >= 0, <= 3\n");
+	printf("-r addr:      Display the label information for the address specified for the elf file specified\n");
+	printf("-debug:       Display some debug information for the trace to aid in debugging the trace decoder\n");
+	printf("-nodebug:     Do not display any debug information for the trace decoder\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -196,6 +195,8 @@ int main(int argc, char *argv[])
 	int archSize = 32;
 	int msgLevel = 2;
 	bool labelFlag = true;
+	TraceDqr::CATraceType caType = TraceDqr::CATRACE_NONE;
+	TraceDqr::TraceType traceType = TraceDqr::TRACETYPE_BTM;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -246,6 +247,12 @@ int main(int argc, char *argv[])
 			}
 
 			ca_name = argv[i];
+		}
+		else if (strcmp("-btm",argv[i]) == 0) {
+			traceType = TraceDqr::TRACETYPE_BTM;
+		}
+		else if (strcmp("-htm",argv[i]) == 0) {
+			traceType = TraceDqr::TRACETYPE_HTM;
 		}
 #ifdef foodog
 		else if (strcmp("-start",argv[i]) == 0) {
@@ -497,7 +504,7 @@ int main(int argc, char *argv[])
 			}
 
 			if (ef_name == nullptr) {
-				printf("option -r requires first specifing the elffile name (with the -e flag)\n");
+				printf("option -r requires first specifying the elf file name (with the -e flag)\n");
 				return 1;
 			}
 
@@ -549,6 +556,33 @@ int main(int argc, char *argv[])
 		else if (strcmp("-nolabels",argv[i]) == 0) {
 			labelFlag = false;
 		}
+		else if (strcmp("-debug",argv[i]) == 0) {
+			globalDebugFlag = 1;
+		}
+		else if (strcmp("-nodebug",argv[i]) == 0) {
+			globalDebugFlag = 0;
+		}
+		else if (strcmp("-catype",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: -catype flag requires a CA Trace type (none, instruction, or vector)\n");
+				return 1;
+			}
+			if (strcmp("none",argv[i]) == 0) {
+				caType = TraceDqr::CATRACE_NONE;
+				ca_name = nullptr;
+			}
+			else if (strcmp("instruction",argv[i]) == 0) {
+				caType = TraceDqr::CATRACE_INSTRUCTION;
+			}
+			else if (strcmp("vector",argv[i]) == 0) {
+				caType = TraceDqr::CATRACE_VECTOR;
+			}
+			else {
+				printf("Error: CA Trace type must be either none, instruction, or vector\n");
+				return 1;
+			}
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -566,7 +600,7 @@ int main(int argc, char *argv[])
 	}
 
 	if ((sf_name == nullptr) && (tf_name == nullptr) && (base_name == nullptr)) {
-		printf("Error: must specify either simulator file, trace file, trace server, or base name\n");
+		printf("Error: must specify either simulator file, trace file, SWT trace server, or base name\n");
 		usage(argv[0]);
 		return 1;
 	}
@@ -609,7 +643,7 @@ int main(int argc, char *argv[])
 		sim->setLabelMode(labelFlag);
 	}
 	else {
-		trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
+		trace = new (std::nothrow) Trace(tf_name,ef_name,traceType,numAddrBits,addrDispFlags,srcbits,freq);
 
 		assert(trace != nullptr);
 
@@ -624,7 +658,7 @@ int main(int argc, char *argv[])
 
 		if (ca_name != nullptr) {
 			TraceDqr::DQErr rc;
-			rc = trace->setCATraceFile(ca_name);
+			rc = trace->setCATraceFile(ca_name,caType);
 			if (rc != TraceDqr::DQERR_OK) {
 				printf("Error: Could not set cycle accurate trace file\n");
 				return 1;
@@ -764,9 +798,34 @@ int main(int argc, char *argv[])
 				if (((sim != nullptr) || (ca_name != nullptr)) && (instInfo->timestamp != 0)) {
 					n = printf("t:%d ",instInfo->timestamp);
 
-					n += printf("[%d] ",instInfo->cycles);
+					if (instInfo->caFlags & (TraceDqr::CAFLAG_PIPE0 | TraceDqr::CAFLAG_PIPE1)) {
+						if (instInfo->caFlags & TraceDqr::CAFLAG_PIPE0) {
+							n += printf("[0:%d",instInfo->pipeCycles);
+						}
+						else if (instInfo->caFlags & TraceDqr::CAFLAG_PIPE1) {
+							n += printf("[1:%d",instInfo->pipeCycles);
+						}
 
-					for (int i = n; i < 12; i++) {
+						if (instInfo->caFlags & TraceDqr::CAFLAG_VSTART) {
+							n += printf("(%d)-%d(%dA,%dL,%dS)",instInfo->qDepth,instInfo->VIStartCycles,instInfo->arithInProcess,instInfo->loadInProcess,instInfo->storeInProcess);
+																					}
+
+						if (instInfo->caFlags & TraceDqr::CAFLAG_VARITH) {
+							n += printf("-%dA",instInfo->VIFinishCycles);
+						}
+
+						if (instInfo->caFlags & TraceDqr::CAFLAG_VLOAD) {
+							n += printf("-%dL",instInfo->VIFinishCycles);
+						}
+
+						if (instInfo->caFlags & TraceDqr::CAFLAG_VSTORE) {
+							n += printf("-%dS",instInfo->VIFinishCycles);
+						}
+
+						n += printf("] ");
+					}
+
+					for (int i = n; i < 14; i++) {
 						printf(" ");
 					}
 				}
@@ -841,8 +900,12 @@ int main(int argc, char *argv[])
 				firstPrint = false;
 			}
 
-			if ((trace != nullptr) && trace_flag & (msgInfo != nullptr)) {
+			if ((trace != nullptr) && trace_flag && (msgInfo != nullptr)) {
 				// got the goods! Get to it!
+
+				if (globalDebugFlag) {
+					msgInfo->dumpRawMessage();
+				}
 
 				msgInfo->messageToText(dst,sizeof dst,msgLevel);
 
@@ -861,7 +924,7 @@ int main(int argc, char *argv[])
 				firstPrint = false;
 			}
 
-			if ((trace != nullptr) && itcprint_flag){
+			if ((trace != nullptr) && itcprint_flag) {
 				std::string s;
 				bool haveStr;
 
@@ -876,7 +939,7 @@ int main(int argc, char *argv[])
 							}
 
 							if (srcbits > 0) {
-								printf("[%d] ",core);
+								printf("[%d] ",msgInfo->coreId);
 							}
 
 							std::cout << "ITC Print: ";
@@ -907,8 +970,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if ((trace != nullptr) && itcprint_flag){
-		std::string s;
+	if ((trace != nullptr) && itcprint_flag) {
+		std::string s = "";
 		bool haveStr;
 
 		core_mask = trace->getITCFlushMask();

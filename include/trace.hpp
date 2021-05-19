@@ -202,6 +202,7 @@ public:
 	bool flushITCPrintStr(uint8_t core, std::string &s, TraceDqr::TIMESTAMP &starTime, TraceDqr::TIMESTAMP &endTime);
 	int  getITCPrintMask();
 	int  getITCFlushMask();
+	bool haveITCPrintMsgs();
 
 private:
 	int  roomInITCPrintQ(uint8_t core);
@@ -224,11 +225,13 @@ class SliceFileParser {
 public:
              SliceFileParser(char *filename,int srcBits);
              ~SliceFileParser();
-  TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
+  TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics,bool &haveMsg);
   TraceDqr::DQErr getFileOffset(int &size,int &offset);
 
   TraceDqr::DQErr getErr() { return status; };
   void       dump();
+
+  TraceDqr::DQErr getNumBytesInSWTQ(int &numBytes);
 
 private:
   TraceDqr::DQErr status;
@@ -238,18 +241,19 @@ private:
   int           srcbits;
   std::ifstream tf;
   int           tfSize;
-  int			SWTsock;
+  int           SWTsock;
   int           bitIndex;
   int           msgSlices;
   uint32_t      msgOffset;
+  int           pendingMsgIndex;
   uint8_t       msg[64];
-  bool          eom = false;
+  bool          eom;
 
   int           bufferInIndex;
   int           bufferOutIndex;
   uint8_t       sockBuffer[2048];
 
-  TraceDqr::DQErr readBinaryMsg();
+  TraceDqr::DQErr readBinaryMsg(bool &haveMsg);
   TraceDqr::DQErr bufferSWT();
   TraceDqr::DQErr readNextByte(uint8_t *byte);
   TraceDqr::DQErr parseVarField(uint64_t *val,int *width);
@@ -357,6 +361,7 @@ public:
 	void reset();
 	int push(TraceDqr::ADDRESS addr);
 	TraceDqr::ADDRESS pop();
+	int getNumOnStack() { return stackSize - sp; }
 
 private:
 	int stackSize;
@@ -394,11 +399,18 @@ public:
 	int consumeTakenCount(int core);
 	int consumeNotTakenCount(int core);
 
-	int getICnt(int core);
+	int getICnt(int core) { return i_cnt[core]; }
+	uint32_t getHistory(int core) { return history[core]; }
+	int getNumHistoryBits(int core) { return histBit[core]; }
+	uint32_t getTakenCount(int core) { return takenCount[core]; }
+	uint32_t getNotTakenCount(int core) { return notTakenCount[core]; }
+	uint32_t isTaken(int core) { return (history[core] & (1 << histBit[core])) != 0; }
 
 	int push(int core,TraceDqr::ADDRESS addr) { return stack[core].push(addr); }
 	TraceDqr::ADDRESS pop(int core) { return stack[core].pop(); }
 	void resetStack(int core) { stack[core].reset(); }
+	int getNumOnStack(int core) { return stack[core].getNumOnStack(); }
+
 
 	void dumpCounts(int core);
 

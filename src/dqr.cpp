@@ -32,18 +32,42 @@
 
 #include <unistd.h>
 #include <fcntl.h>
-#ifndef WINDOWS
+#ifdef WINDOWS
+#include <winsock2.h>
+#else // WINDOWS
 #include <netdb.h>
+#include <sys/ioctl.h>
+#include <errno.h>
 #endif // WINDOWS
 
 #include "dqr.hpp"
 #include "trace.hpp"
-#include "swt.hpp"
+
+//#define DQR_MAXCORES	8
+
+int globalDebugFlag = 0;
 
 // DECODER_VERSION is passed in from the Makefile, from version.mk in the root.
 const char *const DQR_VERSION = DECODER_VERSION;
 
 // static C type helper functions
+
+static int atoh(char a)
+{
+	if (a >= '0' && a <= '9') {
+		return a-'0';
+	}
+
+	if (a >= 'a' && a <= 'f') {
+		return a-'a'+10;
+	}
+
+	if (a >= 'A' && a <= 'F') {
+		return a-'A'+10;
+	}
+
+	return -1;
+}
 
 static void override_print_address(bfd_vma addr, struct disassemble_info *info)
 {
@@ -465,10 +489,10 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 //	should cache this (as part of other instruction stuff cached)!!
 
 	if (instSize == 32) {
-		n = snprintf(dst,len,"%08x           %s",instruction,instructionText);
+		n = snprintf(dst,len,"%08x    %s",instruction,instructionText);
 	}
 	else {
-		n = snprintf(dst,len,"%04x               %s",instruction,instructionText);
+		n = snprintf(dst,len,"%04x        %s",instruction,instructionText);
 	}
 
 	if (haveOperandAddress) {
@@ -551,6 +575,94 @@ const char *Source::stripPath(const char *path)
 
 std::string Source::sourceFileToString(std::string path)
 {
+	if (sourceFile != nullptr) {
+		// check for garbage in path/file name
+
+		const char *sf = stripPath(path.c_str());
+		if (sf == nullptr) {
+			printf("Error: sourceFileToString(): stripPath() returned nullptr\n");
+		}
+		else {
+			for (int i = 0; sf[i] != 0; i++) {
+				switch (sf[i]) {
+				case 'a':
+				case 'b':
+				case 'c':
+				case 'd':
+				case 'e':
+				case 'f':
+				case 'g':
+				case 'h':
+				case 'i':
+				case 'j':
+				case 'k':
+				case 'l':
+				case 'm':
+				case 'n':
+				case 'o':
+				case 'p':
+				case 'q':
+				case 'r':
+				case 's':
+				case 't':
+				case 'u':
+				case 'v':
+				case 'w':
+				case 'x':
+				case 'y':
+				case 'z':
+				case 'A':
+				case 'B':
+				case 'C':
+				case 'D':
+				case 'E':
+				case 'F':
+				case 'G':
+				case 'H':
+				case 'I':
+				case 'J':
+				case 'K':
+				case 'L':
+				case 'M':
+				case 'N':
+				case 'O':
+				case 'P':
+				case 'Q':
+				case 'R':
+				case 'S':
+				case 'T':
+				case 'U':
+				case 'V':
+				case 'W':
+				case 'X':
+				case 'Y':
+				case 'Z':
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				case '5':
+				case '6':
+				case '7':
+				case '8':
+				case '9':
+				case '/':
+				case '\\':
+				case '.':
+				case '_':
+				case '-':
+				case '+':
+				case ':':
+					break;
+				default:
+					printf("Error: source::srouceFileToSTring(): File name '%s' contains bogus char (0x%02x) in position %d!\n",sf,sf[i],i);
+					break;
+				}
+			}
+		}
+	}
+
 	if (sourceFile != nullptr) {
 
 		const char *sf = stripPath(path.c_str());
@@ -1180,12 +1292,15 @@ ITCPrint::~ITCPrint()
 	if (tsList != nullptr) {
 		for (int i = 0; i < numCores; i++) {
 			TsList *tl = tsList[i];
-			while (tl != nullptr) {
-				TsList *tln = tl->next;
-				delete tl;
-				tl = tln;
+			if (tl != nullptr) {
+				do {
+					TsList *tln = tl->next;
+					delete tl;
+					tl = tln;
+				} while ((tl != tsList[i]) && (tl != nullptr));
 			}
 		}
+		delete [] tsList;
 		tsList = nullptr;
 	}
 }
@@ -1226,7 +1341,7 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
     if ((tlp == nullptr) || tlp->terminated == true) {
 		// see if there is one on the free list before making a new one
 
-    	if (freeList != nullptr) {
+		if (freeList != nullptr) {
 			workingtlp = freeList;
 			freeList = workingtlp->next;
 
@@ -1249,6 +1364,7 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 			workingtlp->prev->next = workingtlp;
 		}
 
+		workingtlp->terminated = false;
 		workingtlp->startTime = tstamp;
 		workingtlp->message = &pbuff[core][pbi[core]];
 
@@ -1306,11 +1422,22 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 	return true;
 }
 
+bool ITCPrint::haveITCPrintMsgs()
+{
+	for (int core = 0; core < numCores; core++) {
+		if (numMsgs[core] != 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 int ITCPrint::getITCPrintMask()
 {
 	int mask = 0;
 
-	for (int core = 0; core < DQR_MAXCORES; core++) {
+	for (int core = 0; core < numCores; core++) {
 		if (numMsgs[core] != 0) {
 			mask |= 1 << core;
 		}
@@ -1323,7 +1450,7 @@ int ITCPrint::getITCFlushMask()
 {
 	int mask = 0;
 
-	for (int core = 0; core < DQR_MAXCORES; core++) {
+	for (int core = 0; core < numCores; core++) {
 		if (numMsgs[core] > 0) {
 			mask |= 1 << core;
 		}
@@ -1381,6 +1508,7 @@ TsList *ITCPrint::consumeTerminatedTsList(int core)
 				}
 
 				tsl->next = freeList;
+				tsl->prev = nullptr;
 				freeList = tsl;
 			}
 		}
@@ -1418,6 +1546,7 @@ TsList *ITCPrint::consumeOldestTsList(int core)
 			}
 
 			tsl->next = freeList;
+			tsl->prev = nullptr;
 			freeList = tsl;
 		}
 	}
@@ -3848,6 +3977,52 @@ uint8_t NexusMessage::getCKDF()
 	return 0;
 }
 
+uint8_t NexusMessage::getCKSRC()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+		return ict.cksrc;
+	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+		return ictWS.cksrc;
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 uint8_t NexusMessage::getCDF()
 {
 	switch (tcode) {
@@ -4935,6 +5110,24 @@ double NexusMessage::seconds()
 	return (double)time;
 }
 
+void NexusMessage::dumpRawMessage()
+{
+	int i;
+
+	printf("Raw Message # %d: ",msgNum);
+
+	for (i = 0; ((size_t)i < sizeof rawData / sizeof rawData[0]) && ((rawData[i] & 0x03) != TraceDqr::MSEO_END); i++) {
+		printf("%02x ",rawData[i]);
+	}
+
+	if ((size_t)i < sizeof rawData / sizeof rawData[0]) {
+		printf("%02x\n",rawData[i]);
+	}
+	else {
+		printf("no end of message\n");
+	}
+}
+
 void NexusMessage::dump()
 {
 	switch (tcode) {
@@ -5351,14 +5544,42 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 	msgSlices      = 0;
 	bitIndex       = 0;
 
+	pendingMsgIndex = 0;
+
 	tfSize = 0;
 	bufferInIndex = 0;
 	bufferOutIndex = 0;
 
+	eom = false;
+
 	int i;
+
+	// first lets see if it is a windows path
+
+	bool havePath = true;
+
 	for (i = 0; (filename[i] != 0) && (filename[i] != ':'); i++) { /* empty */ }
 
 	if (filename[i] == ':') {
+		// see if this is a disk designator or port designator
+
+		int j;
+		int numAlpha = 0;
+
+		// look for drive : (not a foolproof test, but should work
+
+		for (j = 0; j < i; j++) {
+			if ((filename[j] >= 'a' && filename[j] <= 'z') || (filename[j] >= 'A' && filename[j] <= 'Z')) {
+				numAlpha += 1;
+			}
+		}
+
+		if (numAlpha != 1) {
+			havePath = false;
+		}
+	}
+
+	if (havePath == false) {
 		// have a server:port address
 
 		int rc;
@@ -5380,8 +5601,8 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 		wVersionRequested = MAKEWORD(2,2);
 		rc = WSAStartup(wVersionRequested,&wsaData);
 		if (rc != 0) {
-			printf("WSAStart() failed with error %d\n",rc);
-			delete sn;
+			printf("Error: WSAStartUP() failed with error %d\n",rc);
+			delete [] sn;
 			sn = nullptr;
 			status = TraceDqr::DQERR_ERR;
 			return;
@@ -5390,8 +5611,8 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 		SWTsock = socket(AF_INET,SOCK_STREAM,0);
 		if (SWTsock < 0) {
-			printf("Error: SliceFileParser::SliceFileParser(): socket() failed\n");
-			delete sn;
+			printf("Error: SliceFileParser::SliceFileParser(); socket() failed\n");
+			delete [] sn;
 			sn = nullptr;
 			status = TraceDqr::DQERR_ERR;
 			return;
@@ -5402,7 +5623,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 		server = gethostbyname(sn);
 
-		delete sn;
+		delete [] sn;
 		sn = nullptr;
 
 		memset((char*)&serv_addr,0,sizeof(serv_addr));
@@ -5416,13 +5637,12 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 #ifdef WINDOWS
 			closesocket(SWTsock);
-#else  // WINDOWS
-			close (SWTsock);
+#else // WINDOWS
+			close(SWTsock);
 #endif // WINDOWS
 
-			SWTsock = 0;
+			SWTsock = -1;
 
-			delete server;
 			server = nullptr;
 
 			status = TraceDqr::DQERR_ERR;
@@ -5432,26 +5652,34 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 		// put socket in non-blocking mode
 #ifdef WINDOWS
-		unsigned long ul = 1;
-		rc = ioctlsocket(SWTsock,FIONBIO,&ul);
+		unsigned long on = 1L;
+		rc = ioctlsocket(SWTsock,FIONBIO,&on);
 		if (rc != NO_ERROR) {
-			printf("SliceFileParser::SliceFileParser(): Failed to put socket in non-blocking mode\n");
+			printf("Error: SliceFileParser::SliceFileParser(): Failed to put socket into non-blocking mode\n");
 			status = TraceDqr::DQERR_ERR;
 			return;
 		}
-#else  // WINDOWS
-		int mode;
-		mode = fcntl(SWTsock,F_GETFL);
-		rc = fcntl(SWTsock,mode | O_NONBLOCK);
+#else // WINDOWS
+//		long on = 1L;
+//		rc = ioctl(SWTsock,(int)FIONBIO,(char*)&on);
+//		if (rc < 0) {
+//			printf("Error: SliceFileParser::SliceFileParser(): Failed to put socket into non-blocking mode\n");
+//			status = TraceDqr::DQERR_ERR;
+//			return;
+//		}
 #endif // WINDOWS
 
 		tfSize = 0;
 	}
 	else {
-        	tf.open(filename, std::ios::in | std::ios::binary);
+		tf.open(filename, std::ios::in | std::ios::binary);
 		if (!tf) {
 			printf("Error: SliceFileParder(): could not open file %s for input\n",filename);
 			status = TraceDqr::DQERR_OPEN;
+			return;
+		}
+		else {
+			status = TraceDqr::DQERR_OK;
 		}
 
 		tf.seekg (0, tf.end);
@@ -5460,7 +5688,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 		msgOffset = 0;
 
-		SWTsock = 0;
+		SWTsock = -1;
 	}
 
 	status = TraceDqr::DQERR_OK;
@@ -5472,15 +5700,41 @@ SliceFileParser::~SliceFileParser()
 		tf.close();
 	}
 
-	if (SWTsock > 0) {
+	if (SWTsock >= 0) {
 #ifdef WINDOWS
-			closesocket(SWTsock);
+		closesocket(SWTsock);
 #else  // WINDOWS
-			close(SWTsock);
+		close(SWTsock);
 #endif // WINDOWS
 
-		SWTsock = 0;
+		SWTsock = -1;
 	}
+}
+
+TraceDqr::DQErr SliceFileParser::getNumBytesInSWTQ(int &numBytes)
+{
+	TraceDqr::DQErr rc;
+
+	if (SWTsock < 0) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	rc = bufferSWT();
+	if (rc != TraceDqr::DQERR_OK) {
+		return rc;
+	}
+
+	if (bufferInIndex == bufferOutIndex) {
+		numBytes = 0;
+	}
+	else if (bufferInIndex < bufferOutIndex) {
+		numBytes = (sizeof sockBuffer / sizeof sockBuffer[0]) - bufferOutIndex + bufferInIndex;
+	}
+	else { // bufferInIndex > bufferOutIndex
+		numBytes = bufferInIndex - bufferOutIndex;
+	}
+
+	return TraceDqr::DQERR_OK;
 }
 
 TraceDqr::DQErr SliceFileParser::getFileOffset(int &size,int &offset)
@@ -5573,7 +5827,7 @@ TraceDqr::DQErr SliceFileParser::parseICT(NexusMessage &nm,Analytics &analytics)
 	nm.ict.ckdf = (uint8_t)tmp;
 
 	for (int i = 0; i <= nm.ict.ckdf; i++) {
-		// parse the variable length the CKDATA field
+		// parse the variable length CKDATA field
 
 		rc = parseVarField(&tmp,&width);
 		if (rc != TraceDqr::DQERR_OK) {
@@ -5682,7 +5936,7 @@ TraceDqr::DQErr SliceFileParser::parseICTWS(NexusMessage &nm,Analytics &analytic
 	nm.ictWS.ckdf = (uint8_t)tmp;
 
 	for (int i = 0; i <= nm.ictWS.ckdf; i++) {
-		// parse the variable length the CKDATA field
+		// parse the variable length CKDATA field
 
 		rc = parseVarField(&tmp,&width);
 		if (rc != TraceDqr::DQERR_OK) {
@@ -6652,7 +6906,7 @@ TraceDqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &an
 
 		bits += width;
 
-		nm.correlation.history = (int)tmp;
+		nm.correlation.history = tmp;
 
 		break;
 	default:
@@ -7176,52 +7430,118 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 TraceDqr::DQErr SliceFileParser::bufferSWT()
 {
 	int br;
-
-//	if (bufferInIndex != bufferOutIndex) {
-//		return TraceDqr::DQERR_OK;
-//	}
+	int bytesToRead;
 
 	// compute room in buffer for read
+
 	if (bufferInIndex == bufferOutIndex) {
 		// buffer is empty
-		br = recv(SWTsock,(char*)sockBuffer,sizeof sockBuffer - 1,0);
-		if ( br > 0) {
+
+		bytesToRead = (sizeof sockBuffer) - 1;
+
+#ifdef WINDOWS
+		br = recv(SWTsock,(char*)sockBuffer,bytesToRead,0);
+#else // WINDOWS
+		br = recv(SWTsock,(char*)sockBuffer,bytesToRead,MSG_DONTWAIT);
+
+		if (br < 0) {
+			if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+				perror("SliceFileParser::bufferSWT(): recv() error");
+			}
+		}
+#endif // WINDOWS
+
+		if (br > 0) {
 			bufferInIndex = br;
 			bufferOutIndex = 0;
 		}
 	}
-	else if (bufferInIndex < (bufferOutIndex-1)) {
+	else if (bufferInIndex < bufferOutIndex) {
 		// empty bytes is (bufferOutIndex - bufferInIndex) - 1
-		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,(bufferOutIndex - bufferInIndex) - 1,0);
-		if (br > 0) {
-			bufferInIndex += br;
-		}
-	}
-	else if (bufferInIndex > bufferOutIndex){
-		// empty bytes is bufferInIndex to end of buffer + bufferOutIndex - 1
-		// first read to end of buffer
-		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,sizeof sockBuffer - bufferInIndex,0);
-		if (br > 0) {
-			if ((size_t)br == sizeof sockBuffer - bufferInIndex) {
-				bufferInIndex = 0;
-				br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bufferOutIndex - 1,0);
-				if (br > 0) {
-					bufferInIndex = br ;
+
+		bytesToRead = bufferOutIndex - bufferInIndex - 1;
+
+		if (bytesToRead > 0) {
+#ifdef WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,0);
+#else // WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,MSG_DONTWAIT);
+
+			if (br < 0) {
+				if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+					perror("SlicFileParser::bufferSWT(): recv() error");
 				}
 			}
-			else {
-				bufferInIndex += br; ;
+#endif // WINDOWS
+
+			if (br > 0) {
+				bufferInIndex += br;
+			}
+		}
+	}
+	else if (bufferInIndex > bufferOutIndex) {
+		// empty bytes is bufferInIndex to end of buffer + bufferOutIndex - 1
+		// first read to end of buffer
+
+		if (bufferOutIndex == 0) {
+			// don't want to completely fill up tail of buffer, because can't set bufferInIndex to 0!
+
+			bytesToRead = (sizeof sockBuffer) - bufferInIndex - 1;
+		}
+		else {
+			bytesToRead = (sizeof sockBuffer) - bufferInIndex;
+		}
+
+		if (bytesToRead > 0) {
+#ifdef WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,0);
+#else // WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,MSG_DONTWAIT);
+
+			if (br < 0) {
+				if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+					perror("SizeFileParser::bufferSWT(): recv() error");
+				}
+			}
+#endif // WINDOWS
+
+			if (br > 0) {
+				if ((bufferInIndex + br) >= (int)(sizeof sockBuffer)) {
+					bufferInIndex = 0;
+
+					bytesToRead = bufferOutIndex-1;
+
+					if (bytesToRead > 0) {
+#ifdef WINDOWS
+						br = recv(SWTsock,(char*)sockBuffer,bytesToRead,0);
+#else // WINDOWS
+						br = recv(SWTsock,(char*)sockBuffer,bytesToRead,MSG_DONTWAIT);
+
+						if (br < 0) {
+							if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+								perror("SliceFileParser::bufferSWT(): recv() error");
+							}
+						}
+#endif // WINDOWS
+						if (br > 0) {
+							bufferInIndex = br;
+						}
+					}
+				}
+				else {
+					bufferInIndex += br;
+				}
 			}
 		}
 	}
 
-	#ifdef WINDOWS
+#ifdef WINDOWS
 	if ((br == -1) && (WSAGetLastError() != WSAEWOULDBLOCK)) {
 		printf("Error: bufferSWT(): read socket failed\n");
 		status = TraceDqr::DQERR_ERR;
 		return status;
 	}
-#else  // WINDOWS
+#else // WINDOWS
 	if ((br == -1) && ((errno != EAGAIN) && (errno != EWOULDBLOCK))) {
 		printf("Error: bufferSWT(): read socket failed\n");
 		status = TraceDqr::DQERR_ERR;
@@ -7232,66 +7552,79 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readBinaryMsg()
+TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 {
 	// start by stripping off end of message or end of var bytes. These would be here in the case
 	// of a wrapped buffer, or some kind of corruption
 
-	do {
-		if (SWTsock != 0) {
-			// need a buffer to read from.
+	haveMsg = false;
 
-			do {
+	if (pendingMsgIndex == 0) {
+		do {
+			if (SWTsock >= 0) {
+				// need a buffer to read from.
+
 				status = bufferSWT();
-			} while ((bufferInIndex == bufferOutIndex) && (status == TraceDqr::DQERR_OK));
 
-			if (status != TraceDqr::DQERR_OK) {
-				return status;
-			}
-
-			msg[0] = sockBuffer[bufferOutIndex];
-			bufferOutIndex += 1;
-			if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
-				bufferOutIndex = 0;
-			}
-		}
-		else {
-			tf.read((char*)&msg[0],sizeof msg[0]);
-			if (!tf) {
-				if (tf.eof()) {
-					status = TraceDqr::DQERR_EOF;
-				}
-				else {
-					status = TraceDqr::DQERR_ERR;
-
-					std::cout << "Error reading trace file\n";
+				if (status != TraceDqr::DQERR_OK) {
+					return status;
 				}
 
-				tf.close();
+				if (bufferInIndex == bufferOutIndex) {
+					return status;
+				}
 
-				return status;
+				msg[0] = sockBuffer[bufferOutIndex];
+				bufferOutIndex += 1;
+				if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
+					bufferOutIndex = 0;
+				}
 			}
-		}
+			else {
+				tf.read((char*)&msg[0],sizeof msg[0]);
+				if (!tf) {
+					if (tf.eof()) {
+						status = TraceDqr::DQERR_EOF;
+					}
+					else {
+						status = TraceDqr::DQERR_ERR;
 
-		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff)) {
-			printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
-		}
-	} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
+						std::cout << "Error reading trace file\n";
+					}
 
-	msgOffset = ((uint32_t)tf.tellg())-1;
+					tf.close();
+
+					return status;
+				}
+			}
+
+			if ((msg[0] == 0x00) || (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff))) {
+				printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
+			}
+		} while ((msg[0] == 0x00) || ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL));
+
+		pendingMsgIndex = 1;
+	}
+
+	if (SWTsock >= 0) {
+		msgOffset = 0;
+	}
+	else {
+		msgOffset = ((uint32_t)tf.tellg())-1;
+
+	}
 
 	bool done = false;
 
-	for (int i = 1; !done; i++) {
-		if (i >= (int)(sizeof msg / sizeof msg[0])) {
-			if (SWTsock > 0) {
+	while (!done) {
+		if (pendingMsgIndex >= (int)(sizeof msg / sizeof msg[0])) {
+			if (SWTsock >= 0) {
 #ifdef WINDOWS
 				closesocket(SWTsock);
-#else  // WINDOWS
+#else // WINDOWS
 				close(SWTsock);
 #endif // WINDOWS
-
-				SWTsock = 0;
+				SWTsock = -1;
 			}
 			else {
 				tf.close();
@@ -7299,30 +7632,36 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 
 			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
 
+			pendingMsgIndex = 0;
+
 			status = TraceDqr::DQERR_ERR;
 
 			return TraceDqr::DQERR_ERR;
 		}
 
-		if (SWTsock > 0) {
-			do {
-				status = bufferSWT();
-			} while ((bufferInIndex == bufferOutIndex) && (status == TraceDqr::DQERR_OK));
+		if (SWTsock >= 0) {
+			status = bufferSWT();
 
 			if (status != TraceDqr::DQERR_OK) {
 				return status;
 			}
 
-			msg[i] = sockBuffer[bufferOutIndex];
+			if (bufferInIndex == bufferOutIndex) {
+				return status;
+			}
+
+			msg[pendingMsgIndex] = sockBuffer[bufferOutIndex];
+
 			bufferOutIndex += 1;
 			if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
 				bufferOutIndex = 0;
 			}
 		}
 		else {
-			tf.read((char*)&msg[i],sizeof msg[0]);
+			tf.read((char*)&msg[pendingMsgIndex],sizeof msg[0]);
 			if (!tf) {
 				if (tf.eof()) {
+					printf("Info: SliceFileParser::readBinaryMsg(): Last message in trace file is incomplete\n");
 					status = TraceDqr::DQERR_EOF;
 				}
 				else {
@@ -7337,20 +7676,113 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 			}
 		}
 
-		if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
+		if ((msg[pendingMsgIndex] & 0x03) == TraceDqr::MSEO_END) {
 			done = true;
-			msgSlices = i+1;
+			msgSlices = pendingMsgIndex+1;
 		}
+
+		pendingMsgIndex += 1;
 	}
 
 	eom = false;
 	bitIndex = 0;
 
+	haveMsg = true;
+	pendingMsgIndex = 0;
+
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics)	// generator to read trace messages one at a time
+TraceDqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
 {
+	char c;
+
+	// strip white space, comments, cr, and lf
+
+	enum {
+		STRIPPING_WHITESPACE,
+		STRIPPING_COMMENT,
+		STRIPPING_DONE
+	} ss = STRIPPING_WHITESPACE;
+
+	do {
+		tf.read((char*)&c,sizeof c);
+		if (!tf) {
+			tf.close();
+
+			status = TraceDqr::DQERR_EOF;
+
+			return TraceDqr::DQERR_EOF;
+		}
+
+		switch (ss) {
+		case STRIPPING_WHITESPACE:
+			switch (c) {
+			case '#':
+				ss = STRIPPING_COMMENT;
+				break;
+			case '\n':
+			case '\r':
+			case ' ':
+			case '\t':
+				break;
+			default:
+				ss = STRIPPING_DONE;
+			}
+			break;
+		case STRIPPING_COMMENT:
+			switch (c) {
+			case '\n':
+				ss = STRIPPING_WHITESPACE;
+				break;
+			}
+			break;
+		default:
+			break;
+		}
+	} while (ss != STRIPPING_DONE);
+
+	// now try to get two hex digits
+
+	tf.read((char*)&c,sizeof c);
+	if (!tf) {
+		tf.close();
+
+		status = TraceDqr::DQERR_EOF;
+
+		return TraceDqr::DQERR_EOF;
+	}
+
+	int hd;
+	uint8_t hn;
+
+	hd = atoh(c);
+	if (hd < 0) {
+		status = TraceDqr::DQERR_ERR;
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	hn = hd << 4;
+
+	hd = atoh(c);
+	if (hd < 0) {
+		status = TraceDqr::DQERR_ERR;
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	hn = hn | hd;
+
+	*byte = hn;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics,bool &haveMsg)	// generator to read trace messages one at a time
+{
+	haveMsg = false;
+
 	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
@@ -7366,7 +7798,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 
 		// read from file, store in object, compute and fill out full fields, such as address and more later
 
-		rc = readBinaryMsg();
+		rc = readBinaryMsg(haveMsg);
 		if (rc != TraceDqr::DQERR_OK) {
 
 			// all errors from readBinaryMsg() are non-recoverable.
@@ -7378,6 +7810,10 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 			status = rc;
 
 			return status;
+		}
+
+		if (haveMsg == false) {
+			return TraceDqr::DQERR_OK;
 		}
 
 		nm.offset = msgOffset;
@@ -7684,12 +8120,16 @@ Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
     			section = symbol_table[i]->section;
 
     			if (labelsAreFunctions) {
-        			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))) {
+        			if ((section->flags & SEC_CODE)
+        				&& ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))
+						&& ((symbol_table[i]->flags & BSF_SECTION_SYM) == 0)) {
         				symbol_table[i]->flags |= BSF_FUNCTION;
         			}
     			}
     			else {
-        			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL))) {
+        			if ((section->flags & SEC_CODE)
+        			    && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL))
+						&& ((symbol_table[i]->flags & BSF_SECTION_SYM) == 0)) {
         				symbol_table[i]->flags |= BSF_FUNCTION;
         			}
     			}
@@ -8571,6 +9011,81 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 			is_branch = false;
 		}
 		break;
+	case 0x07: // vector load
+		// Need to check width encoding field to distinguish between vector and normal FP loads (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_LOAD;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x27: // vector store
+		// Need to check width encoding field to distinguish between vector and normal FP stores (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_STORE;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x2f: // vector AMO
+		// Need to check width encoding field to distinguish between vector and normal AMO (bits 26-28)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			if ((instruction >> 26) & 0x01) {
+				inst_type = TraceDqr::INST_VECT_AMO_WW;
+			}
+			else {
+				inst_type = TraceDqr::INST_VECT_AMO;
+			}
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x57: // vector arith or vector config
+		if (((instruction >> 12) & 0x7) <= 6) {
+			inst_type = TraceDqr::INST_VECT_ARITH;
+		}
+		else {
+			inst_type = TraceDqr::INST_VECT_CONFIG;
+		}
+
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
+		break;
 	default:
 		inst_type = TraceDqr::INST_UNKNOWN;
 		immediate = 0;
@@ -8898,6 +9413,80 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 			is_branch = false;
 		}
 		break;
+	case 0x07: // vector load
+		// Need to check width encoding field to distinguish between vector and normal FP loads (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_LOAD;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x27: // vector store
+		// Need to check width encoding field to distinguish between vector and normal FP stores (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_STORE;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x2f: // vector AMO
+		// Need to check width encoding field to distinguish between vector and normal AMO (bits 26-28)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			if ((instruction >> 26) & 0x01) {
+				inst_type = TraceDqr::INST_VECT_AMO_WW;
+			}
+			else {
+				inst_type = TraceDqr::INST_VECT_AMO;
+			}
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x57: // vector arith or vector config
+		if (((instruction >> 12) & 0x7) <= 6) {
+			inst_type = TraceDqr::INST_VECT_ARITH;
+		}
+		else {
+			inst_type = TraceDqr::INST_VECT_CONFIG;
+		}
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
+		break;
 	default:
 		inst_type = TraceDqr::INST_UNKNOWN;
 		immediate = 0;
@@ -9160,6 +9749,92 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 	if (sane != fprime) {
 		delete [] sane;
 		sane = nullptr;
+	}
+
+	{
+		// foodog
+		// check for garbage in path/file name
+
+		if (*filename != nullptr) {
+			const char *cp = *filename;
+			for (int i = 0; cp[i] != 0; i++) {
+				switch (cp[i]) {
+				case 'a':
+				case 'b':
+				case 'c':
+				case 'd':
+				case 'e':
+				case 'f':
+				case 'g':
+				case 'h':
+				case 'i':
+				case 'j':
+				case 'k':
+				case 'l':
+				case 'm':
+				case 'n':
+				case 'o':
+				case 'p':
+				case 'q':
+				case 'r':
+				case 's':
+				case 't':
+				case 'u':
+				case 'v':
+				case 'w':
+				case 'x':
+				case 'y':
+				case 'z':
+				case 'A':
+				case 'B':
+				case 'C':
+				case 'D':
+				case 'E':
+				case 'F':
+				case 'G':
+				case 'H':
+				case 'I':
+				case 'J':
+				case 'K':
+				case 'L':
+				case 'M':
+				case 'N':
+				case 'O':
+				case 'P':
+				case 'Q':
+				case 'R':
+				case 'S':
+				case 'T':
+				case 'U':
+				case 'V':
+				case 'W':
+				case 'X':
+				case 'Y':
+				case 'Z':
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				case '5':
+				case '6':
+				case '7':
+				case '8':
+				case '9':
+				case '/':
+				case '\\':
+				case '.':
+				case '_':
+				case '-':
+				case '+':
+				case ':':
+					break;
+				default:
+					printf("Error: getSrcLines(): File name '%s' contains bogus char (0x%02x) in position %d!\n",cp,cp[i],i);
+					break;
+				}
+			}
+		}
 	}
 
 	return 1;
@@ -10356,10 +11031,10 @@ TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchF
 	instructionInfo.wVal = srec->wVal;
 
 	if (currentTime[srec->coreId] == 0) {
-		instructionInfo.cycles = 0;
+		instructionInfo.pipeCycles = 0;
 	}
 	else {
-		instructionInfo.cycles = srec->cycles - currentTime[srec->coreId];
+		instructionInfo.pipeCycles = srec->cycles - currentTime[srec->coreId];
 	}
 
 	currentTime[srec->coreId] = srec->cycles;
