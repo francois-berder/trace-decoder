@@ -4518,7 +4518,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 	}
 
 	if ((tcode != TraceDqr::TCODE_INCIRCUITTRACE) && (tcode != TraceDqr::TCODE_INCIRCUITTRACE_WS)) {
-		n += snprintf(dst+n,dst_len-n,"NxtAddr: %08llx, TCode: ",currentAddress);
+		n += snprintf(dst+n,dst_len-n,"NxtAddr: %08llx, ",currentAddress);
 	}
 
 	switch (tcode) {
