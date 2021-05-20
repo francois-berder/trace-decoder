@@ -3072,8 +3072,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-                                // INCIRCUTTRACE_WS messages do not have a sync reason, but control(0,1) has
-                                // the same info!
+				// INCIRCUTTRACE_WS messages do not have a sync reason, but control(0,1) has
+				// the same info!
 
 				TraceDqr::ICTReason itcr;
 
@@ -3115,26 +3115,26 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					status = TraceDqr::DQERR_OK;
 
 					return status;
-                                case TraceDqr::ICT_CONTROL:
-                                        bool returnFlag;
-                                        returnFlag = true;
+                case TraceDqr::ICT_CONTROL:
+                	bool returnFlag;
+                	returnFlag = true;
 
-                                        if (nm.ictWS.ckdf == 1) {
-                                                switch (nm.ictWS.ckdata[1]) {
-                                                case TraceDqr::ICT_CONTROL_TRACE_ON:
-                                                case TraceDqr::ICT_CONTROL_EXIT_DEBUG:
-							// only exit debug or trace enable allow proceeding. All others stay in this state and return
+                	if (nm.ictWS.ckdf == 1) {
+                		switch (nm.ictWS.ckdata[1]) {
+                		case TraceDqr::ICT_CONTROL_TRACE_ON:
+                		case TraceDqr::ICT_CONTROL_EXIT_DEBUG:
+                			// only exit debug or trace enable allow proceeding. All others stay in this state and return
 
-							teAddr = nm.getF_Addr() << 1;
-                                                        returnFlag = false;
-							break;
-                                                default:
-                                                        break;
-                                                }
-					}
+                			teAddr = nm.getF_Addr() << 1;
+                			returnFlag = false;
+                			break;
+                		default:
+                			break;
+                		}
+                	}
 
-                                        if (returnFlag) {
-						rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+                	if (returnFlag) {
+                		rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
 						if (rc != TraceDqr::DQERR_OK) {
 							printf("Error: NextInstruction(): state TRACE_STATE_SYNCCATE: processTraceMessage()\n");
 
@@ -3162,8 +3162,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						status = TraceDqr::DQERR_OK;
 
 						return status;
-                                        }
-                                        break;
+                	}
+                	break;
 				case TraceDqr::ICT_NONE:
 				default:
 					printf("Error: invalid ICT reason\n");
@@ -3314,7 +3314,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					// because it is the only incircuittrace message type with no address
 				}
 				else {
-					if ((instInfo != nullptr) || (srcInfo != nullptr)) {
+					if ((nm.getCKSRC() == TraceDqr::ICT_EXT_TRIG) && (nm.getCKDF() == 0)) {
+						// no dasm or src for ext trigger in HTM instruction traces
+					}
+					else if ((nm.getCKSRC() == TraceDqr::ICT_WATCHPOINT) && (nm.getCKDF() == 0)) {
+						// no dasm or src for ext trigger in HTM instruction tracaes
+					}
+					else if ((instInfo != nullptr) || (srcInfo != nullptr)) {
 						Disassemble(currentAddress[currentCore]);
 
 						if (instInfo != nullptr) {
@@ -3382,8 +3388,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			if (msgInfo != nullptr) {
 				messageInfo = nm;
-
-				messageInfo.currentAddress = currentAddress[currentCore];
 
 				messageInfo.time = lastTime[currentCore];
 
@@ -3453,20 +3457,16 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					addr = currentAddress[currentCore];
 				}
 				else {
-					if ((instInfo != nullptr) || (srcInfo != nullptr)) {
-						switch (nm.getCKSRC()) {
-						case TraceDqr::ICT_EXT_TRIG:
-						case TraceDqr::ICT_WATCHPOINT:
-							if (nm.getCKDF() == 0) {
-								addr = lastFaddr[currentCore];
-							}
-							else {
-								addr = currentAddress[currentCore];
-							}
-							break;
-						default:
-							addr = currentAddress[currentCore];
-						}
+					if ((nm.getCKSRC() == TraceDqr::ICT_EXT_TRIG) && (nm.getCKDF() == 0)) {
+						// no dasm or src for ext trigger in HTM instruction traces
+						addr = lastFaddr[currentCore];
+					}
+					else if ((nm.getCKSRC() == TraceDqr::ICT_WATCHPOINT) && (nm.getCKDF() == 0)) {
+						// no dasm or src for ext trigger in HTM instruction tracaes
+						addr = lastFaddr[currentCore];
+					}
+					else if ((instInfo != nullptr) || (srcInfo != nullptr)) {
+						addr = currentAddress[currentCore];
 
 						Disassemble(addr);
 
@@ -3777,20 +3777,16 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					addr = currentAddress[currentCore];
 				}
 				else {
-					if ((instInfo != nullptr) || (srcInfo != nullptr)) {
-						switch (nm.getCKSRC()) {
-						case TraceDqr::ICT_EXT_TRIG:
-						case TraceDqr::ICT_WATCHPOINT:
-							if (nm.getCKDF() == 0) {
-								addr = lastFaddr[currentCore];
-							}
-							else {
-								addr = currentAddress[currentCore];
-							}
-							break;
-						default:
-							addr = currentAddress[currentCore];
-						}
+					if ((nm.getCKSRC() == TraceDqr::ICT_EXT_TRIG) && (nm.getCKDF() == 0)) {
+						// no dasm or src for ext trigger in HTM instruction traces
+						addr = lastFaddr[currentCore];
+					}
+					else if ((nm.getCKSRC() == TraceDqr::ICT_WATCHPOINT) && (nm.getCKDF() == 0)) {
+						// no dasm or src for ext trigger in HTM instruction tracaes
+						addr = lastFaddr[currentCore];
+					}
+					else if ((instInfo != nullptr) || (srcInfo != nullptr)) {
+						addr = currentAddress[currentCore];
 
 						Disassemble(addr);
 
@@ -3813,13 +3809,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 							*srcInfo = &sourceInfo;
 						}
 					}
-					state[currentCore] = TRACE_STATE_GETMSGWITHCOUNT;
 				}
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
-//					messageInfo.currentAddress = currentAddress[currentCore]; this might be wrong too
 					messageInfo.currentAddress = addr;
 
 					if (messageInfo.processITCPrintData(itcPrint) == false) {
