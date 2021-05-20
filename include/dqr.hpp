@@ -753,13 +753,14 @@ private:
 
 class Trace {
 public:
-    Trace(char *tf_name,char *ef_name,TraceDqr::TraceType tType,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
+    Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
     ~Trace();
     void cleanUp();
     static const char *version();
 #ifdef foodog
     TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
 #endif // foodog
+    TraceDqr::DQErr setTraceType(TraceDqr::TraceType tType);
 	TraceDqr::DQErr setTSSize(int size);
 	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);

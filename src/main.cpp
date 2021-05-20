@@ -643,7 +643,7 @@ int main(int argc, char *argv[])
 		sim->setLabelMode(labelFlag);
 	}
 	else {
-		trace = new (std::nothrow) Trace(tf_name,ef_name,traceType,numAddrBits,addrDispFlags,srcbits,freq);
+		trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
 		assert(trace != nullptr);
 
@@ -655,6 +655,8 @@ int main(int argc, char *argv[])
 
 			return 1;
 		}
+
+		trace->setTraceType(traceType);
 
 		if (ca_name != nullptr) {
 			TraceDqr::DQErr rc;

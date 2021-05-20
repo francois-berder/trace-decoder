@@ -1157,7 +1157,7 @@ int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstT
 	return disassembler->decodeInstruction(instruction,getArchSize(),inst_size,inst_type,rs1,rd,immediate,is_branch);
 }
 
-Trace::Trace(char *tf_name,char *ef_name,TraceDqr::TraceType tType,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
+Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
 {
   sfp          = nullptr;
   elfReader    = nullptr;
@@ -1171,7 +1171,7 @@ Trace::Trace(char *tf_name,char *ef_name,TraceDqr::TraceType tType,int numAddrBi
 
   assert(tf_name != nullptr);
 
-  traceType = tType;
+  traceType = TraceDqr::TRACETYPE_BTM;
 
   itcPrint = nullptr;
 
@@ -1416,6 +1416,20 @@ int Trace::getAddressSize()
 	}
 
 	return elfReader->getBitsPerAddress();
+}
+
+TraceDqr::DQErr Trace::setTraceType(TraceDqr::TraceType tType)
+{
+	switch (tType) {
+	case TraceDqr::TRACETYPE_BTM:
+	case TraceDqr::TRACETYPE_HTM:
+		traceType = tType;
+		return TraceDqr::DQERR_OK;
+	default:
+		break;
+	}
+
+	return TraceDqr::DQERR_ERR;
 }
 
 TraceDqr::DQErr Trace::setPathType(TraceDqr::pathType pt)
@@ -3614,7 +3628,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 				}
 
-				if (srcInfo != nullptr) {
+				if ((srcInfo != nullptr) && (*srcInfo == nullptr)) {
 					Disassemble(currentAddress[currentCore]);
 
 					sourceInfo.coreId = currentCore;
@@ -3964,7 +3978,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					// read another trace message and retry
 
 					state[currentCore] = TRACE_STATE_RETIREMESSAGE;
-					break;
+					break; // this break exits trace_state_getnextinstruction!
 				}
 				else if (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
 					// error
