@@ -3389,6 +3389,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			if (msgInfo != nullptr) {
 				messageInfo = nm;
 
+				messageInfo.currentAddress = currentAddress[currentCore];
+
 				messageInfo.time = lastTime[currentCore];
 
 				if (messageInfo.processITCPrintData(itcPrint) == false) {
