@@ -3497,7 +3497,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
-//					messageInfo.currentAddress = currentAddress[currentCore]; this might be wrong too
 					messageInfo.currentAddress = addr;
 
 					if (messageInfo.processITCPrintData(itcPrint) == false) {
@@ -3615,13 +3614,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 				}
 
-				if ((srcInfo != nullptr) && (*srcInfo == nullptr)) {
-					if ((nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE) || (nm.tcode == TraceDqr::TCODE_INCIRCUITTRACE_WS)) {
-						Disassemble(lastFaddr[currentCore]);
-					}
-					else {
-						Disassemble(currentAddress[currentCore]);
-					}
+				if (srcInfo != nullptr) {
+					Disassemble(currentAddress[currentCore]);
 
 					sourceInfo.coreId = currentCore;
 					*srcInfo = &sourceInfo;
