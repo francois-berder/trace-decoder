@@ -1878,6 +1878,17 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			pc = -1;
 		}
 
+		// Try to tell if this is a btm or htm based on counts and isReturn | isSwap
+
+		if (traceType == TraceDqr::TRACETYPE_BTM) {
+			if (crFlag & (TraceDqr::isReturn | TraceDqr::isSwap)) {
+				if (counts->consumeICnt(core,0) > inst_size / 16) {
+					traceType = TraceDqr::TRACETYPE_HTM;
+					if (globalDebugFlag) printf("JALR: switching to HTM trace\n");
+				}
+			}
+		}
+
 		if (traceType == TraceDqr::TRACETYPE_BTM) {
 			if (counts->consumeICnt(core,0) > inst_size / 16) {
 				// this handles the case of jumping to the instruction following the jump!
@@ -2056,6 +2067,17 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			pc = -1;
 		}
 
+		// Try to tell if this is a btm or htm based on counts and isReturn
+
+		if (traceType == TraceDqr::TRACETYPE_BTM) {
+			if (crFlag & TraceDqr::isReturn) {
+				if (counts->consumeICnt(core,0) > inst_size / 16) {
+					traceType = TraceDqr::TRACETYPE_HTM;
+					if (globalDebugFlag) printf("C_JR: switching to HTM trace\n");
+				}
+			}
+		}
+
 		if (traceType == TraceDqr::TRACETYPE_BTM) {
 			if (counts->consumeICnt(core,0) > inst_size / 16) {
 				// this handles the case of jumping to the instruction following the jump!
@@ -2083,6 +2105,17 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			if (globalDebugFlag) printf("Debug: call: core %d, new address %08llx (don't know dst yet), pushing %08llx, %d item now on stack\n",core,pc,addr+inst_size/8,counts->getNumOnStack(core));
 			pc = -1;
 			crFlag |= TraceDqr::isCall;
+		}
+
+		// Try to tell if this is a btm or htm based on counts and isSwap
+
+		if (traceType == TraceDqr::TRACETYPE_BTM) {
+			if (crFlag & TraceDqr::isSwap) {
+				if (counts->consumeICnt(core,0) > inst_size / 16) {
+					traceType = TraceDqr::TRACETYPE_HTM;
+					if (globalDebugFlag) printf("C_JALR: switching to HTM trace\n");
+				}
+			}
 		}
 
 		if (traceType == TraceDqr::TRACETYPE_BTM) {
@@ -2879,12 +2912,14 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				case TraceDqr::TCODE_CORRELATION:
 					if (nm.correlation.cdf == 1) {
 						traceType = TraceDqr::TRACETYPE_HTM;
+						if (globalDebugFlag) printf("TCODE_CORRELATION, cdf == 1: switching to HTM mode\n");
 					}
 					break;
 				case TraceDqr::TCODE_RESOURCEFULL:
 				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 					traceType = TraceDqr::TRACETYPE_HTM;
+					if (globalDebugFlag) printf("History/taken/not taken count TCODE: switching to HTM mode\n");
 					break;
 				case TraceDqr::TCODE_REPEATBRANCH:
 				case TraceDqr::TCODE_REPEATINSTRUCTION:
