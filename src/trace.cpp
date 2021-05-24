@@ -2576,7 +2576,6 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				// does not update faddr or pc!
 			}
 			else if (nm.ictWS.ckdf == 1) {
-				printf("have address!! %08x, ts: %08x\n",nm.ictWS.ckdata[0] << 1, nm.timestamp);
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
 			}
