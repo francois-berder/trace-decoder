@@ -7676,6 +7676,13 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 			if (!tf) {
 				if (tf.eof()) {
 					printf("Info: SliceFileParser::readBinaryMsg(): Last message in trace file is incomplete\n");
+					if (globalDebugFlag) {
+						printf("Debug: Raw msg:");
+						for (int i = 0; i < pendingMsgIndex; i++) {
+							printf(" %02x",msg[i]);
+						}
+						printf("\n");
+					}
 					status = TraceDqr::DQERR_EOF;
 				}
 				else {
