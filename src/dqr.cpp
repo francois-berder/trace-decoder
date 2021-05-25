@@ -7570,6 +7570,9 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 
 	haveMsg = false;
 
+	// if doing SWT, we may have ran out of data last time before getting an entire message
+	// and pendingMsgIndex may not be 0. If not 0, pick up where we left off
+
 	if (pendingMsgIndex == 0) {
 		do {
 			if (SWTsock >= 0) {
