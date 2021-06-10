@@ -308,6 +308,12 @@ public:
 		CAFLAG_VLOAD  = 0x20,
 		CAFLAG_VARITH = 0x40,
 	};
+
+	struct nlStrings{
+		int nf;
+		int signedMask;
+		char *format;
+	};
 };
 
 // class Instruction: work with an instruction
@@ -732,6 +738,11 @@ public:
 	TraceDqr::DQErr sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo,Source &srcInfo);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
+
+	TraceDqr::DQErr getSymbolByName(char *symName,TraceDqr::ADDRESS &addr);
+	TraceDqr::DQErr parseNLSStrings(TraceDqr::nlStrings (&nlsStrings)[32]);
+
+	TraceDqr::DQErr dumpSyms();
 
 private:
 	TraceDqr::DQErr        status;

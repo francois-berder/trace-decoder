@@ -139,7 +139,7 @@ public:
 	            ~Symtab();
 	const char  *getSymbolByAddress(TraceDqr::ADDRESS addr);
 	const char  *getNextSymbolByAddress();
-//	dqr::ADDRESS getSymbolByName();
+	TraceDqr::DQErr getSymbolByName(char *symName, TraceDqr::ADDRESS &addr);
 	asymbol    **getSymbolTable() { return symbol_table; }
 	void         dump();
 
@@ -164,6 +164,11 @@ public:
 	bfd       *get_bfd() {return abfd;}
 	int        getArchSize() { return archSize; }
 	int        getBitsPerAddress() { return bitsPerAddress; }
+
+	TraceDqr::DQErr getSymbolByName(char *symName,TraceDqr::ADDRESS &addr);
+	TraceDqr::DQErr parseNLSStrings(TraceDqr::nlStrings *nlsStrings);
+
+	TraceDqr::DQErr dumpSyms();
 
 private:
 	static bool init;
@@ -191,7 +196,7 @@ public:
 
 class ITCPrint {
 public:
-	ITCPrint(int numCores,int buffSize,int channel);
+	ITCPrint(int numCores,int buffSize,int channel,TraceDqr::nlStrings *nlsStrings);
 	~ITCPrint();
 	bool print(uint8_t core, uint32_t address, uint32_t data);
 	bool print(uint8_t core, uint32_t address, uint32_t data, TraceDqr::TIMESTAMP tstamp);
@@ -212,6 +217,7 @@ private:
 	int numCores;
 	int buffSize;
 	int printChannel;
+	TraceDqr::nlStrings *nlsStrings;
 	char **pbuff;
 	int *pbi;
 	int *pbo;

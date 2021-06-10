@@ -1665,7 +1665,33 @@ TraceDqr::DQErr Trace::setITCPrintOptions(int buffSize,int channel)
 		itcPrint = nullptr;
 	}
 
-	itcPrint = new ITCPrint(1 << srcbits,buffSize,channel);
+	// get the strings here, and give them to the itcprint object
+
+	TraceDqr::nlStrings *nlsStrings;
+
+	nlsStrings = nullptr;
+
+	if (elfReader != nullptr) {
+		TraceDqr::DQErr rc;
+
+		nlsStrings = new TraceDqr::nlStrings[32];
+
+		rc = elfReader->parseNLSStrings(nlsStrings);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+
+			delete [] nlsStrings;
+			nlsStrings = nullptr;
+
+			return rc;
+		}
+
+//		for (int i = 0; i < 32; i++) {
+//			printf("nlsStrings[%d]: %d  %02x %s\n",i,nlsStrings[i].nf,nlsStrings[i].signedMask,nlsStrings[i].format);
+//		}
+	}
+
+	itcPrint = new ITCPrint(1 << srcbits,buffSize,channel,nlsStrings);
 
 	return TraceDqr::DQERR_OK;
 }

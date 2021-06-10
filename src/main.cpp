@@ -496,6 +496,35 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
+		else if (0) {
+			ObjFile *of;
+			TraceDqr::DQErr rc;
+
+			of = new ObjFile(ef_name);
+			rc = of->getStatus();
+			if (rc != TraceDqr::DQERR_OK) {
+				printf("Error: cannot create ObjFile object\n");
+				return 1;
+			}
+
+			printf("boink!\n");fflush(stdout);
+
+			TraceDqr::nlStrings nlsStrings[32];
+			of->parseNLSStrings(nlsStrings);
+
+			for (int i = 0; i < 32; i++) {
+				printf("nlsStrings[%d]: %d  %02x %s\n",i,nlsStrings[i].nf,nlsStrings[i].signedMask,nlsStrings[i].format);
+			}
+
+			return 1;
+
+//			rc = of->getNLS();
+			if (rc != TraceDqr::DQERR_OK) {
+				printf("getNLS could not find any no-load-strings\n");
+				return 1;
+			}
+
+		}
 		else if (strcmp("-r",argv[i]) == 0) {
 			i += 1;
 			if (i >= argc) {
@@ -965,6 +994,9 @@ int main(int argc, char *argv[])
 	} while (ec == TraceDqr::DQERR_OK);
 
 	if (ec == TraceDqr::DQERR_EOF) {
+		if (firstPrint == false) {
+			printf("\n");
+		}
 		printf("End of Trace File\n");
 	}
 	else {

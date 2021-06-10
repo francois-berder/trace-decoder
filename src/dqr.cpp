@@ -949,6 +949,31 @@ Symtab::~Symtab()
 	}
 }
 
+TraceDqr::DQErr Symtab::getSymbolByName(char *symName, TraceDqr::ADDRESS &addr)
+{
+	if (symName == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	struct bfd_section *section;
+	bfd_vma section_base_vma;
+
+	for (int i = 0; i < number_of_symbols; i++) {
+	    if (strcmp(symbol_table[i]->name,symName) == 0) {
+			section = symbol_table[i]->section;
+		    section_base_vma = section->vma;
+
+		    addr = symbol_table[i]->value + section_base_vma;
+		    printf("symtab::getsymbolbyname: found %s at %08llx\n",symName,addr);
+
+		    return TraceDqr::DQERR_OK;
+	    }
+	}
+
+	printf("symtab::getsymbolbyname: %s not found\n",symName);
+
+	return TraceDqr::DQERR_ERR;
+}
 const char *Symtab::getSymbolByAddress(TraceDqr::ADDRESS addr)
 {
 	if (addr == 0) {
@@ -1023,7 +1048,7 @@ ElfReader::ElfReader(char *elfname)
 
   abfd = bfd_openr(elfname,NULL);
   if (abfd == nullptr) {
-    status = TraceDqr::TraceDqr::DQERR_ERR;
+    status = TraceDqr::DQERR_ERR;
 
     bfd_error_type bfd_error = bfd_get_error();
     printf("Error: bfd_openr() returned null. Error: %d\n",bfd_error);
@@ -1035,7 +1060,7 @@ ElfReader::ElfReader(char *elfname)
   if(!bfd_check_format(abfd,bfd_object)) {
     printf("Error: ElfReader(): %s not object file: %d\n",elfname,bfd_get_error());
 
-	status = TraceDqr::TraceDqr::DQERR_ERR;
+	status = TraceDqr::DQERR_ERR;
 
 	return;
   }
@@ -1046,7 +1071,7 @@ ElfReader::ElfReader(char *elfname)
   if (aitp == nullptr) {
 	  printf("Error: ElfReader(): Cannot get arch info for file %s\n",elfname);
 
-	  status = TraceDqr::TraceDqr::DQERR_ERR;
+	  status = TraceDqr::DQERR_ERR;
 	  return;
   }
 
@@ -1076,7 +1101,7 @@ ElfReader::ElfReader(char *elfname)
   default:
 	  printf("Error: ElfReader(): elf file is for unknown machine type\n");
 
-	  status = TraceDqr::TraceDqr::DQERR_ERR;
+	  status = TraceDqr::DQERR_ERR;
 	  return;
   }
 
@@ -1183,6 +1208,155 @@ TraceDqr::DQErr ElfReader::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceD
 	return status;
 }
 
+TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
+{
+	asection *sp;
+	bool found = false;
+
+	for (sp = abfd->sections; (sp != NULL) && !found;) {
+		if (strcmp(sp->name,".comment") == 0) {
+			found = true;
+		}
+		else {
+			sp = sp->next;
+		}
+	}
+
+	if (!found) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	int size = sp->size;
+	char *data;
+
+	data = new (std::nothrow) char[size];
+
+	assert(data != nullptr);
+
+	bfd_boolean rc;
+	rc = bfd_get_section_contents(abfd,sp,(void*)data,0,size);
+	if (rc != TRUE) {
+		printf("Error: ElfReader::parseNLSStrings(): bfd_get_section_contents() failed\n");
+
+		delete [] data;
+		data = nullptr;
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	int index;
+
+	for (int i = 0; i < 32; i++) {
+		nlsStrings[i].nf = 0;
+		nlsStrings[i].signedMask = 0;
+		nlsStrings[i].format = nullptr;
+	}
+
+	for (int i = 0; i < size;) {
+		char *end;
+
+		index = strtol(&data[i],&end,0);
+
+		if (end != &data[i]) {
+			// found an index
+
+			i = end - data;
+
+			if ((index >= 32) || (index < 0) || (data[i] != ':')) {
+				// invalid format string - skip
+				while ((i < size) && (data[i] != 0)) {
+					i += 1;
+				}
+				i += 1;
+			}
+			else {
+				// found a format string
+
+				// need to find end of string
+				int e;
+				int nf = 0;
+				int state = 0;
+
+				for (e = i+1; (data[e] != 0) && (e < size); e++) {
+					// need to figure out if %s are signed or unsigned
+
+					switch (state) {
+					case 0:
+						if (data[e] == '%') {
+							state = 1;
+						}
+						break;
+					case 1: // found a %, figure out format
+						switch (data[e]) {
+						case '%':
+							state = 0;
+							break;
+						// signed cases
+						case 'd':
+						case 'i':
+							nlsStrings[index].signedMask |= (1 << nf);
+							nf += 1;
+							state = 0;
+							break;
+						// unsigned cases
+						case 'o':
+						case 'u':
+						case 'x':
+						case 'X':
+						case 'e':
+						case 'E':
+						case 'f':
+						case 'F':
+						case 'g':
+						case 'G':
+						case 'a':
+						case 'A':
+						case 'c':
+						case 's':
+						case 'p':
+						case 'n':
+						case 'M':
+							state = 0;
+							nf += 1;
+							break;
+						default:
+							break;
+						}
+					}
+				}
+
+				if (data[e] != 0) {
+					// invalid format string - not null terminated
+
+					//should we delete here?
+
+					return TraceDqr::DQERR_ERR;
+				}
+
+				nlsStrings[index].nf = nf;
+				nlsStrings[index].format = new char [e-i+1];
+
+				strcpy(nlsStrings[index].format, &data[i+1]);
+
+				i = e+1;
+			}
+		}
+		else {
+			// skip string, look for another
+			while ((i < size) && (data[i] != 0)) {
+				i += 1;
+			}
+			i += 1;
+		}
+	}
+
+//	for (int i = 0; i < 32; i++) {
+//		printf("nlsStrings[%d]: %d  %02x %s\n",i,nlsStrings[i].nf,nlsStrings[i].signedMask,nlsStrings[i].format);
+//	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 Symtab *ElfReader::getSymtab()
 {
 	if (symtab == nullptr) {
@@ -1192,6 +1366,26 @@ Symtab *ElfReader::getSymtab()
 	}
 
 	return symtab;
+}
+
+TraceDqr::DQErr ElfReader::getSymbolByName(char *symName,TraceDqr::ADDRESS &addr)
+{
+	if (symtab == nullptr) {
+		symtab = getSymtab();
+	}
+
+	return symtab->getSymbolByName(symName,addr);
+}
+
+TraceDqr::DQErr ElfReader::dumpSyms()
+{
+	if (symtab == nullptr) {
+		symtab = getSymtab();
+	}
+
+	symtab->dump();
+
+	return TraceDqr::DQERR_OK;
 }
 
 TsList::TsList()
@@ -1209,13 +1403,14 @@ TsList::~TsList()
 {
 }
 
-ITCPrint::ITCPrint(int numCores, int buffSize,int channel)
+ITCPrint::ITCPrint(int numCores, int buffSize,int channel,TraceDqr::nlStrings *nlsStrings)
 {
 	assert((numCores > 0) && (buffSize > 0));
 
 	this->numCores = numCores;
 	this->buffSize = buffSize;
 	this->printChannel = channel;
+	this->nlsStrings = nlsStrings;
 
 	pbuff = new char*[numCores];
 
@@ -1262,6 +1457,11 @@ ITCPrint::~ITCPrint()
 
 		delete [] pbuff;
 		pbuff = nullptr;
+	}
+
+	if (nlsStrings != nullptr) {
+		delete [] nlsStrings;
+		nlsStrings = nullptr;
 	}
 
 	if (numMsgs != nullptr) {
@@ -1328,15 +1528,180 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 		return false;
 	}
 
+//	here we want to process nls!!!
+//	check is addr has an itc print format string (in nlsStrings)
+
+	TsList *tlp;
+	tlp = tsList[core];
+	TsList *workingtlp;
+	int channel;
+
+	channel = addr / 4;
+
+	if (((addr & 0x03) == 0) && (nlsStrings != nullptr) && (nlsStrings[channel].format != nullptr)) {
+		int args[4];
+		char dst[256];
+		int dstLen = 0;
+
+		// have a no-load-string print
+
+		// need to get args for print
+
+		switch (nlsStrings[channel].nf) {
+		case 0:
+//			printf(nlsStrings[channel].format);
+			dstLen = sprintf(dst,nlsStrings[channel].format);
+//			printf("\n");
+			break;
+		case 1:
+//			printf(nlsStrings[channel].format,data);
+			dstLen = sprintf(dst,nlsStrings[channel].format,data);
+//			printf("\n");
+			break;
+		case 2:
+			for (int i = 0; i < 2; i++) {
+				if (nlsStrings[channel].signedMask & (1 << i)) {
+					// signed
+					args[i] = (int16_t)(data >> ((1-i) * 16));
+				}
+				else {
+					// unsigned
+					args[i] = (uint16_t)(data >> ((1-i) * 16));
+				}
+			}
+//			printf("->%08x, %08x\n",args[0],args[1]);
+//			printf(nlsStrings[channel].format,args[0],args[1]);
+			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1]);
+//			printf("\n");
+			break;
+		case 3:
+			args[0] = (data >> (32 - 11)) & 0x7ff; // 10 bit
+			args[1] = (data >> (32 - 22)) & 0x7ff; // 11 bit
+			args[2] = (data >> (32 - 32)) & 0x3ff; // 11 bit
+
+			if (nlsStrings[channel].signedMask & (1 << 0)) {
+				if (args[0] & 0x400) {
+					args[0] |= 0xfffff800;
+				}
+			}
+
+			if (nlsStrings[channel].signedMask & (1 << 1)) {
+				if (args[1] & 0x800) {
+					args[1] |= 0xfffff000;
+				}
+			}
+
+			if (nlsStrings[channel].signedMask & (1 << 2)) {
+				if (args[2] & 0x800) {
+					args[2] |= 0xfffff000;
+				}
+			}
+
+//			printf("->%08x, %08x, %08x\n",args[0],args[1],args[2]);
+//			printf(nlsStrings[channel].format,args[0],args[1],args[2]);
+			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2]);
+//			printf("\n");
+			break;
+		case 4:
+			for (int i = 0; i < 4; i++) {
+				if (nlsStrings[channel].signedMask & (1 << i)) {
+					// signed
+					args[i] = (int8_t)(data >> ((3-i) * 8));
+				}
+				else {
+					// unsigned
+					args[i] = (uint8_t)(data >> ((3-i) * 8));
+				}
+			}
+//			printf("->%08x, %08x, %08x %08x\n",args[0],args[1],args[2],args[3]);
+//			printf(nlsStrings[channel].format,args[0],args[1],args[2],args[3]);
+			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2],args[3]);
+//			printf("\n");
+			break;
+		default:
+//			printf("Error: invalid number of args for format string\n");
+			dstLen = sprintf(dst,"Error: invalid number of args for format string %d, %s",channel,nlsStrings[channel].format);
+			break;
+		}
+
+		if ((tsList[core] != nullptr) && (tsList[core]->terminated == false)) {
+			// terminate the current message
+
+			pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
+			pbi[core] += 1;
+
+			if (pbi[core] >= buffSize) {
+				pbi[core] = 0;
+			}
+
+			numMsgs[core] += 1;
+
+			tsList[core]->terminated = true;
+		}
+
+		// check free list for available struct
+
+		if (freeList != nullptr) {
+			workingtlp = freeList;
+			freeList = workingtlp->next;
+
+			workingtlp->terminated = false;
+			workingtlp->message = nullptr;
+		}
+		else {
+			workingtlp = new TsList();
+		}
+
+		if (tlp == nullptr) {
+			workingtlp->next = workingtlp;
+			workingtlp->prev = workingtlp;
+		}
+		else {
+			workingtlp->next = tlp;
+			workingtlp->prev = tlp->prev;
+
+			tlp->prev = workingtlp;
+			workingtlp->prev->next = workingtlp;
+		}
+
+		workingtlp->startTime = tstamp;
+	    workingtlp->endTime = tstamp;
+		workingtlp->message = &pbuff[core][pbi[core]];
+
+		tsList[core] = workingtlp;
+
+		// workingtlp now points to unterminated TSList object
+
+		int room = roomInITCPrintQ(core);
+
+		for (int i = 0; i < dstLen; i++ ) {
+			if (room >= 2) { // 2 because we need to make sure there is room for the nul termination
+				pbuff[core][pbi[core]] = dst[i];
+				pbi[core] += 1;
+				if (pbi[core] >= buffSize) {
+					pbi[core] = 0;
+				}
+				room -= 1;
+			}
+		}
+
+		pbuff[core][pbi[core]] = 0;
+		pbi[core] += 1;
+		if (pbi[core] >= buffSize) {
+			pbi[core] = 0;
+		}
+
+		workingtlp->terminated = true;
+		numMsgs[core] += 1;
+
+		return true;
+	}
+
 	if ((addr < (uint32_t)printChannel*4) || (addr >= (((uint32_t)printChannel+1)*4))) {
 		// not writing to this itc channel
 
 		return false;
 	}
-
-	TsList *tlp;
-	tlp = tsList[core];
-	TsList *workingtlp;
 
     if ((tlp == nullptr) || tlp->terminated == true) {
 		// see if there is one on the free list before making a new one
@@ -8098,6 +8463,33 @@ TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
 	status = TraceDqr::DQERR_OK;
 
 	return status;
+}
+
+TraceDqr::DQErr ObjFile::getSymbolByName(char *symName,TraceDqr::ADDRESS &addr)
+{
+	return elfReader->getSymbolByName(symName,addr);
+}
+
+TraceDqr::DQErr ObjFile::parseNLSStrings(TraceDqr::nlStrings (&nlsStrings)[32])
+{
+	if (elfReader == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return elfReader->parseNLSStrings(nlsStrings);
+}
+
+TraceDqr::DQErr ObjFile::dumpSyms()
+{
+	if (elfReader == nullptr) {
+		printf("elfReader is null\n");
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	printf("foodog!\n");fflush(stdout);
+
+	return elfReader->dumpSyms();
 }
 
 Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
