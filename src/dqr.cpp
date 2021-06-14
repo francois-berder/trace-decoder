@@ -811,7 +811,7 @@ fileReader::fileList *fileReader::readFile(const char *file)
 
 	// allocate memory:
 
-	char *buffer = new char [length];
+	char *buffer = new char [length+1]; // allocate an extra byte in case the file does not end with \n
 
 	// read file into buffer
 
@@ -825,6 +825,10 @@ fileReader::fileList *fileReader::readFile(const char *file)
 
 	for (int i = 0; i < length; i++) {
 		if (buffer[i] == '\n') {
+			lc += 1;
+		}
+		else if (i == length-1) {
+			// last line does not have a \n
 			lc += 1;
 		}
 	}
@@ -859,6 +863,8 @@ fileReader::fileList *fileReader::readFile(const char *file)
 		}
 	}
 
+	buffer[length] = 0;	// make sure last line is nul terminated
+
 	if (l >= lc) {
 		delete [] lines;
 		delete [] buffer;
@@ -866,7 +872,7 @@ fileReader::fileList *fileReader::readFile(const char *file)
 		fl->lineCount = 0;
 		fl->lines = nullptr;
 
-		printf("Error: readFile(): Error computing line count for file\n");
+		printf("Error: readFile(): Error computing line count for file %s, l:%d, lc: %d\n",file,l,lc);
 
 		return nullptr;
 	}
@@ -1534,169 +1540,153 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 	TsList *tlp;
 	tlp = tsList[core];
 	TsList *workingtlp;
+	int channel;
 
-	if (((addr & 0x03) == 0) && (nlsStrings != nullptr)) {
-		int channel;
+	channel = addr / 4;
 
-		channel = addr / 4;
+	if (((addr & 0x03) == 0) && (nlsStrings != nullptr) && (nlsStrings[channel].format != nullptr)) {
+		int args[4];
+		char dst[256];
+		int dstLen = 0;
 
-		// if the channel doesn't have a format, but the alternate channel does, use its format
-		// alternate channels are either +16 or -16
+		// have a no-load-string print
 
-		if (nlsStrings[channel].format == nullptr) {
-			// check alternate channel
-			if (channel < 15) {
-				channel += 16;
+		// need to get args for print
+
+		switch (nlsStrings[channel].nf) {
+		case 0:
+			dstLen = sprintf(dst,nlsStrings[channel].format);
+			break;
+		case 1:
+			dstLen = sprintf(dst,nlsStrings[channel].format,data);
+			break;
+		case 2:
+			for (int i = 0; i < 2; i++) {
+				if (nlsStrings[channel].signedMask & (1 << i)) {
+					// signed
+					args[i] = (int16_t)(data >> ((1-i) * 16));
+				}
+				else {
+					// unsigned
+					args[i] = (uint16_t)(data >> ((1-i) * 16));
+				}
 			}
-			else {
-				channel -= 16;
+			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1]);
+			break;
+		case 3:
+			args[0] = (data >> (32 - 11)) & 0x7ff; // 10 bit
+			args[1] = (data >> (32 - 22)) & 0x7ff; // 11 bit
+			args[2] = (data >> (32 - 32)) & 0x3ff; // 11 bit
+
+			if (nlsStrings[channel].signedMask & (1 << 0)) {
+				if (args[0] & 0x400) {
+					args[0] |= 0xfffff800;
+				}
 			}
+
+			if (nlsStrings[channel].signedMask & (1 << 1)) {
+				if (args[1] & 0x400) {
+					args[1] |= 0xfffff800;
+				}
+			}
+
+			if (nlsStrings[channel].signedMask & (1 << 2)) {
+				if (args[2] & 0x200) {
+					args[2] |= 0xfffffc00;
+				}
+			}
+
+			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2]);
+			break;
+		case 4:
+			for (int i = 0; i < 4; i++) {
+				if (nlsStrings[channel].signedMask & (1 << i)) {
+					// signed
+					args[i] = (int8_t)(data >> ((3-i) * 8));
+				}
+				else {
+					// unsigned
+					args[i] = (uint8_t)(data >> ((3-i) * 8));
+				}
+			}
+			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2],args[3]);
+			break;
+		default:
+			dstLen = sprintf(dst,"Error: invalid number of args for format string %d, %s",channel,nlsStrings[channel].format);
+			break;
 		}
 
-		if (nlsStrings[channel].format != nullptr) {
-			int args[4];
-			char dst[256];
-			int dstLen = 0;
+		if ((tsList[core] != nullptr) && (tsList[core]->terminated == false)) {
+			// terminate the current message
 
-			// have a no-load-string print
-
-			// need to get args for print
-
-			switch (nlsStrings[channel].nf) {
-			case 0:
-				dstLen = sprintf(dst,nlsStrings[channel].format);
-				break;
-			case 1:
-				dstLen = sprintf(dst,nlsStrings[channel].format,data);
-				break;
-			case 2:
-				for (int i = 0; i < 2; i++) {
-					if (nlsStrings[channel].signedMask & (1 << i)) {
-						// signed
-						args[i] = (int16_t)(data >> ((1-i) * 16));
-					}
-					else {
-						// unsigned
-						args[i] = (uint16_t)(data >> ((1-i) * 16));
-					}
-				}
-				dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1]);
-				break;
-			case 3:
-				args[0] = (data >> (32 - 11)) & 0x7ff; // 10 bit
-				args[1] = (data >> (32 - 22)) & 0x7ff; // 11 bit
-				args[2] = (data >> (32 - 32)) & 0x3ff; // 11 bit
-
-				if (nlsStrings[channel].signedMask & (1 << 0)) {
-					if (args[0] & 0x400) {
-						args[0] |= 0xfffff800;
-					}
-				}
-
-				if (nlsStrings[channel].signedMask & (1 << 1)) {
-					if (args[1] & 0x800) {
-						args[1] |= 0xfffff000;
-					}
-				}
-
-				if (nlsStrings[channel].signedMask & (1 << 2)) {
-					if (args[2] & 0x800) {
-						args[2] |= 0xfffff000;
-					}
-				}
-
-				dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2]);
-				break;
-			case 4:
-				for (int i = 0; i < 4; i++) {
-					if (nlsStrings[channel].signedMask & (1 << i)) {
-						// signed
-						args[i] = (int8_t)(data >> ((3-i) * 8));
-					}
-					else {
-						// unsigned
-						args[i] = (uint8_t)(data >> ((3-i) * 8));
-					}
-				}
-				dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2],args[3]);
-				break;
-			default:
-				dstLen = sprintf(dst,"Error: invalid number of args for format string %d, %s",channel,nlsStrings[channel].format);
-				break;
-			}
-
-			if ((tsList[core] != nullptr) && (tsList[core]->terminated == false)) {
-				// terminate the current message
-
-				pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
-				pbi[core] += 1;
-
-				if (pbi[core] >= buffSize) {
-					pbi[core] = 0;
-				}
-
-				numMsgs[core] += 1;
-
-				tsList[core]->terminated = true;
-			}
-
-			// check free list for available struct
-
-			if (freeList != nullptr) {
-				workingtlp = freeList;
-				freeList = workingtlp->next;
-
-				workingtlp->terminated = false;
-				workingtlp->message = nullptr;
-			}
-			else {
-				workingtlp = new TsList();
-			}
-
-			if (tlp == nullptr) {
-				workingtlp->next = workingtlp;
-				workingtlp->prev = workingtlp;
-			}
-			else {
-				workingtlp->next = tlp;
-				workingtlp->prev = tlp->prev;
-
-				tlp->prev = workingtlp;
-				workingtlp->prev->next = workingtlp;
-			}
-
-			workingtlp->startTime = tstamp;
-		    workingtlp->endTime = tstamp;
-			workingtlp->message = &pbuff[core][pbi[core]];
-
-			tsList[core] = workingtlp;
-
-			// workingtlp now points to unterminated TSList object
-
-			int room = roomInITCPrintQ(core);
-
-			for (int i = 0; i < dstLen; i++ ) {
-				if (room >= 2) { // 2 because we need to make sure there is room for the nul termination
-					pbuff[core][pbi[core]] = dst[i];
-					pbi[core] += 1;
-					if (pbi[core] >= buffSize) {
-						pbi[core] = 0;
-					}
-					room -= 1;
-				}
-			}
-
-			pbuff[core][pbi[core]] = 0;
+			pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
 			pbi[core] += 1;
+
 			if (pbi[core] >= buffSize) {
 				pbi[core] = 0;
 			}
 
-			workingtlp->terminated = true;
 			numMsgs[core] += 1;
 
-			return true;
+			tsList[core]->terminated = true;
 		}
+
+		// check free list for available struct
+
+		if (freeList != nullptr) {
+			workingtlp = freeList;
+			freeList = workingtlp->next;
+
+			workingtlp->terminated = false;
+			workingtlp->message = nullptr;
+		}
+		else {
+			workingtlp = new TsList();
+		}
+
+		if (tlp == nullptr) {
+			workingtlp->next = workingtlp;
+			workingtlp->prev = workingtlp;
+		}
+		else {
+			workingtlp->next = tlp;
+			workingtlp->prev = tlp->prev;
+
+			tlp->prev = workingtlp;
+			workingtlp->prev->next = workingtlp;
+		}
+
+		workingtlp->startTime = tstamp;
+	    workingtlp->endTime = tstamp;
+		workingtlp->message = &pbuff[core][pbi[core]];
+
+		tsList[core] = workingtlp;
+
+		// workingtlp now points to unterminated TSList object
+
+		int room = roomInITCPrintQ(core);
+
+		for (int i = 0; i < dstLen; i++ ) {
+			if (room >= 2) { // 2 because we need to make sure there is room for the nul termination
+				pbuff[core][pbi[core]] = dst[i];
+				pbi[core] += 1;
+				if (pbi[core] >= buffSize) {
+					pbi[core] = 0;
+				}
+				room -= 1;
+			}
+		}
+
+		pbuff[core][pbi[core]] = 0;
+		pbi[core] += 1;
+		if (pbi[core] >= buffSize) {
+			pbi[core] = 0;
+		}
+
+		workingtlp->terminated = true;
+		numMsgs[core] += 1;
+
+		return true;
 	}
 
 	if ((addr < (uint32_t)printChannel*4) || (addr >= (((uint32_t)printChannel+1)*4))) {
