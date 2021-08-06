@@ -1145,6 +1145,617 @@ TraceDqr::DQErr CATrace::parseNextCATraceRec(CATraceRec &car)
 	return TraceDqr::DQERR_OK;
 }
 
+// might need to add binary struct at beginning of metadata file??
+
+static const char * const CTFMetadataHeader =
+		"/* CTF 1.8 */\n"
+		"\n";
+
+static const char * const CTFMetadataTypeAlias =
+		"typealias integer {size = 8; align = 8; signed = false; } := uint8_t;\n"
+		"typealias integer {size = 16; align = 8; signed = false; } := uint16_t;\n"
+		"typealias integer {size = 32; align = 8; signed = false; } := uint32_t;\n"
+		"typealias integer {size = 64; align = 8; signed = false; } := uint64_t;\n"
+		"typealias integer {size = 64; align = 8; signed = false; } := unsigned long;\n"
+		"typealias integer {size = 5; align = 8; signed = false; } := uint5_t;\n"
+		"typealias integer {size = 27; align = 8; signed = false; } := uint27_t;\n"
+		"\n";
+
+static const char *const CTFMetadataTraceDef =
+		"trace {\n"
+		"\tmajor = 1;\n"
+		"\tminor = 8;\n"
+		"\tbyte_order = le;\n"
+		"\tpacket.header := struct {\n"
+		"\t\tuint32_t magic;\n"
+		"\t\tuint32_t stream_id;\n"
+		"\t};\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataEnvDef =
+		"env {\n"
+			"\tdomain = \"ust\";\n"
+			"\ttracer_name = \"lttng-ust\";\n"
+			"\ttracer_major = 2;\n"
+			"\ttracer_minor = 11;\n"
+			"\ttracer_buffering_scheme = \"uid\";\n"
+			"\ttracer_buffering_id = 1000;\n"
+			"\tarchitecture_bit_width = 64;\n"
+			"\ttrace_name = \"my-user-space-session-5\";\n"
+			"\ttrace_creation_datetime = \"20210722T114247-0700\";\n"
+			"\thostname = \"nucbob\";\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataClockDef =
+		"clock {\n"
+			"\tname = \"monotonic\";\n"
+			"\tuuid = \"cb35f5a5-f0a6-441f-b5c7-c7fb50c2e051\";\n"
+			"\tdescription = \"Monotonic Clock\";\n"
+			"\tfreq = %d; /* Frequency, in Hz */\n"
+			"\t/* clock value offset from Epoch is: offset * (1/freq) */\n"
+			"\toffset = 1626470161640558449;\n"
+		"};\n"
+		"\n"
+		"typealias integer {\n"
+			"\tsize = 27; align = 1; signed = false;\n"
+			"\tmap = clock.monotonic.value;\n"
+		"} := uint27_clock_monotonic_t;\n"
+		"\n"
+		"typealias integer {\n"
+			"\tsize = 32; align = 8; signed = false;\n"
+			"\tmap = clock.monotonic.value;\n"
+		"} := uint32_clock_monotonic_t;\n"
+		"\n"
+		"typealias integer {\n"
+			"\tsize = 64; align = 8; signed = false;\n"
+			"\tmap = clock.monotonic.value;\n"
+		"} := uint64_clock_monotonic_t;\n"
+		"\n";
+
+static const char * const CTFMetadataPacketContext =
+		"struct packet_context {\n"
+			"\tuint64_clock_monotonic_t timestamp_begin;\n"
+			"\tuint64_clock_monotonic_t timestamp_end;\n"
+			"\tuint64_t content_size;\n"
+			"\tuint64_t packet_size;\n"
+			"\tuint64_t packet_seq_num;\n"
+			"\tunsigned long events_discarded;\n"
+			"\tuint32_t cpu_id;\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataEventHeaders =
+		"struct event_header_compact {\n"
+			"\tenum : uint5_t { compact = 0 ... 30, extended = 31 } id;\n"
+			"\tvariant <id> {\n"
+				"\t\tstruct {\n"
+					"\t\t\tuint27_clock_monotonic_t timestamp;\n"
+				"\t\t} compact;\n"
+				"\t\tstruct {\n"
+					"\t\t\tuint32_t id;\n"
+					"\t\t\tuint64_clock_monotonic_t timestamp;\n"
+				"\t\t} extended;\n"
+			"\t} v;\n"
+		"} align(8);\n"
+		"\n"
+		"struct event_header_large {\n"
+			"\tenum : uint16_t { compact = 0 ... 65534, extended = 65535 } id;\n"
+			"\tvariant <id> {\n"
+				"\t\tstruct {\n"
+					"\t\t\tuint32_clock_monotonic_t timestamp;\n"
+				"\t\t} compact;\n"
+				"\t\tstruct {\n"
+					"\t\t\tuint32_t id;\n"
+					"\t\t\tuint64_clock_monotonic_t timestamp;\n"
+				"\t\t} extended;\n"
+			"\t} v;\n"
+		"} align(8);\n"
+		"\n";
+
+static const char * const CTFMetadataStreamDef =
+		"stream {\n"
+			"\tid = 0;\n"
+			"\tevent.header := struct event_header_large;\n"
+			"\tpacket.context := struct packet_context;\n"
+			"\tevent.context := struct {\n"
+				"\t\tinteger { size = 32; align = 8; signed = 1; encoding = none; base = 10; } _vpid;\n"
+				"\t\tinteger { size = 32; align = 8; signed = 1; encoding = none; base = 10; } _vtid;\n"
+				"\t\tinteger { size = 8; align = 8; signed = 1; encoding = UTF8; base = 10; } _procname[17];\n"
+			"\t};\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataCallEventDef =
+		"event {\n"
+			"\tname = \"lttng_ust_cyg_profile:func_entry\";\n"
+			"\tid = 1;\n"
+			"\tstream_id = 0;\n"
+			"\tloglevel = 12;\n"
+			"\tfields := struct {\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 16; } _addr;\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 16; } _call_site;\n"
+			"\t};\n"
+			"};\n"
+		"\n";
+
+static const char * const CTFMetadataRetEventDef =
+		"event {\n"
+			"\tname = \"lttng_ust_cyg_profile:func_exit\";\n"
+			"\tid = 2;\n"
+			"\tstream_id = 0;\n"
+			"\tloglevel = 12;\n"
+			"\tfields := struct {\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 16; } _addr;\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 16; } _call_site;\n"
+			"\t};\n"
+		"};\n"
+		"\n";
+
+static char CTFMetadataClockDefDoctored[512];
+
+static const char * const CTFMetadataStructs[] = {
+		CTFMetadataHeader,
+		CTFMetadataTypeAlias,
+		CTFMetadataTraceDef,
+		CTFMetadataEnvDef,
+		CTFMetadataClockDefDoctored, // need to put freq in string!
+		CTFMetadataPacketContext,
+		CTFMetadataEventHeaders,
+		CTFMetadataStreamDef,
+		CTFMetadataCallEventDef,
+		CTFMetadataRetEventDef
+};
+
+// class CTFConverter methods
+
+CTFConverter::CTFConverter(char *baseName,int numCores,uint32_t freq)
+{
+	status = TraceDqr::DQERR_OK;
+
+	packetSeqNum = 0;
+	if (freq == 0) {
+		frequency = 1000000000;
+	}
+	else {
+		frequency = freq;
+	}
+
+	sprintf(CTFMetadataClockDefDoctored,CTFMetadataClockDef,frequency);
+
+	char *ctf_name_gen;
+	int   ctf_name_len;
+
+	for (int i = 0; i < (int)(sizeof eventIndex / sizeof eventIndex[0]); i++) {
+		eventIndex[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof eventIndex / sizeof eventIndex[0]); i++) {
+		eventIndex[0] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof eventBuffer / sizeof eventBuffer[0]); i++) {
+		eventBuffer[i] = nullptr;
+	}
+
+	// fill in the uuid member
+
+	for (int i = 0; i < (int)(sizeof fd / sizeof fd[0]); i++) {
+		fd[i] = -1;
+	}
+
+	metadataFd = -1;
+
+	if (baseName == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	if (numCores > DQR_MAXCORES) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	this->numCores = numCores;
+
+	int extentionIndex = -1;
+	int lastDirIndex = -1;
+
+	for (int i = 0; i < DQR_MAXCORES; i++) {
+		eventContext[i]._vpid = 0;
+		eventContext[i]._vtid = i;
+		for (int j = 0; j < (int)(sizeof eventContext[i]._procname / sizeof eventContext[i]._procname[0]); j++) {
+			eventContext[i]._procname[j] = 0;
+		}
+		strcpy((char*)eventContext[i]._procname,"hello");
+	}
+
+	// need to work backwords for lastDir and last
+
+	for (int len = strlen(baseName); (len != 0) && (lastDirIndex == -1); len--) {
+		if ((extentionIndex == -1) && (baseName[len] == '.')) {
+			extentionIndex = len;
+		}
+
+		if ((lastDirIndex == -1) && (baseName[len] == '/' || baseName[len] == '\\')) {
+			lastDirIndex = len+1;
+		}
+	}
+
+	if (extentionIndex < 0) {
+		extentionIndex = strlen(baseName);
+	}
+
+	if (lastDirIndex == -1) {
+		lastDirIndex = 0;
+	}
+
+	ctf_name_len = extentionIndex+9; // allocate space for processor number and .ctf extention, or metadata name
+	ctf_name_gen = new char [ctf_name_len];
+
+	for (int i = 0; i < extentionIndex; i++) {
+		ctf_name_gen[i] = baseName[i];
+	}
+
+	strcpy(&ctf_name_gen[extentionIndex],"_%d.ctf");
+
+	char *nameBuff;
+	nameBuff = new char [ctf_name_len + 8]; // make big enough to hold metadata name
+
+	for (int i = 0; i < numCores; i++) {
+		sprintf(nameBuff,ctf_name_gen,i);
+
+//		printf("stream file %d: %s\n",i,nameBuff);
+
+		fd[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+
+		if (fd < 0) {
+			printf("Error: CTFConverter::CTFConverter(): Couldn't open file %s for writing\n",nameBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			delete [] nameBuff;
+			delete [] ctf_name_gen;
+
+			return;
+		}
+	}
+
+	strcpy(&nameBuff[lastDirIndex],"metadata");
+
+//	printf("metadata file: %s\n",nameBuff);
+
+	metadataFd = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+
+	if (metadataFd < 0) {
+		printf("Error: CTFConverter::CTFConverter(): Couldn't open file %s for writing\n",nameBuff);
+		status = TraceDqr::DQERR_ERR;
+
+		delete [] nameBuff;
+		delete [] ctf_name_gen;
+
+		return;
+	}
+
+	delete [] nameBuff;
+	delete [] ctf_name_gen;
+
+	status = TraceDqr::DQERR_OK;
+}
+
+CTFConverter::~CTFConverter()
+{
+	for (int i = 0; i < (int)(sizeof eventIndex / sizeof eventIndex[0]); i++) {
+		if (eventIndex[i] > 0) {
+			flushEvents(i);
+		}
+	}
+
+	for (int i = 0; i < (int)(sizeof eventBuffer / sizeof eventBuffer[0]); i++) {
+		if (eventBuffer[i] != nullptr) {
+			delete [] eventBuffer[i];
+			eventBuffer[i] = nullptr;
+		}
+	}
+
+	for (int i = 0; i < (int)(sizeof fd / sizeof fd[0]); i++) {
+		if (fd[i] >= 0) {
+			close(fd[i]);
+			fd[i] = -1;
+		}
+	}
+
+	if (metadataFd >= 0) {
+		writeCTFMetadata();
+		close(metadataFd);
+		metadataFd = -1;
+	}
+}
+
+TraceDqr::DQErr CTFConverter::writeCTFMetadata()
+{
+	for (int i = 0; i < (int)(sizeof CTFMetadataStructs / sizeof CTFMetadataStructs[0]); i++) {
+		write(metadataFd,CTFMetadataStructs[i],strlen(CTFMetadataStructs[i]));
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::writeTracePacketHeader(int core)
+{
+	struct __attribute__ ((packed)) tracePacketHeader {
+		uint32_t magic;
+		uint32_t stream_id;
+	} tph;
+
+	tph.magic = 0xc1fc1fc1;
+	tph.stream_id = core;
+
+	int n;
+
+	n = write(fd[core],&tph,sizeof(tph));
+	if (n != sizeof(tph)) {
+		printf("Error: writeTracePacketHeader(): Could not write trace.packet.header\n");
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::writeStreamPacketContext(int core,uint64_t ts_begin,uint64_t ts_end,int size)
+{
+	struct __attribute__ ((packed)) streamPacketContext {
+		uint64_t timestamp_begin;
+		uint64_t timestamp_end;
+		uint64_t content_size;
+		uint64_t packet_size;
+		uint64_t packet_seq_num;
+		uint64_t events_discarded;
+		uint32_t cpu_id;
+	} spc;
+
+	spc.timestamp_begin = ts_begin;
+	spc.timestamp_end = ts_end;
+//	spc.content_size = size*8;
+	spc.content_size = size * 8 + sizeof spc * 8 + 8 * 8;
+	spc.packet_size  = size * 8 + sizeof spc * 8 + 8 * 8; // size of ENTIRE packet!
+
+	spc.packet_seq_num = packetSeqNum;
+	spc.events_discarded = 0;
+	spc.cpu_id = core;
+
+	int n;
+
+	n = write(fd[core],&spc,sizeof spc);
+	if (n != sizeof spc) {
+		printf("Error: writeStreamPacketContext(): Could not write trace.packet.context\n");
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::writeStreamHeaders(int core,uint64_t ts_begin,uint64_t ts_end,int size)
+{
+//	printf("write headers core: %d num events: %d\n",core,eventIndex[core]);
+
+	writeTracePacketHeader(core);
+	writeStreamPacketContext(core,ts_begin,ts_end,size);
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::computeEventSizes(int core,int &size)
+{
+	uint32_t et;
+
+	size = 0;
+
+	for (int i = 0; i < eventIndex[core]; i++) {
+		size += sizeof eventBuffer[core][i].event_header.event_id;
+
+		if (eventBuffer[core][i].event_header.event_id == CTF::event_extended) {
+			size += sizeof eventBuffer[core][i].event_header.extended;
+			et = eventBuffer[core][i].event_header.extended.event_id;
+		}
+		else {
+			size += sizeof eventBuffer[core][i].event_header.compact;
+			et = eventBuffer[core][i].event_header.event_id;
+		}
+
+		size += sizeof(event_context);
+
+		switch (et) {
+		case CTF::event_funcEntry:
+			size += sizeof eventBuffer[core][i].call;
+			break;
+		case CTF::event_funcExit:
+			size += sizeof eventBuffer[core][i].ret;
+			break;
+		default:
+			printf("Invalid event type (%d)\n",eventBuffer[core][i].event_header.event_id);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::writeEvent(int core,int index)
+{
+	uint32_t et;
+
+	// write event headers
+
+	write(fd[core],&eventBuffer[core][index].event_header.event_id,sizeof eventBuffer[core][index].event_header.event_id);
+
+	if (eventBuffer[core][index].event_header.event_id == CTF::event_extended) {
+		et = eventBuffer[core][index].event_header.extended.event_id;
+		write(fd[core],&eventBuffer[core][index].event_header.extended,sizeof eventBuffer[core][index].event_header.extended);
+	}
+	else {
+		et = eventBuffer[core][index].event_header.event_id;
+		write(fd[core],&eventBuffer[core][index].event_header.compact,sizeof eventBuffer[core][index].event_header.compact);
+	}
+
+	// write stream.event.context
+
+	write(fd[core],&eventContext[core],sizeof(event_context));
+
+	// write event payload
+
+	switch (et) {
+	case CTF::event_funcEntry:
+		write(fd[core],&eventBuffer[core][index].call,sizeof eventBuffer[core][index].call);
+		break;
+	case CTF::event_funcExit:
+		write(fd[core],&eventBuffer[core][index].ret,sizeof eventBuffer[core][index].ret);
+		break;
+	default:
+		printf("Invalid event type (%d)\n",et);
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::flushEvents(int core)
+{
+	if (eventIndex[core] == 0) {
+		return TraceDqr::DQERR_OK;
+	}
+
+	if (eventBuffer[core] == nullptr) {
+		return TraceDqr::DQERR_OK;
+	}
+
+	int size;
+	TraceDqr::DQErr rc;
+
+	// need to write packet headers before events. But we need to know the size of the events we are going
+	// to write, so it can be included in the packet context fields
+
+	rc = computeEventSizes(core,size);
+	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: CTFConverter::flushEvent(): computeEventSizes() failed\n");
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	uint64_t ts_begin;
+	uint64_t ts_end;
+
+	ts_begin = eventBuffer[core][0].event_header.extended.timestamp;
+	if (eventIndex[core] > 1) {
+		ts_end = ((ts_begin >> 32) << 32) | (uint64_t)eventBuffer[core][eventIndex[core]-1].event_header.compact.timestamp;
+	}
+	else {
+		ts_end = ts_begin;
+	}
+
+	writeStreamHeaders(core,ts_begin,ts_end,size);
+
+	for (int i = 0; i < eventIndex[core]; i++) {
+		writeEvent(core,i);
+	}
+
+	eventIndex[core] = 0;
+
+	printf("wrote packet %d\n",packetSeqNum);
+
+	packetSeqNum += 1;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::addCall(int core,TraceDqr::ADDRESS srcAddr,TraceDqr::ADDRESS dstAddr,TraceDqr::TIMESTAMP eventTS)
+{
+	TraceDqr::DQErr rc;
+
+	if (eventBuffer[core] == nullptr) {
+		eventBuffer[core] = new  event[20];
+	}
+
+	// if q is full, flush it
+
+	if (eventIndex[core] == sizeof eventBuffer / sizeof eventBuffer[0]) {
+		rc = flushEvents(core);
+		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: CTFConverter::addCall() failed\n");
+
+			status = rc;
+			return rc;
+		}
+	}
+
+	if (eventIndex[core] == 0) {
+		// use a full timestamp (64 bits) on first event
+
+		eventBuffer[core][eventIndex[core]].event_header.event_id = CTF::event_extended;
+		eventBuffer[core][eventIndex[core]].event_header.extended.event_id = CTF::event_funcEntry;
+		eventBuffer[core][eventIndex[core]].event_header.extended.timestamp = eventTS;
+	}
+	else {
+		// use a compressed timestamp (32 bits) on all but first event
+
+		eventBuffer[core][eventIndex[core]].event_header.event_id = CTF::event_funcEntry;
+		eventBuffer[core][eventIndex[core]].event_header.compact.timestamp = eventTS;
+	}
+
+	eventBuffer[core][eventIndex[core]].call.pc = srcAddr;
+	eventBuffer[core][eventIndex[core]].call.pcDst = dstAddr;
+
+	eventIndex[core] += 1;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::addRet(int core,TraceDqr::ADDRESS srcAddr,TraceDqr::ADDRESS dstAddr,TraceDqr::TIMESTAMP eventTS)
+{
+	TraceDqr::DQErr rc;
+
+	if (eventBuffer[core] == nullptr) {
+		eventBuffer[core] = new  event[20];
+	}
+
+	// if q is full, flush it
+
+	if (eventIndex[core] == sizeof eventBuffer / sizeof eventBuffer[0]) {
+		rc = flushEvents(core);
+		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: CTFConverter::addCall() failed\n");
+
+			status = rc;
+			return rc;
+		}
+	}
+
+	if (eventIndex[core] == 0) {
+		// use a full timestamp (64 bits) on first event
+
+		eventBuffer[core][eventIndex[core]].event_header.event_id = CTF::event_extended;
+		eventBuffer[core][eventIndex[core]].event_header.extended.event_id = CTF::event_funcExit;
+		eventBuffer[core][eventIndex[core]].event_header.extended.timestamp = eventTS;
+	}
+	else {
+		// use a compressed timestamp (32 bits) on all but first event
+
+		eventBuffer[core][eventIndex[core]].event_header.event_id = CTF::event_funcExit;
+		eventBuffer[core][eventIndex[core]].event_header.compact.timestamp = eventTS;
+	}
+
+	eventBuffer[core][eventIndex[core]].call.pc = srcAddr;
+	eventBuffer[core][eventIndex[core]].call.pcDst = dstAddr;
+
+	eventIndex[core] += 1;
+
+	return TraceDqr::DQERR_OK;
+}
+
 // class TraceSettings methods
 
 TraceSettings::TraceSettings()
@@ -1937,7 +2548,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	counts       = nullptr;//delete this line if compile error
 	cutPath      = nullptr;
 	newRoot      = nullptr;
-
+	ctf          = nullptr;
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
 
@@ -2123,6 +2734,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	sourceInfo.sourceLineNum = 0;
 	sourceInfo.sourceLine = nullptr;
 
+	freq = settings.freq;
 	NexusMessage::targetFrequency = settings.freq;
 
 	tsSize = settings.tsSize;
@@ -2210,6 +2822,11 @@ void Trace::cleanUp()
 	if (caTrace != nullptr) {
 		delete caTrace;
 		caTrace = nullptr;
+	}
+
+	if (ctf != nullptr) {
+		delete ctf;
+		ctf = nullptr;
 	}
 }
 
@@ -2322,6 +2939,29 @@ TraceDqr::DQErr Trace::setCATraceFile( char *caf_name,TraceDqr::CATraceType caty
 	}
 
 	return status;
+}
+
+TraceDqr::DQErr Trace::enableCTFConverter(char *tf_name)
+{
+	if (ctf != nullptr) {
+		delete ctf;
+		ctf = nullptr;
+	}
+
+	if (tf_name == nullptr) {
+		return TraceDqr::DQERR_OK;
+	}
+
+	ctf = new CTFConverter(tf_name,1 << srcbits,freq);
+
+	status = ctf->getStatus();
+
+	return status;
+}
+
+TraceDqr::DQErr Trace::convertToCTF()
+{
+	return TraceDqr::DQERR_ERR;
 }
 
 TraceDqr::DQErr Trace::setTSSize(int size)
@@ -2665,6 +3305,99 @@ std::string Trace::flushITCPrintStr(int core, bool &haveData,double &startTime,d
 	}
 
 	return s;
+}
+
+// Note: nextAddr() only works for inferrable calls (jal instructions
+
+TraceDqr::DQErr Trace::nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAddr,int &crFlag)
+{
+	int rc;
+	TraceDqr::DQErr ec;
+	uint32_t inst;
+	int inst_size;
+	TraceDqr::InstType inst_type;
+	int32_t immediate;
+	bool isBranch;
+	TraceDqr::Reg rs1;
+	TraceDqr::Reg rd;
+
+	ec = elfReader->getInstructionByAddress(addr,inst);
+	if (ec != TraceDqr::DQERR_OK) {
+		printf("Error: nextAddr() failed\n");
+
+		status = ec;
+		return ec;
+	}
+
+	//	Need to get the destination of the call, which is in the immediate field
+
+	crFlag = TraceDqr::isNone;
+	nextAddr = 0;
+
+	rc = decodeInstruction(inst,inst_size,inst_type,rs1,rd,immediate,isBranch);
+	if (rc != 0) {
+		printf("Error: Cann't decode size of instruction %04x\n",inst);
+
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+	}
+
+	switch (inst_type) {
+	case TraceDqr::INST_JALR:
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
+				crFlag |= TraceDqr::isCall;
+			}
+			else if (rd != rs1) { // rd == link; rs1 == link; rd != rs1
+				crFlag |= TraceDqr::isSwap;
+			}
+			else { // rd == link; rs1 == link; rd == rs1
+				crFlag |= TraceDqr::isCall;
+			}
+		}
+		else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) { // rd != link; rs1 == link
+			crFlag |= TraceDqr::isReturn;
+		}
+		break;
+	case TraceDqr::INST_JAL:
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			crFlag = TraceDqr::isCall;
+		}
+
+		nextAddr = addr + immediate;
+		break;
+	case TraceDqr::INST_C_JAL:
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			crFlag = TraceDqr::isCall;
+		}
+
+		nextAddr = addr + immediate;
+		break;
+	case TraceDqr::INST_C_JR:
+		// pc = pc + rs1
+		// not inferrable unconditional
+
+		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+			crFlag |= TraceDqr::isReturn;
+		}
+		break;
+	case TraceDqr::INST_EBREAK:
+	case TraceDqr::INST_ECALL:
+		crFlag = TraceDqr::isException;
+		break;
+	case TraceDqr::INST_MRET:
+	case TraceDqr::INST_SRET:
+	case TraceDqr::INST_URET:
+		crFlag = TraceDqr::isExceptionReturn;
+		break;
+	default:
+		printf("Error: Trace::nextAddr(): Instruction at 0x%08x is not a JAL, JALR, C_JAL, C_JR, EBREAK, ECALL, MRET, SRET, or URET\n",addr);
+
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
 }
 
 // this function takes the starting address and runs one instruction only!!
@@ -3257,7 +3990,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 		// for 8, 0; 14, 0 do not update pc, only faddr. 0, 0 has no address, so it never updates
-		// this is because those message types all apprear in instruction traces (non-event) and
+		// this is because those message types all appear in instruction traces (non-event) and
 		// do not want to update the current address because they have no icnt to say when to do it
 
 		if (nm.haveTimestamp) {
@@ -3295,12 +4028,49 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			break;
 		case TraceDqr::ICT_INFERABLECALL:
 			if (nm.ict.ckdf == 0) {
-				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
-				pc = faddr;
+				pc = faddr ^ (nm.ict.ckdata[0] << 1);
+				faddr = pc;
+
+				if (ctf != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					ctf->addCall(nm.coreId,pc,nextPC,ts);
+				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				pc = faddr ^ (nm.ict.ckdata[0] << 1);
 				faddr = pc ^ (nm.ict.ckdata[1] << 1);
+
+				if (ctf != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					if (crFlags & TraceDqr::isCall) {
+						ctf->addCall(nm.coreId,pc,faddr,ts);
+					}
+					else if (crFlags & TraceDqr::isReturn) {
+						ctf->addRet(nm.coreId,pc,faddr,ts);
+					}
+					else {
+						printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
@@ -3406,12 +4176,49 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			break;
 		case TraceDqr::ICT_INFERABLECALL:
 			if (nm.ictWS.ckdf == 0) {
-				faddr = nm.ictWS.ckdata[0] << 1;
-				pc = faddr;
+				pc = nm.ictWS.ckdata[0] << 1;
+				faddr = pc;
+
+				if (ctf != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					ctf->addCall(nm.coreId,pc,nextPC,ts);
+				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
 				pc = nm.ict.ckdata[0] << 1;
 				faddr = pc ^ (nm.ict.ckdata[1] << 1);
+
+				if (ctf != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					if (crFlags & TraceDqr::isCall) {
+						ctf->addCall(nm.coreId,pc,faddr,ts);
+					}
+					else if (crFlags & TraceDqr::isReturn) {
+						ctf->addRet(nm.coreId,pc,faddr,ts);
+					}
+					else {
+						printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
@@ -3703,7 +4510,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //			printf("TRACE_STATE_SYNCCATE\n");
 
 			if (caTrace == nullptr) {
-				// have an error! Should never have TRACE_STATE_SYNC whthout a caTrace ptr
+				// have an error! Should never have TRACE_STATE_SYNC without a caTrace ptr
 				printf("Error: caTrace is null\n");
 				status = TraceDqr::DQERR_ERR;
 				state[currentCore] = TRACE_STATE_ERROR;
@@ -3764,8 +4571,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// this could be at the start of a trace, or after leaving a trace because of
 				// a correlation message
 
-                                // we may have a valid address and time already if we saw a sync whout an exit debug
-                                // or start trace sync reason. So call processTraceMessage()
+                // we may have a valid address and time already if we saw a sync without an exit debug
+                // or start trace sync reason. So call processTraceMessage()
 
 				if (lastFaddr[currentCore] != 0) {
 					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
@@ -3777,13 +4584,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 						return status;
 					}
-                                }
+                }
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
 
 					// currentAddresss should be 0 until we get a sync message. TS may
-                                        // have been set by a ICT control WS message
+                    // have been set by a ICT control WS message
 
 					messageInfo.currentAddress = currentAddress[currentCore];
 					messageInfo.time = lastTime[currentCore];
@@ -4415,22 +5222,14 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					*srcInfo = &sourceInfo;
 				}
 
+				// I don't think the b_type code below actaully does anything??? Remove??
+
 				TraceDqr::BType b_type;
 				b_type = TraceDqr::BTYPE_UNDEFINED;
 
 				switch (nm.tcode) {
 				case TraceDqr::TCODE_SYNC:
 				case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-					break;
-				case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-					if ((nm.ictWS.cksrc == TraceDqr::ICT_EXCEPTION) || (nm.ictWS.cksrc == TraceDqr::ICT_INTERRUPT)) {
-						b_type = TraceDqr::BTYPE_EXCEPTION;
-					}
-					break;
-				case TraceDqr::TCODE_INCIRCUITTRACE:
-					if ((nm.ict.cksrc == TraceDqr::ICT_EXCEPTION) || (nm.ict.cksrc == TraceDqr::ICT_INTERRUPT)) {
-						b_type = TraceDqr::BTYPE_EXCEPTION;
-					}
 					break;
 				case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 					b_type = nm.indirectBranchWS.b_type;
@@ -4460,7 +5259,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-				// these messages should have been retired immeadiately
+				// these messages should have been retired immediately
 
 				printf("Error: unexpected tcode of INCIRCUTTRACE or INCIRCUTTRACE_WS in state TRACE_STATE_RETIREMESSAGE\n");
 				state[currentCore] = TRACE_STATE_ERROR;

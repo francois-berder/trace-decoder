@@ -358,6 +358,85 @@ public:
 private:
 };
 
+// class CTFConverter: class to convert nexus messages to CTF file
+
+class CTFConverter {
+public:
+	CTFConverter(char *baseName,int numCores,uint32_t freq);
+	~CTFConverter();
+
+	TraceDqr::DQErr getStatus() { return status; }
+
+	TraceDqr::DQErr writeCTFMetadata();
+	TraceDqr::DQErr addCall(int core,TraceDqr::ADDRESS srcAddr,TraceDqr::ADDRESS dstAddr,TraceDqr::TIMESTAMP eventTS);
+	TraceDqr::DQErr addRet(int core,TraceDqr::ADDRESS srcAddr,TraceDqr::ADDRESS dstAddr,TraceDqr::TIMESTAMP eventTS);
+
+	TraceDqr::DQErr computeEventSizes(int core,int &size);
+
+	TraceDqr::DQErr writeStreamHeaders(int core,uint64_t ts_begin,uint64_t ts_end,int size);
+//	TraceDqr::DQErr writeStreamEventContext(int core);
+	TraceDqr::DQErr writeTracePacketHeader(int core);
+	TraceDqr::DQErr writeStreamPacketContext(int core,uint64_t ts_begin,uint64_t ts_end,int size);
+//	TraceDqr::DQErr writeStreamEventHeader(int core,int index);
+	TraceDqr::DQErr flushEvents(int core);
+	TraceDqr::DQErr writeEvent(int core,int index);
+
+private:
+	struct __attribute__ ((packed)) event {
+//		CTF::event_type eventType;
+		struct __attribute__ ((packed)) {
+			uint16_t event_id;
+			union __attribute__ ((packed)) {
+				struct  __attribute__ ((packed)) {
+					uint32_t timestamp;
+				} compact;
+				struct  __attribute__ ((packed)) {
+					uint32_t event_id;
+					uint64_t timestamp;
+				} extended;
+			};
+		} event_header;
+		union  __attribute__ ((packed)) {
+			struct  __attribute__ ((packed)) {
+				uint64_t pc;
+				uint64_t pcDst;
+			} call;
+			struct  __attribute__ ((packed)) {
+				uint64_t pc;
+				uint64_t pcDst;
+			} ret;
+			struct  __attribute__ ((packed)) {
+				uint64_t pc;
+				int cause;
+			} exception;
+			struct  __attribute__ ((packed)) {
+				uint64_t pc;
+				int cause;
+			} interrupt;
+		};
+	};
+
+	struct __attribute__ ((packed)) event_context {
+		uint32_t _vpid;
+		uint32_t _vtid;
+		uint8_t _procname[17];
+	};
+
+	TraceDqr::DQErr status;
+	int numCores;
+	int fNameGenerator;
+	int fd[DQR_MAXCORES];
+//	uint8_t uuid[16];
+	int metadataFd;
+	int packetSeqNum;
+	uint32_t frequency;
+	event *eventBuffer[DQR_MAXCORES];
+	int eventIndex[DQR_MAXCORES];
+	event_context eventContext[DQR_MAXCORES];
+
+//	bool headerFlag[DQR_MAXCORES]; - don't think we need this if buffer envets and flushing when done;
+};
+
 // class Disassembler: class to help in the dissasemblhy of instrucitons
 
 class Disassembler {

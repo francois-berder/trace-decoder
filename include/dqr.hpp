@@ -49,6 +49,57 @@
 extern int globalDebugFlag;
 extern const char * const DQR_VERSION;
 
+class CTF {
+public:
+	struct trace_packet_header {
+		uint32_t magic;
+		uint8_t uuid[16];				// optional?
+		uint32_t stream_id;
+		uint64_t stream_instance_id;	// optional?
+	};
+
+	enum event_type {
+		event_tracePoint = 0,
+		event_funcEntry = 1,
+		event_funcExit = 2,
+		event_extended = 0xffff
+	};
+
+	// metadata file needs to have an env struct!!
+
+	struct env {
+	};
+
+	typedef uint64_t uint64_clock_monotonic_t;
+
+	struct stream_packet_context {
+		uint64_clock_monotonic_t timestamp_begin;
+		uint64_clock_monotonic_t timestamp_end;
+		uint64_t content_size;
+		uint64_t packet_size;
+		uint64_t packet_seq_num;
+		uint64_t events_discarded;	// or unsigned long?
+		uint32_t cpu_id;
+	};
+
+	struct stream_packet_header_extended {
+		uint16_t id;	// this should be 0xffff for extended headers
+		uint32_t extended_id;
+		uint64_clock_monotonic_t extended_timestamp;
+	};
+
+	struct stream_event_context {
+		uint32_t _vpid;
+		uint32_t _vtid;
+		uint8_t  _procname[17];
+	};
+
+	struct stream_event_callret {
+		uint64_t src;
+		uint64_t dst;
+	};
+};
+
 class TraceDqr {
 public:
   typedef uint32_t RV_INST;
@@ -784,6 +835,7 @@ public:
 	TraceDqr::DQErr setITCPrintOptions(int intFlags,int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
+	TraceDqr::DQErr enableCTFConverter(char *ctf_name);
 
 	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
@@ -821,6 +873,8 @@ public:
 	int         getITCPrintMask();
 	int         getITCFlushMask();
 
+	TraceDqr::DQErr convertToCTF();
+
 	TraceDqr::DQErr getNumBytesInSWTQ(int &numBytes);
 
 private:
@@ -841,6 +895,7 @@ private:
 	class ElfReader       *elfReader;
 	class Symtab          *symtab;
 	class Disassembler    *disassembler;
+	class CTFConverter    *ctf;
 	char                  *cutPath;
 	char                  *newRoot;
 	class ITCPrint        *itcPrint;
@@ -860,6 +915,8 @@ private:
 	int              endMessageNum;
 
 	int              tsSize;
+
+	uint32_t         freq;
 
 	Analytics        analytics;
 
@@ -881,6 +938,7 @@ private:
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	TraceDqr::DQErr nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAddr,int &crFlag);
 	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag);
 	TraceDqr::DQErr nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &savedAddr);
 
