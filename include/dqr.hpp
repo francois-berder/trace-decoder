@@ -579,12 +579,13 @@ public:
     TraceDqr::ADDRESS    getU_Addr();
     TraceDqr::ADDRESS    getF_Addr();
     TraceDqr::ADDRESS    getNextAddr() {return currentAddress;};
+    TraceDqr::ADDRESS    getICTCallReturnTarget();
     TraceDqr::BType      getB_Type();
 	TraceDqr::SyncReason getSyncReason();
-	TraceDqr::ICTReason  getICTReason();
 	uint8_t  getEType();
 	uint8_t  getCKDF();
-	uint8_t  getCKSRC();
+	TraceDqr::ICTReason  getCKSRC();
+	TraceDqr::ADDRESS getCKData(int i);
 	uint8_t  getCDF();
 	uint8_t  getEVCode();
 	uint32_t getData();
@@ -872,6 +873,7 @@ public:
 	TraceDqr::TIMESTAMP processTS(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
 	int         getITCPrintMask();
 	int         getITCFlushMask();
+	TraceDqr::DQErr getInstructionByAddress(TraceDqr::ADDRESS addr, Instruction *instInfo,Source *srcInfo,int *flags);
 
 	TraceDqr::DQErr getNumBytesInSWTQ(int &numBytes);
 
@@ -938,6 +940,7 @@ private:
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	TraceDqr::DQErr getCRBRFlags(TraceDqr::ICTReason cksrc,TraceDqr::ADDRESS addr,int &crFlag,int &brFlag);
 	TraceDqr::DQErr nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAddr,int &crFlag);
 	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag);
 	TraceDqr::DQErr nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &savedAddr);
@@ -991,6 +994,7 @@ public:
 	void analyticsToText(char *dst,int dst_len,int detailLevel) {/*analytics.toText(dst,dst_len,detailLevel);*/ }
 //	std::string analyticsToString(int detailLevel) { /* return analytics.toString(detailLevel);*/ }
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
+	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 
 private:
 	TraceDqr::DQErr status;
@@ -1015,6 +1019,8 @@ private:
 
 	class ElfReader    *elfReader; // need this class to create disassembler class
 	class Disassembler *disassembler;
+	char               *cutPath;
+	char               *newRoot;
 
 	disassemble_info disasm_info;
 	disassembler_ftype disasm_func;

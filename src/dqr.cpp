@@ -4273,6 +4273,72 @@ TraceDqr::ADDRESS NexusMessage::getF_Addr()
 //	return addr;
 //}
 
+// Note: for this function to return the correct target address, processTraceMessage() must have already
+// been called for this messages if it is a TCODE_INCIRCUITTRACE message. If it is a TCODE_INCIRCUIRCIUTTRACE_WS,
+// it will work either way
+
+TraceDqr::ADDRESS    NexusMessage::getICTCallReturnTarget()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+		if (ict.cksrc == TraceDqr::ICT_INFERABLECALL) {
+			if (ict.ckdf == 0) {
+				return ict.ckdata[1];
+			}
+			else {
+				return currentAddress ^ (ict.ckdata[1] << 1);
+			}
+		}
+		break;
+	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+		if (ictWS.cksrc == TraceDqr::ICT_INFERABLECALL) {
+			if (ictWS.ckdf == 0) {
+				return ictWS.ckdata[1];
+			}
+			else {
+				return currentAddress ^ (ict.ckdata[1] << 1);
+			}
+		}
+		break;
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return -1;
+}
+
 TraceDqr::BType NexusMessage::getB_Type()
 {
 	switch (tcode) {
@@ -4368,52 +4434,6 @@ TraceDqr::SyncReason NexusMessage::getSyncReason()
 	return TraceDqr::SYNC_NONE;
 }
 
-TraceDqr::ICTReason NexusMessage::getICTReason()
-{
-	switch (tcode) {
-	case TraceDqr::TCODE_INCIRCUITTRACE:
-		return ict.cksrc;
-	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-		return ictWS.cksrc;
-	case TraceDqr::TCODE_SYNC:
-	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
-	case TraceDqr::TCODE_DEBUG_STATUS:
-	case TraceDqr::TCODE_DEVICE_ID:
-	case TraceDqr::TCODE_OWNERSHIP_TRACE:
-	case TraceDqr::TCODE_DIRECT_BRANCH:
-	case TraceDqr::TCODE_INDIRECT_BRANCH:
-	case TraceDqr::TCODE_DATA_WRITE:
-	case TraceDqr::TCODE_DATA_READ:
-	case TraceDqr::TCODE_DATA_ACQUISITION:
-	case TraceDqr::TCODE_ERROR:
-	case TraceDqr::TCODE_CORRECTION:
-	case TraceDqr::TCODE_DATA_WRITE_WS:
-	case TraceDqr::TCODE_DATA_READ_WS:
-	case TraceDqr::TCODE_WATCHPOINT:
-	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
-	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
-	case TraceDqr::TCODE_AUXACCESS_READ:
-	case TraceDqr::TCODE_AUXACCESS_WRITE:
-	case TraceDqr::TCODE_AUXACCESS_READNEXT:
-	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
-	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESOURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
-	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCTION:
-	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
-	case TraceDqr::TCODE_CORRELATION:
-	case TraceDqr::TCODE_UNDEFINED:
-		break;
-	default:
-		break;
-	}
-
-	return TraceDqr::ICT_NONE;
-}
-
 uint8_t NexusMessage::getEType()
 {
 	switch (tcode) {
@@ -4504,13 +4524,59 @@ uint8_t NexusMessage::getCKDF()
 	return 0;
 }
 
-uint8_t NexusMessage::getCKSRC()
+TraceDqr::ICTReason NexusMessage::getCKSRC()
 {
 	switch (tcode) {
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 		return ict.cksrc;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 		return ictWS.cksrc;
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return TraceDqr::ICT_NONE;
+}
+
+TraceDqr::ADDRESS NexusMessage::getCKData(int i)
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+		return ict.ckdata[i];
+	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+		return ictWS.ckdata[i];
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
@@ -5045,7 +5111,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 	}
 
 	if ((tcode != TraceDqr::TCODE_INCIRCUITTRACE) && (tcode != TraceDqr::TCODE_INCIRCUITTRACE_WS)) {
-		n += snprintf(dst+n,dst_len-n,"NxtAddr: %08llx, ",currentAddress);
+		n += snprintf(dst+n,dst_len-n,"NxtAddr: %08llx, TCode: ",currentAddress);
 	}
 
 	switch (tcode) {
@@ -5474,10 +5540,10 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 		if ((ict.cksrc == TraceDqr::ICT_CONTROL) && (ict.ckdf == 0)) {
-			n += snprintf(dst+n,dst_len-n,"INCIRCUITTRACE (%d)",tcode);
+			n += snprintf(dst+n,dst_len-n,"TCode: INCIRCUITTRACE (%d)",tcode);
 		}
 		else {
-			n += snprintf(dst+n,dst_len-n,"Address: %08llx INCIRCUITTRACE (%d)",currentAddress,tcode);
+			n += snprintf(dst+n,dst_len-n,"Address: %08llx TCode: INCIRCUITTRACE (%d)",currentAddress,tcode);
 		}
 
 		if (level >= 2) {
@@ -5551,10 +5617,10 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 		if ((ictWS.cksrc == TraceDqr::ICT_CONTROL) && (ictWS.ckdf == 0)) {
-			n += snprintf(dst+n,dst_len-n,"INCIRCUITTRACE WS (%d)",tcode);
+			n += snprintf(dst+n,dst_len-n,"TCode: INCIRCUITTRACE WS (%d)",tcode);
 		}
 		else {
-			n += snprintf(dst+n,dst_len-n,"Address: %08llx INCIRCUITTRACE WS (%d)",currentAddress,tcode);
+			n += snprintf(dst+n,dst_len-n,"Address: %08llx TCode: INCIRCUITTRACE WS (%d)",currentAddress,tcode);
 		}
 
 		if (level >= 2) {
@@ -8673,12 +8739,14 @@ TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
 		return status;
 	}
 
-	TraceDqr::DQErr rc;
+	if ((cutPath != nullptr) || (newRoot != nullptr)) {
+		TraceDqr::DQErr rc;
 
-	rc = disassembler->subSrcPath(cutPath,newRoot);
-	if (rc != TraceDqr::DQERR_OK) {
-		status = rc;
-		return rc;
+		rc = disassembler->subSrcPath(cutPath,newRoot);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return rc;
+		}
 	}
 
 	status = TraceDqr::DQERR_OK;
@@ -10626,6 +10694,8 @@ Simulator::Simulator(char *f_name,int arch_size)
 	nextLine = 0;
 	currentCore = 0;
 	flushing = false;
+	cutPath = nullptr;
+	newRoot = nullptr;
 
 	elfReader = nullptr;
 	disassembler = nullptr;
@@ -10706,6 +10776,8 @@ Simulator::Simulator(char *f_name,char *e_name)
 	flushing = false;
 	elfReader = nullptr;
 	disassembler = nullptr;
+	cutPath = nullptr;
+	newRoot = nullptr;
 
 	if (f_name == nullptr) {
 		status = TraceDqr::DQERR_ERR;
@@ -10835,9 +10907,59 @@ TraceDqr::DQErr Simulator::setLabelMode(bool labelsAreFuncs)
 		return status;
 	}
 
+	if ((cutPath != nullptr) || (newRoot != nullptr)) {
+		TraceDqr::DQErr rc;
+
+		rc = disassembler->subSrcPath(cutPath,newRoot);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return rc;
+		}
+	}
+
 	status = TraceDqr::DQERR_OK;
 
 	return status;
+}
+
+TraceDqr::DQErr Simulator::subSrcPath(const char *cutPath,const char *newRoot)
+{
+	if (this->cutPath != nullptr) {
+		delete [] this->cutPath;
+		this->cutPath = nullptr;
+	}
+
+	if (this->newRoot != nullptr) {
+		delete [] this->newRoot;
+		this->newRoot = nullptr;
+	}
+
+	if (cutPath != nullptr) {
+		int l = strlen(cutPath)+1;
+
+		this->cutPath = new char[l];
+		strcpy(this->cutPath,cutPath);
+	}
+
+	if (newRoot != nullptr) {
+		int l = strlen(newRoot)+1;
+
+		this->newRoot = new char[l];
+		strcpy(this->newRoot,newRoot);
+	}
+
+	if (disassembler != nullptr) {
+		TraceDqr::DQErr rc;
+
+		rc = disassembler->subSrcPath(cutPath,newRoot);
+
+		status = rc;
+		return rc;
+	}
+
+	status = TraceDqr::DQERR_ERR;
+
+	return TraceDqr::DQERR_ERR;
 }
 
 TraceDqr::DQErr Simulator::readFile(char *file)
@@ -11766,6 +11888,7 @@ TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchF
 		return TraceDqr::DQERR_ERR;
 	}
 
+	instructionInfo.caFlags = TraceDqr::CAFLAG_NONE;
 	instructionInfo.brFlags = brFlags;
 	instructionInfo.CRFlag = crFlag;
 

@@ -2954,7 +2954,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 			return TraceDqr::DQERR_ERR;
 		}
 
-		rc = disassembler->setPathType(pathType);
+		rc = disassembler->setPathType(settings.pathType);
 		if (rc != TraceDqr::DQERR_OK) {
 			if (sfp != nullptr) {
 				delete sfp;
@@ -3651,7 +3651,125 @@ std::string Trace::flushITCPrintStr(int core, bool &haveData,double &startTime,d
 	return s;
 }
 
-// Note: nextAddr() only works for inferrable calls (jal instructions
+// This routine only works for event traces! In particular, brFlags will assumes there is an
+// event message at addresses for conditional branches because the branch was taken!
+
+TraceDqr::DQErr Trace::getCRBRFlags(TraceDqr::ICTReason cksrc,TraceDqr::ADDRESS addr,int &crFlag,int &brFlag)
+{
+	int rc;
+	TraceDqr::DQErr ec;
+	uint32_t inst;
+	int inst_size;
+	TraceDqr::InstType inst_type;
+	int32_t immediate;
+	bool isBranch;
+	TraceDqr::Reg rs1;
+	TraceDqr::Reg rd;
+
+	//	Need to get the destination of the call, which is in the immediate field
+
+	crFlag = TraceDqr::isNone;
+	brFlag = TraceDqr::BRFLAG_none;
+
+	switch (cksrc) {
+	case TraceDqr::ICT_CONTROL:
+	case TraceDqr::ICT_EXT_TRIG:
+	case TraceDqr::ICT_WATCHPOINT:
+	case TraceDqr::ICT_PC_SAMPLE:
+		break;
+	case TraceDqr::ICT_INFERABLECALL:
+		ec = elfReader->getInstructionByAddress(addr,inst);
+		if (ec != TraceDqr::DQERR_OK) {
+			printf("Error: getCRBRFlags() failed\n");
+
+			status = ec;
+			return ec;
+		}
+
+		rc = decodeInstruction(inst,inst_size,inst_type,rs1,rd,immediate,isBranch);
+		if (rc != 0) {
+			printf("Error: getCRBRFlags(): Cann't decode size of instruction %04x\n",inst);
+
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
+		}
+
+		switch (inst_type) {
+		case TraceDqr::INST_JALR:
+			if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+				if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
+					crFlag = TraceDqr::isCall;
+				}
+				else if (rd != rs1) { // rd == link; rs1 == link; rd != rs1
+					crFlag = TraceDqr::isSwap;
+				}
+				else { // rd == link; rs1 == link; rd == rs1
+					crFlag = TraceDqr::isCall;
+				}
+			}
+			else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) { // rd != link; rs1 == link
+				crFlag = TraceDqr::isReturn;
+			}
+			break;
+		case TraceDqr::INST_JAL:
+			if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+				crFlag = TraceDqr::isCall;
+			}
+			break;
+		case TraceDqr::INST_C_JAL:
+			if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+				crFlag = TraceDqr::isCall;
+			}
+			break;
+		case TraceDqr::INST_C_JR:
+			if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+				crFlag = TraceDqr::isReturn;
+			}
+			break;
+		case TraceDqr::INST_EBREAK:
+		case TraceDqr::INST_ECALL:
+			crFlag = TraceDqr::isException;
+			break;
+		case TraceDqr::INST_MRET:
+		case TraceDqr::INST_SRET:
+		case TraceDqr::INST_URET:
+			crFlag = TraceDqr::isExceptionReturn;
+			break;
+		case TraceDqr::INST_BEQ:
+		case TraceDqr::INST_BNE:
+		case TraceDqr::INST_BLT:
+		case TraceDqr::INST_BGE:
+		case TraceDqr::INST_BLTU:
+		case TraceDqr::INST_BGEU:
+		case TraceDqr::INST_C_BEQZ:
+		case TraceDqr::INST_C_BNEZ:
+			brFlag = TraceDqr::BRFLAG_taken;
+			break;
+		default:
+			break;
+		}
+		break;
+	case TraceDqr::ICT_EXCEPTION:
+		crFlag = TraceDqr::isException;
+		break;
+	case TraceDqr::ICT_INTERRUPT:
+		crFlag = TraceDqr::isInterrupt;
+		break;
+	case TraceDqr::ICT_CONTEXT:
+		crFlag = TraceDqr::isSwap;
+		break;
+	default:
+		printf("Error: getCRBRFlags(): Invalid crsrc\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+// Note: This next instruction only computes nextAddr for inferable calls. It does set the crFlag
+// correctly for others.
 
 TraceDqr::DQErr Trace::nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAddr,int &crFlag)
 {
@@ -4387,6 +4505,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 					}
 
 					ctf->addCall(nm.coreId,pc,nextPC,ts);
+
+					// we will store the target address back in ckdata[1] in case it is needed later
+
+					nm.ict.ckdata[1] = nextPC;
 				}
 			}
 			else if (nm.ict.ckdf == 1) {
@@ -4535,6 +4657,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 					}
 
 					ctf->addCall(nm.coreId,pc,nextPC,ts);
+
+					// we will store the target address back in ckdata[1] in case it is needed later
+
+					nm.ict.ckdata[1] = nextPC;
 				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
@@ -4650,6 +4776,37 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		printf("Error: Trace::processTraceMessage(): Unsupported TCODE\n");
 
 		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Trace::getInstructionByAddress(TraceDqr::ADDRESS addr, Instruction *instInfo,Source *srcInfo,int *flags)
+{
+	Disassemble(addr); // should error check disassembl() call!
+
+	*flags = 0;
+
+	if (instInfo != nullptr) {
+		instructionInfo.qDepth = 0;
+		instructionInfo.arithInProcess = 0;
+		instructionInfo.loadInProcess = 0;
+		instructionInfo.storeInProcess = 0;
+
+		instructionInfo.coreId = 0;
+		*instInfo = instructionInfo;
+		instInfo->CRFlag = TraceDqr::isNone;
+		instInfo->brFlags = TraceDqr::BRFLAG_none;
+
+		instInfo->timestamp = lastTime[currentCore];
+
+		*flags |= TraceDqr::TRACE_HAVE_INSTINFO;
+	}
+
+	if (srcInfo != nullptr) {
+		sourceInfo.coreId = 0;
+		*srcInfo = sourceInfo;
+		*flags |= TraceDqr::TRACE_HAVE_SRCINFO;
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -4915,8 +5072,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// this could be at the start of a trace, or after leaving a trace because of
 				// a correlation message
 
-                // we may have a valid address and time already if we saw a sync without an exit debug
-                // or start trace sync reason. So call processTraceMessage()
+		                // we may have a valid address and time already if we saw a sync without an exit debug				        // or start trace sync reason. So call processTraceMessage()
 
 				if (lastFaddr[currentCore] != 0) {
 					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
@@ -5022,7 +5178,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				TraceDqr::ICTReason itcr;
 
-				itcr = nm.getICTReason();
+				itcr = nm.getCKSRC();
 
 				switch (itcr) {
 				case TraceDqr::ICT_INFERABLECALL:
@@ -5263,7 +5419,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						// no dasm or src for ext trigger in HTM instruction traces
 					}
 					else if ((nm.getCKSRC() == TraceDqr::ICT_WATCHPOINT) && (nm.getCKDF() == 0)) {
-						// no dasm or src for ext trigger in HTM instruction tracaes
+						// no dasm or src for ext trigger in HTM instruction traces
 					}
 					else if ((instInfo != nullptr) || (srcInfo != nullptr)) {
 						Disassemble(currentAddress[currentCore]);
@@ -5276,8 +5432,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 							instructionInfo.coreId = currentCore;
 							*instInfo = &instructionInfo;
-							(*instInfo)->CRFlag = TraceDqr::isNone;
-							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
+//							(*instInfo)->CRFlag = TraceDqr::isNone;
+//							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
+							getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
 
 							(*instInfo)->timestamp = lastTime[currentCore];
 						}
@@ -5425,9 +5582,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 							instructionInfo.coreId = currentCore;
 							*instInfo = &instructionInfo;
-							(*instInfo)->CRFlag = TraceDqr::isNone;
-							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
-
+//							(*instInfo)->CRFlag = TraceDqr::isNone;
+//							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
+							getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
 							(*instInfo)->timestamp = lastTime[currentCore];
 						}
 
@@ -5574,6 +5731,16 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				switch (nm.tcode) {
 				case TraceDqr::TCODE_SYNC:
 				case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+					break;
+				case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+					if ((nm.ictWS.cksrc == TraceDqr::ICT_EXCEPTION) || (nm.ictWS.cksrc == TraceDqr::ICT_INTERRUPT)) {
+						b_type = TraceDqr::BTYPE_EXCEPTION;
+					}
+					break;
+				case TraceDqr::TCODE_INCIRCUITTRACE:
+					if ((nm.ict.cksrc == TraceDqr::ICT_EXCEPTION) || (nm.ict.cksrc == TraceDqr::ICT_INTERRUPT)) {
+						b_type = TraceDqr::BTYPE_EXCEPTION;
+					}
 					break;
 				case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 					b_type = nm.indirectBranchWS.b_type;
@@ -5731,8 +5898,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 							instructionInfo.coreId = currentCore;
 							*instInfo = &instructionInfo;
-							(*instInfo)->CRFlag = TraceDqr::isNone;
-							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
+//							(*instInfo)->CRFlag = TraceDqr::isNone;
+//							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
+							getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
 
 							(*instInfo)->timestamp = lastTime[currentCore];
 						}

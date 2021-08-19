@@ -648,6 +648,16 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 
+		if (cutPath != nullptr) {
+			TraceDqr::DQErr rc;
+
+			rc = sim->subSrcPath(cutPath,newRoot);
+			if (rc != TraceDqr::DQERR_OK) {
+				printf("Error: Could not set cutPath or newRoot\n");
+				return 1;
+			}
+		}
+
 		sim->setLabelMode(labelFlag);
 	}
 	else if ((pf_name != nullptr) || (tf_name != nullptr)) {
