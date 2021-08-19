@@ -57,6 +57,8 @@ private:
 };
 #endif // DO_TIMES
 
+void sanePath(TraceDqr::pathType pt,const char *src,char *dst);
+
 class cachedInstInfo {
 public:
 	cachedInstInfo(const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset);
@@ -339,6 +341,7 @@ public:
 	TraceDqr::DQErr propertyToLabelsAsFuncs(char *value);
 	TraceDqr::DQErr propertyToFreq(char *value);
 	TraceDqr::DQErr propertyToTSSize(char *value);
+	TraceDqr::DQErr propertyToCTFEnable(char *value);
 
 	char *tfName;
 	char *efName;
@@ -354,6 +357,7 @@ public:
 	uint32_t freq;
 	uint32_t addrDispFlags;
 	int tsSize;
+	bool CTFConversion;
 
 private:
 };
@@ -362,7 +366,7 @@ private:
 
 class CTFConverter {
 public:
-	CTFConverter(char *baseName,int numCores,uint32_t freq);
+	CTFConverter(char *elf,int numCores,uint32_t freq);
 	~CTFConverter();
 
 	TraceDqr::DQErr getStatus() { return status; }
@@ -380,6 +384,8 @@ public:
 //	TraceDqr::DQErr writeStreamEventHeader(int core,int index);
 	TraceDqr::DQErr flushEvents(int core);
 	TraceDqr::DQErr writeEvent(int core,int index);
+	TraceDqr::DQErr writeBinInfo(int core,uint64_t timestamp);
+	TraceDqr::DQErr computeBinInfoSize(int &size);
 
 private:
 	struct __attribute__ ((packed)) event {
@@ -413,6 +419,14 @@ private:
 				uint64_t pc;
 				int cause;
 			} interrupt;
+			struct __attribute__ ((packed)) {
+				uint64_t _baddr;
+				uint64_t _memsz;
+				char _path[512];
+				uint8_t _is_pic;
+				uint8_t _has_build_id;
+				uint8_t _has_debug_link;
+			} binInfo;
 		};
 	};
 
@@ -424,7 +438,6 @@ private:
 
 	TraceDqr::DQErr status;
 	int numCores;
-	int fNameGenerator;
 	int fd[DQR_MAXCORES];
 //	uint8_t uuid[16];
 	int metadataFd;
@@ -433,8 +446,9 @@ private:
 	event *eventBuffer[DQR_MAXCORES];
 	int eventIndex[DQR_MAXCORES];
 	event_context eventContext[DQR_MAXCORES];
+	char *elfName;
 
-//	bool headerFlag[DQR_MAXCORES]; - don't think we need this if buffer envets and flushing when done;
+	bool headerFlag[DQR_MAXCORES];
 };
 
 // class Disassembler: class to help in the dissasemblhy of instrucitons

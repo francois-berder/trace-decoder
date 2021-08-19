@@ -1195,7 +1195,8 @@ static const char * const CTFMetadataClockDef =
 			"\tdescription = \"Monotonic Clock\";\n"
 			"\tfreq = %d; /* Frequency, in Hz */\n"
 			"\t/* clock value offset from Epoch is: offset * (1/freq) */\n"
-			"\toffset = 1626470161640558449;\n"
+			"\t/*offset = 1626470161640558449;*/\n"
+			"\toffset = 0;\n"
 		"};\n"
 		"\n"
 		"typealias integer {\n"
@@ -1293,26 +1294,193 @@ static const char * const CTFMetadataRetEventDef =
 		"};\n"
 		"\n";
 
-static char CTFMetadataClockDefDoctored[512];
+static const char * const CTFMetadataStatedumpStart =
+		"event {\n"
+			"\tname = \"lttng_ust_statedump:start\";\n"
+			"\tid = 3;\n"
+			"\tstream_id = 0;\n"
+		    "\tloglevel = 13;\n"
+			"\tfields := struct {\n"
+			"\t};\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataStatedumpBinInfo =
+		"event {\n"
+			"\tname = \"lttng_ust_statedump:bin_info\";\n"
+			"\tid = 4;\n"
+			"\tstream_id = 0;\n"
+		    "\tloglevel = 13;\n"
+			"\tfields := struct {\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 16; } _baddr;\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 10; } _memsz;\n"
+				"\t\tstring _path;\n"
+				"\t\tinteger { size = 8; align = 8; signed = 0; encoding = none; base = 10; } _is_pic;\n"
+				"\t\tinteger { size = 8; align = 8; signed = 0; encoding = none; base = 10; } _has_build_id;\n"
+				"\t\tinteger { size = 8; align = 8; signed = 0; encoding = none; base = 10; } _has_debug_link;\n"
+			"\t};\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataStatedumpEnd =
+		"event {\n"
+			"\tname = \"lttng_ust_statedump:end\";\n"
+			"\tid = 7;\n"
+			"\tstream_id = 0;\n"
+		    "\tloglevel = 13;\n"
+			"\tfields := struct {\n"
+			"\t};\n"
+		"};\n"
+		"\n";
+
+static char CTFMetadataEnvDefDoctored[1024];
+static char CTFMetadataClockDefDoctored[1024];
 
 static const char * const CTFMetadataStructs[] = {
 		CTFMetadataHeader,
 		CTFMetadataTypeAlias,
 		CTFMetadataTraceDef,
-		CTFMetadataEnvDef,
+		CTFMetadataEnvDefDoctored,
 		CTFMetadataClockDefDoctored, // need to put freq in string!
 		CTFMetadataPacketContext,
 		CTFMetadataEventHeaders,
 		CTFMetadataStreamDef,
 		CTFMetadataCallEventDef,
-		CTFMetadataRetEventDef
+		CTFMetadataRetEventDef,
+		CTFMetadataStatedumpStart,
+		CTFMetadataStatedumpBinInfo,
+		CTFMetadataStatedumpEnd
 };
 
 // class CTFConverter methods
 
-CTFConverter::CTFConverter(char *baseName,int numCores,uint32_t freq)
+static void getNames(char *elfNameIn, char *elfBaseName, char *elfName, char *elfPath)
+{
+	if (elfBaseName != nullptr) {
+		elfBaseName[0] = 0;
+	}
+
+	if (elfName != nullptr) {
+		elfName[0] = 0;
+	}
+
+	if (elfPath != nullptr) {
+		elfPath[0] = 0;
+	}
+
+	if (elfNameIn == nullptr) {
+		return;
+	}
+
+	// find elf name by scanning backwords for path separator
+
+	int l;
+	int i;
+
+	l = strlen(elfNameIn);
+
+	int sepIndex = -1;
+	int extIndex = -1;
+
+	for (i = l-1; (i >= 0) && (sepIndex == -1); i--) {
+		if (elfNameIn[i] == '/') {
+			sepIndex = i;
+		}
+		else if (elfNameIn[i] == '\\') {
+			sepIndex = i;
+		}
+		else if ((extIndex == -1) && (elfNameIn[i] == '.')) {
+			extIndex = i;
+		}
+	}
+
+	char en[256];
+	char ebn[256];
+	char fullPath[512];
+
+	bool absPath = false;
+
+	strcpy(en,&elfNameIn[sepIndex+1]);
+
+	for (i = sepIndex+1; i < extIndex; i++) {
+		ebn[i - (sepIndex+1)] = elfNameIn[i];
+	}
+
+	// figure out if this is an abs path or a rel path in elfNameIn
+
+	if (elfNameIn[0] == '/') {
+		absPath = true;
+	}
+	else if (elfNameIn[0] == '\\') {
+		absPath = true;
+	}
+	else if ((elfNameIn[0] != 0) && (elfNameIn[1] == ':') && (elfNameIn[2] == '\\')) {
+		absPath = true;
+	}
+
+	if (absPath == false) {
+		// have a rel path. Need to make it an abs path
+
+#ifdef	WINDOWS
+		_getcwd(fullPath,sizeof fullPath);
+		char pathSep = '\\';
+#else	// WINDOWS
+		getcwd(fullPath,sizeof fullPath);
+		char pathSep = '/';
+#endif	// WINDOWS
+
+		l = strlen(fullPath);
+		fullPath[l] = pathSep;
+		l += 1;
+
+		for (i = 0; i < sepIndex+1; i++) {
+			fullPath[l+i] = elfNameIn[i];
+		}
+
+		fullPath[l+i] = 0;
+	}
+	else {
+		for (i = 0; i < sepIndex+1; i++) {
+			fullPath[i] = elfNameIn[i];
+		}
+
+		fullPath[i] = 0;
+	}
+
+	if (elfBaseName != nullptr) {
+		strcpy(elfBaseName,ebn);
+	}
+
+	if (elfName != nullptr) {
+		strcpy(elfName,en);
+	}
+
+	if (elfPath != nullptr) {
+		strcpy(elfPath,fullPath);
+	}
+}
+
+CTFConverter::CTFConverter(char *elf,int numCores,uint32_t freq)
 {
 	status = TraceDqr::DQERR_OK;
+
+	for (int i = 0; i < (int)(sizeof eventIndex / sizeof eventIndex[0]); i++) {
+		eventIndex[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof eventBuffer / sizeof eventBuffer[0]); i++) {
+		eventBuffer[i] = nullptr;
+	}
+
+	for (int i = 0; i < (int)(sizeof fd / sizeof fd[0]); i++) {
+		fd[i] = -1;
+	}
+
+	metadataFd = -1;
+
+	for (int i = 0; i < (int)(sizeof headerFlag / sizeof headerFlag[0]); i++) {
+		headerFlag[i] = false;
+	}
 
 	packetSeqNum = 0;
 	if (freq == 0) {
@@ -1322,32 +1490,11 @@ CTFConverter::CTFConverter(char *baseName,int numCores,uint32_t freq)
 		frequency = freq;
 	}
 
-	sprintf(CTFMetadataClockDefDoctored,CTFMetadataClockDef,frequency);
-
-	char *ctf_name_gen;
-	int   ctf_name_len;
-
-	for (int i = 0; i < (int)(sizeof eventIndex / sizeof eventIndex[0]); i++) {
-		eventIndex[i] = 0;
-	}
-
-	for (int i = 0; i < (int)(sizeof eventIndex / sizeof eventIndex[0]); i++) {
-		eventIndex[0] = 0;
-	}
-
-	for (int i = 0; i < (int)(sizeof eventBuffer / sizeof eventBuffer[0]); i++) {
-		eventBuffer[i] = nullptr;
-	}
+	this->elfName = nullptr;
 
 	// fill in the uuid member
 
-	for (int i = 0; i < (int)(sizeof fd / sizeof fd[0]); i++) {
-		fd[i] = -1;
-	}
-
-	metadataFd = -1;
-
-	if (baseName == nullptr) {
+	if (elf == nullptr) {
 		status = TraceDqr::DQERR_ERR;
 		return;
 	}
@@ -1359,54 +1506,54 @@ CTFConverter::CTFConverter(char *baseName,int numCores,uint32_t freq)
 
 	this->numCores = numCores;
 
-	int extentionIndex = -1;
-	int lastDirIndex = -1;
-
 	for (int i = 0; i < DQR_MAXCORES; i++) {
 		eventContext[i]._vpid = 0;
 		eventContext[i]._vtid = i;
 		for (int j = 0; j < (int)(sizeof eventContext[i]._procname / sizeof eventContext[i]._procname[0]); j++) {
 			eventContext[i]._procname[j] = 0;
 		}
-		strcpy((char*)eventContext[i]._procname,"hello");
 	}
 
-	// need to work backwords for lastDir and last
+	char elfBaseName[256];
+	char elfName[256];
+	char elfPath[512];
 
-	for (int len = strlen(baseName); (len != 0) && (lastDirIndex == -1); len--) {
-		if ((extentionIndex == -1) && (baseName[len] == '.')) {
-			extentionIndex = len;
-		}
+	getNames(elf,elfBaseName,elfName,elfPath);
 
-		if ((lastDirIndex == -1) && (baseName[len] == '/' || baseName[len] == '\\')) {
-			lastDirIndex = len+1;
-		}
-	}
+	// set this->elfName to the complete path and elf name
 
-	if (extentionIndex < 0) {
-		extentionIndex = strlen(baseName);
-	}
+	this->elfName = new char[strlen(elfPath)+strlen(elfName)+1];
+	strcpy(this->elfName,elfPath);
+	strcat(this->elfName,elfName);
 
-	if (lastDirIndex == -1) {
-		lastDirIndex = 0;
-	}
+	char ctfNameGen[512];
+	int ctfNameLen;
 
-	ctf_name_len = extentionIndex+9; // allocate space for processor number and .ctf extention, or metadata name
-	ctf_name_gen = new char [ctf_name_len];
+	strcpy(ctfNameGen,elfPath);
+	strcat(ctfNameGen,"ctf");
 
-	for (int i = 0; i < extentionIndex; i++) {
-		ctf_name_gen[i] = baseName[i];
-	}
+	// make the ctf folder
 
-	strcpy(&ctf_name_gen[extentionIndex],"_%d.ctf");
+#ifdef WINDOWS
+	mkdir(ctfNameGen);
+	char pathSep = '\\';
+#else // WINDOWS
+	mkdir(ctfNameGen,0666);
+	char pathSep = '/';
+#endif // WINDOWS
+	// now add the elf file base name
 
-	char *nameBuff;
-	nameBuff = new char [ctf_name_len + 8]; // make big enough to hold metadata name
+	ctfNameLen = strlen(ctfNameGen);
+	ctfNameGen[ctfNameLen] = pathSep;
+	ctfNameLen += 1;
+
+	strcpy(&ctfNameGen[ctfNameLen],elfBaseName);
+	strcat(&ctfNameGen[ctfNameLen],"_%d.ctf");
+
+	char nameBuff[512];
 
 	for (int i = 0; i < numCores; i++) {
-		sprintf(nameBuff,ctf_name_gen,i);
-
-//		printf("stream file %d: %s\n",i,nameBuff);
+		sprintf(nameBuff,ctfNameGen,i);
 
 		fd[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
 
@@ -1414,16 +1561,24 @@ CTFConverter::CTFConverter(char *baseName,int numCores,uint32_t freq)
 			printf("Error: CTFConverter::CTFConverter(): Couldn't open file %s for writing\n",nameBuff);
 			status = TraceDqr::DQERR_ERR;
 
-			delete [] nameBuff;
-			delete [] ctf_name_gen;
-
 			return;
 		}
 	}
 
-	strcpy(&nameBuff[lastDirIndex],"metadata");
+	// save procname in eventContext struct for all cores
 
-//	printf("metadata file: %s\n",nameBuff);
+	if (strlen(elfName) < (int)(sizeof eventContext[0]._procname)) {
+		for (int i = 0; i < numCores; i++) {
+			strcpy((char*)eventContext[i]._procname,elfName);
+		}
+	}
+	else {
+		for (int i = 0; i < numCores; i++) {
+			strncpy((char*)eventContext[i]._procname,elfName,sizeof eventContext[i]._procname - 1);
+		}
+	}
+
+	strcpy(&nameBuff[ctfNameLen],"metadata");
 
 	metadataFd = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
 
@@ -1431,14 +1586,11 @@ CTFConverter::CTFConverter(char *baseName,int numCores,uint32_t freq)
 		printf("Error: CTFConverter::CTFConverter(): Couldn't open file %s for writing\n",nameBuff);
 		status = TraceDqr::DQERR_ERR;
 
-		delete [] nameBuff;
-		delete [] ctf_name_gen;
-
 		return;
 	}
 
-	delete [] nameBuff;
-	delete [] ctf_name_gen;
+	sprintf(CTFMetadataClockDefDoctored,CTFMetadataClockDef,frequency);
+	sprintf(CTFMetadataEnvDefDoctored,CTFMetadataEnvDef,elfName);
 
 	status = TraceDqr::DQERR_OK;
 }
@@ -1469,6 +1621,11 @@ CTFConverter::~CTFConverter()
 		writeCTFMetadata();
 		close(metadataFd);
 		metadataFd = -1;
+	}
+
+	if (elfName != nullptr) {
+		delete [] elfName;
+		elfName = nullptr;
 	}
 }
 
@@ -1518,7 +1675,7 @@ TraceDqr::DQErr CTFConverter::writeStreamPacketContext(int core,uint64_t ts_begi
 	spc.timestamp_begin = ts_begin;
 	spc.timestamp_end = ts_end;
 //	spc.content_size = size*8;
-	spc.content_size = size * 8 + sizeof spc * 8 + 8 * 8;
+	spc.content_size = size * 8 + sizeof spc * 8 + 8 * 8; // size of packet - padding (we don't pad)
 	spc.packet_size  = size * 8 + sizeof spc * 8 + 8 * 8; // size of ENTIRE packet!
 
 	spc.packet_seq_num = packetSeqNum;
@@ -1575,12 +1732,135 @@ TraceDqr::DQErr CTFConverter::computeEventSizes(int core,int &size)
 			size += sizeof eventBuffer[core][i].ret;
 			break;
 		default:
-			printf("Invalid event type (%d)\n",eventBuffer[core][i].event_header.event_id);
+			printf("Error: computeEventSizes(): Invalid event type (%d)\n",eventBuffer[core][i].event_header.event_id);
 			status = TraceDqr::DQERR_ERR;
 
 			return TraceDqr::DQERR_ERR;
 		}
 	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::computeBinInfoSize(int &size)
+{
+	// Compute size of event headers (there will be three)
+
+	size = sizeof eventBuffer[0][0].event_header.event_id * 3;
+
+	size += sizeof eventBuffer[0][0].event_header.extended * 3;
+
+	// Compute size of event contexts (there will be three)
+
+	size += sizeof(event_context) * 3;
+
+	// compute size of events (there will be three)
+
+	// first event is a statedump start
+
+	size += 0;	// start event has 0 size
+
+	// next event is a statedump binInfo
+
+	// binInfo has a variable lenght string. We need to compute its length
+
+	int l = 0;
+	for (l = 0; elfName[l] != 0; l++) { /* empty */	}
+
+	l += 1; // account for null
+
+	size += sizeof(uint64_t) + sizeof(uint64_t) + l + sizeof(uint8_t) + sizeof(uint8_t) + sizeof(uint8_t);
+
+	// last event is a statedump end
+
+	size += 0;	// end event has 0 size
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::writeBinInfo(int core,uint64_t timestamp)
+{
+	int size;
+	event e;
+	TraceDqr::DQErr rc;
+
+	rc = computeBinInfoSize(size);
+
+	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: writeBinInfo(): could not compute BinInfoSize\n");
+
+		return rc;
+	}
+
+	// write stream header first
+
+	writeStreamHeaders(core,timestamp,timestamp,size); // packet header, packet context
+
+	// write event header for state dump start
+
+	e.event_header.event_id = CTF::event_extended;
+	e.event_header.extended.event_id = CTF::event_stateDumpStart;
+	e.event_header.extended.timestamp = timestamp;
+
+	write(fd[core],&e.event_header,sizeof e.event_header);
+
+	// write event context for state dump
+
+	write(fd[core],&eventContext[core],sizeof(event_context));
+
+	// empty event for state dump start, so nothing to write for event
+
+	// write event header for bin info
+
+	e.event_header.event_id = CTF::event_extended;
+	e.event_header.extended.event_id = CTF::event_stateDumpBinInfo;
+	e.event_header.extended.timestamp = timestamp;
+
+	write(fd[core],&e.event_header,sizeof e.event_header);
+
+	// write event context for binInfo
+
+	write(fd[core],&eventContext[core],sizeof(event_context));
+
+	// now write bininfo event
+
+	printf("need to get memory base address and size from symtab sections\n");fflush(stdout);
+
+	e.binInfo._baddr = 0x40000000;
+
+	write(fd[core],&e.binInfo._baddr,sizeof e.binInfo._baddr);
+
+	e.binInfo._memsz = 0x10000000;
+
+	write(fd[core],&e.binInfo._memsz,sizeof e.binInfo._memsz);
+
+	write(fd[core],elfName,strlen(elfName)+1);
+
+	e.binInfo._is_pic = 0;
+
+	write(fd[core],&e.binInfo._is_pic,sizeof e.binInfo._is_pic);
+
+	e.binInfo._has_build_id = 0;
+
+	write(fd[core],&e.binInfo._has_build_id,sizeof e.binInfo._has_build_id);
+
+	e.binInfo._has_debug_link = 0;
+
+	write(fd[core],&e.binInfo._baddr,sizeof e.binInfo._has_debug_link);
+
+	// write event header for state dump end
+
+	e.event_header.event_id = CTF::event_extended;
+	e.event_header.extended.event_id = CTF::event_stateDumpEnd;
+	e.event_header.extended.timestamp = timestamp;
+
+	write(fd[core],&e.event_header,sizeof e.event_header);
+
+	// write event context for state dump end
+
+	write(fd[core],&eventContext[core],sizeof(event_context));
+
+	// empty event for state dump end, so nothing to write for event
 
 	return TraceDqr::DQERR_OK;
 }
@@ -1616,7 +1896,7 @@ TraceDqr::DQErr CTFConverter::writeEvent(int core,int index)
 		write(fd[core],&eventBuffer[core][index].ret,sizeof eventBuffer[core][index].ret);
 		break;
 	default:
-		printf("Invalid event type (%d)\n",et);
+		printf("Error: writeEvent(): Invalid event type (%d)\n",et);
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -1625,6 +1905,9 @@ TraceDqr::DQErr CTFConverter::writeEvent(int core,int index)
 
 TraceDqr::DQErr CTFConverter::flushEvents(int core)
 {
+	int size;
+	TraceDqr::DQErr rc;
+
 	if (eventIndex[core] == 0) {
 		return TraceDqr::DQERR_OK;
 	}
@@ -1633,8 +1916,15 @@ TraceDqr::DQErr CTFConverter::flushEvents(int core)
 		return TraceDqr::DQERR_OK;
 	}
 
-	int size;
-	TraceDqr::DQErr rc;
+	if (headerFlag[core] == false) {
+		rc = writeBinInfo(core, eventBuffer[core][0].event_header.extended.timestamp);
+		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: writeEvent(%d): write binInfo failed.\n",core);
+			return rc;
+		}
+
+		headerFlag[core] = true;
+	}
 
 	// need to write packet headers before events. But we need to know the size of the events we are going
 	// to write, so it can be included in the packet context fields
@@ -1665,7 +1955,7 @@ TraceDqr::DQErr CTFConverter::flushEvents(int core)
 
 	eventIndex[core] = 0;
 
-	printf("wrote packet %d\n",packetSeqNum);
+//	printf("wrote packet %d\n",packetSeqNum);
 
 	packetSeqNum += 1;
 
@@ -1727,7 +2017,7 @@ TraceDqr::DQErr CTFConverter::addRet(int core,TraceDqr::ADDRESS srcAddr,TraceDqr
 	if (eventIndex[core] == sizeof eventBuffer / sizeof eventBuffer[0]) {
 		rc = flushEvents(core);
 		if (rc != TraceDqr::DQERR_OK) {
-			printf("Error: CTFConverter::addCall() failed\n");
+			printf("Error: CTFConverter::addRet() failed\n");
 
 			status = rc;
 			return rc;
@@ -1774,6 +2064,8 @@ TraceSettings::TraceSettings()
 	freq = 0;
 	addrDispFlags = 0;
 	tsSize = 40;
+	pathType = TraceDqr::PATH_TO_UNIX;
+	CTFConversion = false;
 }
 
 TraceSettings::~TraceSettings()
@@ -1815,91 +2107,98 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 			if (strcasecmp("rtd",name) == 0) {
 				rc = propertyToTFName(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set trace file name in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set trace file name in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("elf",name) == 0) {
 				rc = propertyToEFName(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set elf file name in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set elf file name in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("srcbits",name) == 0) {
 				rc = propertyToSrcBits(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set srcBits in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set srcBits in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("bits",name) == 0) {
 				rc = propertyToNumAddrBits(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set numAddrBits in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set numAddrBits in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("trace.config.boolean.enable.itc.print.processing",name) == 0) {
 				rc = propertyToITCPrintOpts(value); // value should be nul, true, or false
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set ITC print options in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set ITC print options in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("trace.config.int.itc.print.channel",name) == 0) {
 				rc = propertyToITCPrintChannel(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set ITC print channel value in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set ITC print channel value in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("source.root",name) == 0) {
 				rc = propertyToSrcRoot(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set src root path in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set src root path in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("caFile",name) == 0) {
 				rc = propertyToCAName(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set CA file name in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set CA file name in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("caType",name) == 0) {
 				rc = propertyToCAType(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set CA type in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set CA type in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("TSSize",name) == 0) {
 				rc = propertyToTSSize(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set TS size in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set TS size in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("pathType",name) == 0) {
 				rc = propertyToPathType(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set path type in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set path type in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("labelsAsFunctions",name) == 0) {
 				rc = propertyToLabelsAsFuncs(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set labels as functions in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set labels as functions in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("freq",name) == 0) {
 				rc = propertyToFreq(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set frequency in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set frequency in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("ctfenable",name) == 0) {
+				rc = propertyToCTFEnable(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set frequency in settings\n");
 					return rc;
 				}
 			}
@@ -2093,6 +2392,28 @@ TraceDqr::DQErr TraceSettings::propertyToLabelsAsFuncs(char *value)
 		}
 		else {
 			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToCTFEnable(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		if (strcasecmp("true",value) == 0) {
+			CTFConversion = true;
+		}
+		else if (strcasecmp("false",value) == 0) {
+			CTFConversion = false;
+		}
+		else {
+			CTFConversion = strtol(value,&endp,0);
+			if (endp == value) {
+				return TraceDqr::DQERR_ERR;
+			}
 		}
 	}
 
@@ -2546,6 +2867,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	disassembler = nullptr;
 	caTrace      = nullptr;
 	counts       = nullptr;//delete this line if compile error
+	efName       = nullptr;
 	cutPath      = nullptr;
 	newRoot      = nullptr;
 	ctf          = nullptr;
@@ -2555,6 +2877,8 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	assert(settings.tfName != nullptr);
 
 	traceType = TraceDqr::TRACETYPE_BTM;
+
+	pathType = settings.pathType;
 
 	itcPrint = nullptr;
 	nlsStrings = nullptr;
@@ -2578,6 +2902,10 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	}
 
 	if (settings.efName != nullptr ) {
+		int l = strlen(settings.efName)+1;
+		efName = new char[l];
+		strcpy(efName,settings.efName);
+
 		// create elf object
 
 		elfReader = new (std::nothrow) ElfReader(settings.efName);
@@ -2626,7 +2954,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 			return TraceDqr::DQERR_ERR;
 		}
 
-		rc = disassembler->setPathType(settings.pathType);
+		rc = disassembler->setPathType(pathType);
 		if (rc != TraceDqr::DQERR_OK) {
 			if (sfp != nullptr) {
 				delete sfp;
@@ -2755,6 +3083,17 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		}
 	}
 
+	if (settings.CTFConversion != false ) {
+
+		// Do the code below only after setting efName above
+
+		rc = enableCTFConverter();
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return status;
+		}
+	}
+
 	return status;
 }
 
@@ -2782,6 +3121,11 @@ void Trace::cleanUp()
 	if (newRoot != nullptr) {
 		delete [] newRoot;
 		newRoot = nullptr;
+	}
+
+	if (efName != nullptr) {
+		delete [] efName;
+		efName = nullptr;
 	}
 
 	// do not delete the symtab object!! It is the same symtab object type the elfReader object
@@ -2869,6 +3213,8 @@ TraceDqr::DQErr Trace::setTraceType(TraceDqr::TraceType tType)
 
 TraceDqr::DQErr Trace::setPathType(TraceDqr::pathType pt)
 {
+	pathType = pt;
+
 	if (disassembler != nullptr) {
 		TraceDqr::DQErr rc;
 
@@ -2941,27 +3287,25 @@ TraceDqr::DQErr Trace::setCATraceFile( char *caf_name,TraceDqr::CATraceType caty
 	return status;
 }
 
-TraceDqr::DQErr Trace::enableCTFConverter(char *tf_name)
+TraceDqr::DQErr Trace::enableCTFConverter()
 {
 	if (ctf != nullptr) {
 		delete ctf;
 		ctf = nullptr;
 	}
 
-	if (tf_name == nullptr) {
-		return TraceDqr::DQERR_OK;
+	if (efName == nullptr) {
+		return TraceDqr::DQERR_ERR;
 	}
 
-	ctf = new CTFConverter(tf_name,1 << srcbits,freq);
+	ctf = new CTFConverter(efName,1 << srcbits,freq);
 
 	status = ctf->getStatus();
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
+	}
 
 	return status;
-}
-
-TraceDqr::DQErr Trace::convertToCTF()
-{
-	return TraceDqr::DQERR_ERR;
 }
 
 TraceDqr::DQErr Trace::setTSSize(int size)

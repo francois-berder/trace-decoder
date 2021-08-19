@@ -703,7 +703,7 @@ int main(int argc, char *argv[])
 			trace->setLabelMode(labelFlag);
 
 			if (ctf_flag != false) {
-				rc = trace->enableCTFConverter(tf_name);
+				rc = trace->enableCTFConverter();
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: Could not set CTF file\n");
 					return 1;
@@ -755,7 +755,7 @@ int main(int argc, char *argv[])
 			trace->setLabelMode(labelFlag);
 
 			if (ctf_flag != false) {
-				rc = trace->enableCTFConverter(tf_name);
+				rc = trace->enableCTFConverter();
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: Could not set CTF file\n");
 					return 1;

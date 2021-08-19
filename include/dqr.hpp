@@ -62,13 +62,13 @@ public:
 		event_tracePoint = 0,
 		event_funcEntry = 1,
 		event_funcExit = 2,
+		event_stateDumpStart = 3,
+		event_stateDumpBinInfo = 4,
+		event_stateDumpEnd = 7,
 		event_extended = 0xffff
 	};
 
 	// metadata file needs to have an env struct!!
-
-	struct env {
-	};
 
 	typedef uint64_t uint64_clock_monotonic_t;
 
@@ -835,7 +835,7 @@ public:
 	TraceDqr::DQErr setITCPrintOptions(int intFlags,int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
-	TraceDqr::DQErr enableCTFConverter(char *ctf_name);
+	TraceDqr::DQErr enableCTFConverter();
 
 	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
@@ -873,8 +873,6 @@ public:
 	int         getITCPrintMask();
 	int         getITCFlushMask();
 
-	TraceDqr::DQErr convertToCTF();
-
 	TraceDqr::DQErr getNumBytesInSWTQ(int &numBytes);
 
 private:
@@ -896,6 +894,7 @@ private:
 	class Symtab          *symtab;
 	class Disassembler    *disassembler;
 	class CTFConverter    *ctf;
+	char                  *efName;
 	char                  *cutPath;
 	char                  *newRoot;
 	class ITCPrint        *itcPrint;
@@ -915,6 +914,7 @@ private:
 	int              endMessageNum;
 
 	int              tsSize;
+	TraceDqr::pathType pathType;
 
 	uint32_t         freq;
 

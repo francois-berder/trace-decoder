@@ -8972,6 +8972,7 @@ TraceDqr::DQErr Disassembler::subSrcPath(const char *cutPath,const char *newRoot
 
 	return TraceDqr::DQERR_ERR;
 }
+
 int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size)
 {
 	assert(ins != nullptr);
@@ -10193,7 +10194,7 @@ int Disassembler::decodeInstruction(uint32_t instruction,int archSize,int &inst_
 // make all path separators either '/' or '\'; also remove '/./' and /../. Remove weird double path
 // showing up on linux (libbfd issue)
 
-void static sanePath(TraceDqr::pathType pt,const char *src,char *dst)
+void sanePath(TraceDqr::pathType pt,const char *src,char *dst)
 {
 	char drive = 0;
 	int r = 0;
