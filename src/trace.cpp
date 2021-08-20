@@ -1354,21 +1354,26 @@ static const char * const CTFMetadataStructs[] = {
 
 // class CTFConverter methods
 
-static void getNames(char *elfNameIn, char *elfBaseName, char *elfName, char *elfPath)
+// baseNameIn: abs or rel path and name of base file
+// fileBaseName: name of file without extention (no path info)
+// fileName: just the name of the file at baseNameIn (no path info)
+// absPath: abs path to baseNameIn without the file (just the abs path)
+
+static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,char *absPath)
 {
-	if (elfBaseName != nullptr) {
-		elfBaseName[0] = 0;
+	if (fileBaseName != nullptr) {
+		fileBaseName[0] = 0;
 	}
 
-	if (elfName != nullptr) {
-		elfName[0] = 0;
+	if (fileName != nullptr) {
+		fileName[0] = 0;
 	}
 
-	if (elfPath != nullptr) {
-		elfPath[0] = 0;
+	if (absPath != nullptr) {
+		absPath[0] = 0;
 	}
 
-	if (elfNameIn == nullptr) {
+	if (baseNameIn == nullptr) {
 		return;
 	}
 
@@ -1377,19 +1382,19 @@ static void getNames(char *elfNameIn, char *elfBaseName, char *elfName, char *el
 	int l;
 	int i;
 
-	l = strlen(elfNameIn);
+	l = strlen(baseNameIn);
 
 	int sepIndex = -1;
 	int extIndex = -1;
 
 	for (i = l-1; (i >= 0) && (sepIndex == -1); i--) {
-		if (elfNameIn[i] == '/') {
+		if (baseNameIn[i] == '/') {
 			sepIndex = i;
 		}
-		else if (elfNameIn[i] == '\\') {
+		else if (baseNameIn[i] == '\\') {
 			sepIndex = i;
 		}
-		else if ((extIndex == -1) && (elfNameIn[i] == '.')) {
+		else if ((extIndex == -1) && (baseNameIn[i] == '.')) {
 			extIndex = i;
 		}
 	}
@@ -1398,27 +1403,27 @@ static void getNames(char *elfNameIn, char *elfBaseName, char *elfName, char *el
 	char ebn[256];
 	char fullPath[512];
 
-	bool absPath = false;
+	bool haveAbsPath = false;
 
-	strcpy(en,&elfNameIn[sepIndex+1]);
+	strcpy(en,&baseNameIn[sepIndex+1]);
 
 	for (i = sepIndex+1; i < extIndex; i++) {
-		ebn[i - (sepIndex+1)] = elfNameIn[i];
+		ebn[i - (sepIndex+1)] = baseNameIn[i];
 	}
 
-	// figure out if this is an abs path or a rel path in elfNameIn
+	// figure out if this is an abs path or a rel path in baseNameIn
 
-	if (elfNameIn[0] == '/') {
-		absPath = true;
+	if (baseNameIn[0] == '/') {
+		haveAbsPath = true;
 	}
-	else if (elfNameIn[0] == '\\') {
-		absPath = true;
+	else if (baseNameIn[0] == '\\') {
+		haveAbsPath = true;
 	}
-	else if ((elfNameIn[0] != 0) && (elfNameIn[1] == ':') && (elfNameIn[2] == '\\')) {
-		absPath = true;
+	else if ((baseNameIn[0] != 0) && (baseNameIn[1] == ':') && (baseNameIn[2] == '\\')) {
+		haveAbsPath = true;
 	}
 
-	if (absPath == false) {
+	if (haveAbsPath == false) {
 		// have a rel path. Need to make it an abs path
 
 #ifdef	WINDOWS
@@ -1434,33 +1439,38 @@ static void getNames(char *elfNameIn, char *elfBaseName, char *elfName, char *el
 		l += 1;
 
 		for (i = 0; i < sepIndex+1; i++) {
-			fullPath[l+i] = elfNameIn[i];
+			fullPath[l+i] = baseNameIn[i];
 		}
 
 		fullPath[l+i] = 0;
 	}
 	else {
 		for (i = 0; i < sepIndex+1; i++) {
-			fullPath[i] = elfNameIn[i];
+			fullPath[i] = baseNameIn[i];
 		}
 
 		fullPath[i] = 0;
 	}
 
-	if (elfBaseName != nullptr) {
-		strcpy(elfBaseName,ebn);
+	if (fileBaseName != nullptr) {
+		strcpy(fileBaseName,ebn);
 	}
 
-	if (elfName != nullptr) {
-		strcpy(elfName,en);
+	if (fileName != nullptr) {
+		strcpy(fileName,en);
 	}
 
-	if (elfPath != nullptr) {
-		strcpy(elfPath,fullPath);
+	if (absPath != nullptr) {
+		strcpy(absPath,fullPath);
 	}
+
+	printf("baseNameIn: %s\n",baseNameIn);
+	printf("fileBaseName: %s\n",fileBaseName);
+	printf("fileName: %s\n",fileName);
+	printf("absPath: %s\n",absPath);
 }
 
-CTFConverter::CTFConverter(char *elf,int numCores,uint32_t freq)
+CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 {
 	status = TraceDqr::DQERR_OK;
 
@@ -1518,7 +1528,7 @@ CTFConverter::CTFConverter(char *elf,int numCores,uint32_t freq)
 	char elfName[256];
 	char elfPath[512];
 
-	getNames(elf,elfBaseName,elfName,elfPath);
+	getPathsNames(elf,elfBaseName,elfName,elfPath);
 
 	// set this->elfName to the complete path and elf name
 
@@ -1526,10 +1536,13 @@ CTFConverter::CTFConverter(char *elf,int numCores,uint32_t freq)
 	strcpy(this->elfName,elfPath);
 	strcat(this->elfName,elfName);
 
+	printf("full elf name: %s\n",this->elfName);
+
 	char ctfNameGen[512];
 	int ctfNameLen;
 
-	strcpy(ctfNameGen,elfPath);
+	getPathsNames(rtd,nullptr,nullptr,ctfNameGen);
+
 	strcat(ctfNameGen,"ctf");
 
 	// make the ctf folder
@@ -1554,6 +1567,8 @@ CTFConverter::CTFConverter(char *elf,int numCores,uint32_t freq)
 
 	for (int i = 0; i < numCores; i++) {
 		sprintf(nameBuff,ctfNameGen,i);
+
+		printf("nameBuff %d: %s\n",i,nameBuff);
 
 		fd[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
 
@@ -2868,6 +2883,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	caTrace      = nullptr;
 	counts       = nullptr;//delete this line if compile error
 	efName       = nullptr;
+	rtdName      = nullptr;
 	cutPath      = nullptr;
 	newRoot      = nullptr;
 	ctf          = nullptr;
@@ -2886,6 +2902,9 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	srcbits = settings.srcBits;
 
 	analytics.setSrcBits(srcbits);
+
+	rtdName = new char[strlen(settings.tfName)+1];
+	strcpy(rtdName,settings.tfName);
 
 	sfp = new (std::nothrow) SliceFileParser(settings.tfName,srcbits);
 
@@ -3123,6 +3142,11 @@ void Trace::cleanUp()
 		newRoot = nullptr;
 	}
 
+	if (rtdName != nullptr) {
+		delete [] rtdName;
+		rtdName = nullptr;
+	}
+
 	if (efName != nullptr) {
 		delete [] efName;
 		efName = nullptr;
@@ -3298,7 +3322,7 @@ TraceDqr::DQErr Trace::enableCTFConverter()
 		return TraceDqr::DQERR_ERR;
 	}
 
-	ctf = new CTFConverter(efName,1 << srcbits,freq);
+	ctf = new CTFConverter(efName,rtdName,1 << srcbits,freq);
 
 	status = ctf->getStatus();
 	if (status != TraceDqr::DQERR_OK) {

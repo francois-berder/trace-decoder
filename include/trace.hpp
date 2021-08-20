@@ -366,7 +366,7 @@ private:
 
 class CTFConverter {
 public:
-	CTFConverter(char *elf,int numCores,uint32_t freq);
+	CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq);
 	~CTFConverter();
 
 	TraceDqr::DQErr getStatus() { return status; }

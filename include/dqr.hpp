@@ -896,6 +896,7 @@ private:
 	class Symtab          *symtab;
 	class Disassembler    *disassembler;
 	class CTFConverter    *ctf;
+	char                  *rtdName;
 	char                  *efName;
 	char                  *cutPath;
 	char                  *newRoot;
