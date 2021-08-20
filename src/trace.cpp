@@ -1464,10 +1464,10 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 		strcpy(absPath,fullPath);
 	}
 
-	printf("baseNameIn: %s\n",baseNameIn);
-	printf("fileBaseName: %s\n",fileBaseName);
-	printf("fileName: %s\n",fileName);
-	printf("absPath: %s\n",absPath);
+//	printf("baseNameIn: %s\n",baseNameIn);
+//	printf("fileBaseName: %s\n",fileBaseName);
+//	printf("fileName: %s\n",fileName);
+//	printf("absPath: %s\n",absPath);
 }
 
 CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq)
@@ -1536,7 +1536,7 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 	strcpy(this->elfName,elfPath);
 	strcat(this->elfName,elfName);
 
-	printf("full elf name: %s\n",this->elfName);
+//	printf("full elf name: %s\n",this->elfName);
 
 	char ctfNameGen[512];
 	int ctfNameLen;
@@ -1568,7 +1568,7 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 	for (int i = 0; i < numCores; i++) {
 		sprintf(nameBuff,ctfNameGen,i);
 
-		printf("nameBuff %d: %s\n",i,nameBuff);
+//		printf("nameBuff %d: %s\n",i,nameBuff);
 
 		fd[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
 
