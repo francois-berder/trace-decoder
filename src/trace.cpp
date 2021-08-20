@@ -1507,7 +1507,7 @@ CTFConverter::CTFConverter(char *elf,int numCores,uint32_t freq)
 	this->numCores = numCores;
 
 	for (int i = 0; i < DQR_MAXCORES; i++) {
-		eventContext[i]._vpid = 0;
+		eventContext[i]._vpid = 1; // don't use 0 for vpid; trace compasss uses 0 for kernel processes and does symbol resolution differently
 		eventContext[i]._vtid = i;
 		for (int j = 0; j < (int)(sizeof eventContext[i]._procname / sizeof eventContext[i]._procname[0]); j++) {
 			eventContext[i]._procname[j] = 0;
