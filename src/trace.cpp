@@ -30,6 +30,7 @@
 #include <cstring>
 #include <cstdint>
 #include <cassert>
+#include <time.h>
 
 #include "dqr.hpp"
 #include "trace.hpp"
@@ -1196,7 +1197,7 @@ static const char * const CTFMetadataClockDef =
 			"\tfreq = %d; /* Frequency, in Hz */\n"
 			"\t/* clock value offset from Epoch is: offset * (1/freq) */\n"
 			"\t/*offset = 1626470161640558449;*/\n"
-			"\toffset = 0;\n"
+			"\toffset = %lld;\n"
 		"};\n"
 		"\n"
 		"typealias integer {\n"
@@ -1604,7 +1605,14 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 		return;
 	}
 
-	sprintf(CTFMetadataClockDefDoctored,CTFMetadataClockDef,frequency);
+	// time() will return time in seconds, which should be close enough
+
+	int64_t t;
+	t = (int64_t)time(nullptr);
+
+	// convert seconds to nanoseconds
+
+	sprintf(CTFMetadataClockDefDoctored,CTFMetadataClockDef,frequency,t * 1000000000);
 	sprintf(CTFMetadataEnvDefDoctored,CTFMetadataEnvDef,elfName);
 
 	status = TraceDqr::DQERR_OK;
@@ -2072,14 +2080,15 @@ TraceSettings::TraceSettings()
 	srcBits = 0;
 	numAddrBits = 0;
 	itcPrintOpts = TraceDqr::ITC_OPT_NLS;
+	itcPrintBufferSize = 4096;
 	itcPrintChannel = 0;
+	cutPath = nullptr;
 	srcRoot = nullptr;
 	pathType = TraceDqr::PATH_TO_UNIX;
 	labelsAsFunctions = true;
 	freq = 0;
 	addrDispFlags = 0;
 	tsSize = 40;
-	pathType = TraceDqr::PATH_TO_UNIX;
 	CTFConversion = false;
 }
 
@@ -2161,10 +2170,24 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
+			else if (strcasecmp("trace.config.int.itc.print.buffersize",name) == 0) {
+				rc = propertyToITCPrintBufferSize(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set ITC print buffer size in settings\n");
+					return rc;
+				}
+			}
 			else if (strcasecmp("source.root",name) == 0) {
 				rc = propertyToSrcRoot(value);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: TraceSettings::addSettings(): Could not set src root path in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("source.cutpath",name) == 0) {
+				rc = propertyToSrcCutPath(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set src cut path in settings\n");
 					return rc;
 				}
 			}
@@ -2217,6 +2240,13 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
+			else if (strcasecmp("addressdisplayflags", name) == 0) {
+				rc = propertyToAddrDispFlags(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set address display flags in settings\n");
+					return rc;
+				}
+			}
 		}
 	} while (rc == TraceDqr::DQERR_OK);
 
@@ -2259,6 +2289,51 @@ TraceDqr::DQErr TraceSettings::propertyToEFName(char *value)
 
 		efName = new char [l];
 		strcpy(efName,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToAddrDispFlags(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		addrDispFlags = 0;
+
+		if (strcmp(value,"32") == 0) {
+			numAddrBits = 32;
+			addrDispFlags = addrDispFlags & ~TraceDqr::ADDRDISP_WIDTHAUTO;
+		}
+		else if (strcmp(value,"64") == 0) {
+			numAddrBits = 64;
+			addrDispFlags = addrDispFlags & ~TraceDqr::ADDRDISP_WIDTHAUTO;
+		}
+		else if (strcmp(value,"32+") == 0) {
+			numAddrBits = 32;
+			addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_WIDTHAUTO;
+		}
+		else {
+			int l;
+			char *endptr;
+
+			l = strtol(value, &endptr, 10);
+
+			if (endptr[0] == 0 ) {
+				numAddrBits = l;
+				addrDispFlags = addrDispFlags  & ~TraceDqr::ADDRDISP_WIDTHAUTO;
+			}
+			else if (endptr[0] == '+') {
+				numAddrBits = l;
+				addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_WIDTHAUTO;
+			}
+			else {
+				return TraceDqr::DQERR_ERR;
+			}
+
+			if ((l < 32) || (l > 64)) {
+				return TraceDqr::DQERR_ERR;
+			}
+		}
+
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -2326,6 +2401,21 @@ TraceDqr::DQErr TraceSettings::propertyToITCPrintChannel(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr TraceSettings::propertyToITCPrintBufferSize(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		itcPrintBufferSize = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr TraceSettings::propertyToSrcRoot(char *value)
 {
 	if (value != nullptr) {
@@ -2339,6 +2429,24 @@ TraceDqr::DQErr TraceSettings::propertyToSrcRoot(char *value)
 
 		srcRoot = new char [l];
 		strcpy(srcRoot,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToSrcCutPath(char *value)
+{
+	if (value != nullptr) {
+		if (cutPath != nullptr) {
+			delete [] cutPath;
+			cutPath = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		cutPath = new char [l];
+		strcpy(cutPath,value);
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -2886,6 +2994,8 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	rtdName      = nullptr;
 	cutPath      = nullptr;
 	newRoot      = nullptr;
+	itcPrint = nullptr;
+	nlsStrings = nullptr;
 	ctf          = nullptr;
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -2895,9 +3005,6 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	traceType = TraceDqr::TRACETYPE_BTM;
 
 	pathType = settings.pathType;
-
-	itcPrint = nullptr;
-	nlsStrings = nullptr;
 
 	srcbits = settings.srcBits;
 
@@ -3090,7 +3197,15 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		enterISR[i] = TraceDqr::isNone;
 	}
 
-	status = setITCPrintOptions(TraceDqr::ITC_OPT_NLS,4096,0);
+	if (settings.itcPrintOpts != TraceDqr::ITC_OPT_NONE) {
+		rc = setITCPrintOptions(settings.itcPrintOpts,settings.itcPrintBufferSize,settings.itcPrintChannel);
+		if (rc != TraceDqr::DQERR_OK) {
+			cleanUp();
+
+			status = rc;
+			return status;
+		}
+	}
 
 	if ((settings.caName != nullptr) && (settings.caType != TraceDqr::CATRACE_NONE)) {
 		rc = setCATraceFile(settings.caName,settings.caType);
@@ -3109,6 +3224,15 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		rc = enableCTFConverter();
 		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
+			return status;
+		}
+	}
+
+	if ((settings.cutPath != nullptr) || (settings.srcRoot != nullptr)) {
+		rc = subSrcPath(settings.cutPath,settings.srcRoot);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+
 			return status;
 		}
 	}

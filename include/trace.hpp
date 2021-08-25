@@ -333,14 +333,17 @@ public:
 	TraceDqr::DQErr propertyToSrcBits(char *value);
 	TraceDqr::DQErr propertyToNumAddrBits(char *value);
 	TraceDqr::DQErr propertyToITCPrintOpts(char *value);
+	TraceDqr::DQErr propertyToITCPrintBufferSize(char *value);
 	TraceDqr::DQErr propertyToITCPrintChannel(char *value);
 	TraceDqr::DQErr propertyToSrcRoot(char *value);
+	TraceDqr::DQErr propertyToSrcCutPath(char *value);
 	TraceDqr::DQErr propertyToCAName(char *value);
 	TraceDqr::DQErr propertyToCAType(char *value);
 	TraceDqr::DQErr propertyToPathType(char *value);
 	TraceDqr::DQErr propertyToLabelsAsFuncs(char *value);
 	TraceDqr::DQErr propertyToFreq(char *value);
 	TraceDqr::DQErr propertyToTSSize(char *value);
+	TraceDqr::DQErr propertyToAddrDispFlags(char *value);
 	TraceDqr::DQErr propertyToCTFEnable(char *value);
 
 	char *tfName;
@@ -350,7 +353,9 @@ public:
 	int srcBits;
 	int numAddrBits;
 	int itcPrintOpts;
+	int itcPrintBufferSize;
 	int itcPrintChannel;
+	char *cutPath;
 	char *srcRoot;
 	TraceDqr::pathType pathType;
 	bool labelsAsFunctions;
