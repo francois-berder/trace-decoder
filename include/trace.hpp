@@ -345,6 +345,7 @@ public:
 	TraceDqr::DQErr propertyToTSSize(char *value);
 	TraceDqr::DQErr propertyToAddrDispFlags(char *value);
 	TraceDqr::DQErr propertyToCTFEnable(char *value);
+	TraceDqr::DQErr propertyToEventConversionEnable(char *value);
 
 	char *tfName;
 	char *efName;
@@ -363,6 +364,7 @@ public:
 	uint32_t addrDispFlags;
 	int tsSize;
 	bool CTFConversion;
+	bool eventConversionEnable;
 
 private:
 };
@@ -454,6 +456,30 @@ private:
 	char *elfName;
 
 	bool headerFlag[DQR_MAXCORES];
+};
+
+// class EventConverter: class to convert nexus messages to Evebt files
+
+class EventConverter {
+public:
+	EventConverter(char *elf,char *rtd,int numCores,uint32_t freq);
+	~EventConverter();
+
+	TraceDqr::DQErr getStatus() { return status; }
+
+	TraceDqr::DQErr emitExtTrigEvent(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id);
+	TraceDqr::DQErr emitWatchpoint(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id);
+	TraceDqr::DQErr emitCallRet(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags);
+	TraceDqr::DQErr emitException(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause);
+	TraceDqr::DQErr emitInterrupt(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause);
+	TraceDqr::DQErr emitContext(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context);
+	TraceDqr::DQErr emitPeriodic(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc);
+	TraceDqr::DQErr emitControl(TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc);
+
+private:
+
+	TraceDqr::DQErr status;
+	int eventFDs[CTF::et_numEventTypes];
 };
 
 // class Disassembler: class to help in the dissasemblhy of instrucitons

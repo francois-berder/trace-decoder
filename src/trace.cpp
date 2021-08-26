@@ -1471,6 +1471,194 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 //	printf("absPath: %s\n",absPath);
 }
 
+EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
+{
+	for (int i = 0; i < (int)(sizeof eventFDs / sizeof eventFDs[0]); i++) {
+		eventFDs[i] = -1;
+	}
+
+	char elfBaseName[256];
+	char eventNameGen[512];
+	int eventNameLen;
+
+	getPathsNames(elf,elfBaseName,nullptr,nullptr);
+
+	getPathsNames(rtd,nullptr,nullptr,eventNameGen);
+
+	strcat(eventNameGen,"events");
+
+	// make the event folder
+
+#ifdef WINDOWS
+	mkdir(eventNameGen);
+	char pathSep = '\\';
+#else // WINDOWS
+	mkdir(eventNameGen,0666);
+	char pathSep = '/';
+#endif // WINDOWS
+	// now add the elf file base name
+
+	eventNameLen = strlen(eventNameGen);
+	eventNameGen[eventNameLen] = pathSep;
+	eventNameLen += 1;
+
+	strcpy(&eventNameGen[eventNameLen],elfBaseName);
+	strcat(&eventNameGen[eventNameLen],".%s");
+
+	char nameBuff[512];
+
+	const char *eventNames[] = {
+			"control",
+			"trigger",
+			"callret",
+			"exception",
+			"interrupt",
+			"context",
+			"watchpoint",
+			"periodic"
+	};
+
+	for (int i = 0; i < (int)(sizeof eventNames / sizeof eventNames[0]); i++) {
+		sprintf(nameBuff,eventNameGen,eventNames[i]);
+
+//		printf("nameBuff %d: %s\n",i,nameBuff);
+
+		eventFDs[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+
+		if (eventFDs[i] < 0) {
+			printf("Error: EventConverter::EventConverter(): Couldn't open file %s for writing\n",nameBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return;
+		}
+	}
+
+	status = TraceDqr::DQERR_OK;
+}
+
+EventConverter::~EventConverter()
+{
+	for (int i = 0; i < (int)(sizeof eventFDs / sizeof eventFDs[0]); i++) {
+		if (eventFDs[i] >= 0) {
+			close(eventFDs[i]);
+		}
+	}
+}
+
+TraceDqr::DQErr EventConverter::emitExtTrigEvent(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_extTriggerIndex] >= 0) {
+		if (ckdf == 0) {
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x\n",ts,ckdf,pc);
+		}
+		else {
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,%d\n",ts,ckdf,pc,id);
+		}
+		write(eventFDs[CTF::et_extTriggerIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitWatchpoint(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_watchpointIndex] >= 0) {
+		if (ckdf == 0) {
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x\n",ts,ckdf,pc);
+		}
+		else {
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,%d\n",ts,ckdf,pc,id);
+		}
+		write(eventFDs[CTF::et_watchpointIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitCallRet(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_callRetIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,0x%08x,%08x\n",ts,ckdf,pc,pcDest,crFlags);
+		write(eventFDs[CTF::et_callRetIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitException(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_exeptionIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,%d\n",ts,ckdf,pc,cause);
+		write(eventFDs[CTF::et_exeptionIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitInterrupt(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_interruptIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,%d\n",ts,ckdf,pc,cause);
+		write(eventFDs[CTF::et_interruptIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitContext(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_contextIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,%d\n",ts,ckdf,pc,context);
+		write(eventFDs[CTF::et_contextIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitPeriodic(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_periodicIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x\n",ts,ckdf,pc);
+		write(eventFDs[CTF::et_periodicIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitControl(TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_controlIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x\n",ts,ckdf,control,pc);
+		write(eventFDs[CTF::et_controlIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 {
 	status = TraceDqr::DQERR_OK;
@@ -1573,7 +1761,7 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 
 		fd[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
 
-		if (fd < 0) {
+		if (fd[i] < 0) {
 			printf("Error: CTFConverter::CTFConverter(): Couldn't open file %s for writing\n",nameBuff);
 			status = TraceDqr::DQERR_ERR;
 
@@ -2090,6 +2278,7 @@ TraceSettings::TraceSettings()
 	addrDispFlags = 0;
 	tsSize = 40;
 	CTFConversion = false;
+	eventConversionEnable = false;
 }
 
 TraceSettings::~TraceSettings()
@@ -2236,7 +2425,14 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 			else if (strcasecmp("ctfenable",name) == 0) {
 				rc = propertyToCTFEnable(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: TraceSettings::addSettings(): Could not set frequency in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set ctfEnable in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("eventConversionEnable",name) == 0) {
+				rc = propertyToEventConversionEnable(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set eventConversionEnable in settings\n");
 					return rc;
 				}
 			}
@@ -2299,41 +2495,26 @@ TraceDqr::DQErr TraceSettings::propertyToAddrDispFlags(char *value)
 	if ((value != nullptr) && (value[0] != '\0')) {
 		addrDispFlags = 0;
 
-		if (strcmp(value,"32") == 0) {
-			numAddrBits = 32;
-			addrDispFlags = addrDispFlags & ~TraceDqr::ADDRDISP_WIDTHAUTO;
+		int l;
+		char *endptr;
+
+		l = strtol(value, &endptr, 10);
+
+		if (endptr[0] == 0 ) {
+			numAddrBits = l;
+			addrDispFlags = addrDispFlags  & ~TraceDqr::ADDRDISP_WIDTHAUTO;
 		}
-		else if (strcmp(value,"64") == 0) {
-			numAddrBits = 64;
-			addrDispFlags = addrDispFlags & ~TraceDqr::ADDRDISP_WIDTHAUTO;
-		}
-		else if (strcmp(value,"32+") == 0) {
-			numAddrBits = 32;
+		else if (endptr[0] == '+') {
+			numAddrBits = l;
 			addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_WIDTHAUTO;
 		}
 		else {
-			int l;
-			char *endptr;
-
-			l = strtol(value, &endptr, 10);
-
-			if (endptr[0] == 0 ) {
-				numAddrBits = l;
-				addrDispFlags = addrDispFlags  & ~TraceDqr::ADDRDISP_WIDTHAUTO;
-			}
-			else if (endptr[0] == '+') {
-				numAddrBits = l;
-				addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_WIDTHAUTO;
-			}
-			else {
-				return TraceDqr::DQERR_ERR;
-			}
-
-			if ((l < 32) || (l > 64)) {
-				return TraceDqr::DQERR_ERR;
-			}
+			return TraceDqr::DQERR_ERR;
 		}
 
+		if ((l < 32) || (l > 64)) {
+			return TraceDqr::DQERR_ERR;
+		}
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -2534,6 +2715,28 @@ TraceDqr::DQErr TraceSettings::propertyToCTFEnable(char *value)
 		}
 		else {
 			CTFConversion = strtol(value,&endp,0);
+			if (endp == value) {
+				return TraceDqr::DQERR_ERR;
+			}
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToEventConversionEnable(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		if (strcasecmp("true",value) == 0) {
+			eventConversionEnable = true;
+		}
+		else if (strcasecmp("false",value) == 0) {
+			eventConversionEnable = false;
+		}
+		else {
+			eventConversionEnable = strtol(value,&endp,0);
 			if (endp == value) {
 				return TraceDqr::DQERR_ERR;
 			}
@@ -2994,9 +3197,11 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	rtdName      = nullptr;
 	cutPath      = nullptr;
 	newRoot      = nullptr;
-	itcPrint = nullptr;
-	nlsStrings = nullptr;
+	itcPrint     = nullptr;
+	nlsStrings   = nullptr;
 	ctf          = nullptr;
+	eventConverter = nullptr;
+
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
 
@@ -3228,6 +3433,17 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		}
 	}
 
+	if (settings.eventConversionEnable != false) {
+
+		// Do the code below only after setting efName above
+
+		rc = enableEventConverter();
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return status;
+		}
+	}
+
 	if ((settings.cutPath != nullptr) || (settings.srcRoot != nullptr)) {
 		rc = subSrcPath(settings.cutPath,settings.srcRoot);
 		if (rc != TraceDqr::DQERR_OK) {
@@ -3449,6 +3665,27 @@ TraceDqr::DQErr Trace::enableCTFConverter()
 	ctf = new CTFConverter(efName,rtdName,1 << srcbits,freq);
 
 	status = ctf->getStatus();
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
+	}
+
+	return status;
+}
+
+TraceDqr::DQErr Trace::enableEventConverter()
+{
+	if (eventConverter != nullptr) {
+		delete eventConverter;
+		eventConverter = nullptr;
+	}
+
+	if (efName == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	eventConverter = new EventConverter(efName,rtdName,1 << srcbits,freq);
+
+	status = eventConverter->getStatus();
 	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
@@ -4612,10 +4849,18 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			if (nm.ict.ckdf == 0) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				// don't update pc
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitExtTrigEvent(ts,nm.ict.ckdf,faddr,0);
+				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitExtTrigEvent(ts,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
@@ -4626,10 +4871,18 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			if (nm.ict.ckdf == 0) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				// don't update pc
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitWatchpoint(ts,nm.ict.ckdf,faddr,0);
+				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitWatchpoint(ts,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
@@ -4658,6 +4911,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 
 					nm.ict.ckdata[1] = nextPC;
 				}
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitCallRet(ts,nm.ict.ckdf,pc,nm.ict.ckdata[1],TraceDqr::isCall);
+				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				pc = faddr ^ (nm.ict.ckdata[0] << 1);
@@ -4685,6 +4942,20 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 						return TraceDqr::DQERR_ERR;
 					}
 				}
+
+				if (eventConverter != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					eventConverter->emitCallRet(ts,nm.ict.ckdf,pc,faddr,crFlags);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
@@ -4700,6 +4971,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitException(ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
+			}
 			break;
 		case TraceDqr::ICT_INTERRUPT:
 			if (nm.ict.ckdf == 1) {
@@ -4709,6 +4984,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
+			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitInterrupt(ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_CONTEXT:
@@ -4720,6 +4999,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitContext(ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
+			}
 			break;
 		case TraceDqr::ICT_PC_SAMPLE:
 			if (nm.ict.ckdf == 0) {
@@ -4730,15 +5013,27 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitPeriodic(ts,nm.ict.ckdf,pc);
+			}
 			break;
 		case TraceDqr::ICT_CONTROL:
 			if (nm.ict.ckdf == 0) {
 				// nothing to do - no address
 				// does not update faddr or pc!
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitControl(ts,nm.ict.ckdf,nm.ict.ckdata[0],0);
+				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitControl(ts,nm.ict.ckdf,nm.ict.ckdata[1],pc);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
@@ -4764,10 +5059,18 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			if (nm.ictWS.ckdf == 0) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				// don't update pc
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitExtTrigEvent(ts,nm.ictWS.ckdf,faddr,0);
+				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitExtTrigEvent(ts,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
@@ -4778,10 +5081,18 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			if (nm.ictWS.ckdf == 0) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				// don'tupdate pc
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitWatchpoint(ts,nm.ictWS.ckdf,faddr,0);
+				}
 			}
 			else if (nm.ictWS.ckdf <= 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitWatchpoint(ts,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
@@ -4810,10 +5121,14 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 
 					nm.ict.ckdata[1] = nextPC;
 				}
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitCallRet(ts,nm.ictWS.ckdf,pc,faddr,TraceDqr::isCall);
+				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
-				pc = nm.ict.ckdata[0] << 1;
-				faddr = pc ^ (nm.ict.ckdata[1] << 1);
+				pc = nm.ictWS.ckdata[0] << 1;
+				faddr = pc ^ (nm.ictWS.ckdata[1] << 1);
 
 				if (ctf != nullptr) {
 					TraceDqr::DQErr rc;
@@ -4837,6 +5152,20 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 						return TraceDqr::DQERR_ERR;
 					}
 				}
+
+				if (eventConverter != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					eventConverter->emitCallRet(ts,nm.ictWS.ckdf,pc,faddr,crFlags);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
@@ -4852,6 +5181,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitException(ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
+			}
 			break;
 		case TraceDqr::ICT_INTERRUPT:
 			if (nm.ictWS.ckdf == 1) {
@@ -4861,6 +5194,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
+			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitInterrupt(ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_CONTEXT:
@@ -4872,6 +5209,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitContext(ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
+			}
 			break;
 		case TraceDqr::ICT_PC_SAMPLE:
 			if (nm.ictWS.ckdf == 0) {
@@ -4882,15 +5223,27 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitPeriodic(ts,nm.ictWS.ckdf,pc);
+			}
 			break;
 		case TraceDqr::ICT_CONTROL:
 			if (nm.ictWS.ckdf == 0) {
 				// nothing to do
 				// does not update faddr or pc!
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitControl(ts,nm.ictWS.ckdf,nm.ictWS.ckdata[0],0);
+				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitControl(ts,nm.ictWS.ckdf,nm.ictWS.ckdata[1],pc);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);

@@ -98,6 +98,18 @@ public:
 		uint64_t src;
 		uint64_t dst;
 	};
+
+	enum event_t {
+		et_controlIndex,
+		et_extTriggerIndex,
+		et_callRetIndex,
+		et_exeptionIndex,
+		et_interruptIndex,
+		et_contextIndex,
+		et_watchpointIndex,
+		et_periodicIndex,
+		et_numEventTypes
+	};
 };
 
 class TraceDqr {
@@ -837,6 +849,7 @@ public:
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
 	TraceDqr::DQErr enableCTFConverter();
+	TraceDqr::DQErr enableEventConverter();
 
 	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
@@ -896,6 +909,7 @@ private:
 	class Symtab          *symtab;
 	class Disassembler    *disassembler;
 	class CTFConverter    *ctf;
+	class EventConverter  *eventConverter;
 	char                  *rtdName;
 	char                  *efName;
 	char                  *cutPath;
