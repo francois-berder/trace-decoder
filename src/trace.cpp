@@ -1477,6 +1477,9 @@ EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 		eventFDs[i] = -1;
 	}
 
+	this->numCores = numCores;
+	frequency = freq;
+
 	char elfBaseName[256];
 	char eventNameGen[512];
 	int eventNameLen;
@@ -1545,17 +1548,17 @@ EventConverter::~EventConverter()
 	}
 }
 
-TraceDqr::DQErr EventConverter::emitExtTrigEvent(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
+TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
 {
 	char msgBuff[512];
 	int n;
 
 	if (eventFDs[CTF::et_extTriggerIndex] >= 0) {
 		if (ckdf == 0) {
-			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x\n",ts,ckdf,pc);
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x\n",core,ts,ckdf,pc);
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,%d\n",ts,ckdf,pc,id);
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,id);
 		}
 		write(eventFDs[CTF::et_extTriggerIndex],msgBuff,n);
 	}
@@ -1563,17 +1566,17 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(TraceDqr::TIMESTAMP ts,int ckdf
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitWatchpoint(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
+TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
 {
 	char msgBuff[512];
 	int n;
 
 	if (eventFDs[CTF::et_watchpointIndex] >= 0) {
 		if (ckdf == 0) {
-			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x\n",ts,ckdf,pc);
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x\n",core,ts,ckdf,pc);
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,%d\n",ts,ckdf,pc,id);
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,id);
 		}
 		write(eventFDs[CTF::et_watchpointIndex],msgBuff,n);
 	}
@@ -1581,78 +1584,78 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(TraceDqr::TIMESTAMP ts,int ckdf,T
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitCallRet(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags)
+TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags)
 {
 	char msgBuff[512];
 	int n;
 
 	if (eventFDs[CTF::et_callRetIndex] >= 0) {
-		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,0x%08x,%08x\n",ts,ckdf,pc,pcDest,crFlags);
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,0x%08x,0x%08x\n",core,ts,ckdf,pc,pcDest,crFlags);
 		write(eventFDs[CTF::et_callRetIndex],msgBuff,n);
 	}
 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitException(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
+TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
 {
 	char msgBuff[512];
 	int n;
 
 	if (eventFDs[CTF::et_exeptionIndex] >= 0) {
-		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,%d\n",ts,ckdf,pc,cause);
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,cause);
 		write(eventFDs[CTF::et_exeptionIndex],msgBuff,n);
 	}
 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitInterrupt(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
+TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
 {
 	char msgBuff[512];
 	int n;
 
 	if (eventFDs[CTF::et_interruptIndex] >= 0) {
-		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,%d\n",ts,ckdf,pc,cause);
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,cause);
 		write(eventFDs[CTF::et_interruptIndex],msgBuff,n);
 	}
 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitContext(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context)
+TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context)
 {
 	char msgBuff[512];
 	int n;
 
 	if (eventFDs[CTF::et_contextIndex] >= 0) {
-		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x,%d\n",ts,ckdf,pc,context);
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,context);
 		write(eventFDs[CTF::et_contextIndex],msgBuff,n);
 	}
 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitPeriodic(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc)
+TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc)
 {
 	char msgBuff[512];
 	int n;
 
 	if (eventFDs[CTF::et_periodicIndex] >= 0) {
-		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,0x%08x\n",ts,ckdf,pc);
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x\n",core,ts,ckdf,pc);
 		write(eventFDs[CTF::et_periodicIndex],msgBuff,n);
 	}
 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitControl(TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc)
+TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc)
 {
 	char msgBuff[512];
 	int n;
 
 	if (eventFDs[CTF::et_controlIndex] >= 0) {
-		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x\n",ts,ckdf,control,pc);
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,%d,0x%08x\n",core,ts,ckdf,control,pc);
 		write(eventFDs[CTF::et_controlIndex],msgBuff,n);
 	}
 
@@ -4851,7 +4854,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				// don't update pc
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitExtTrigEvent(ts,nm.ict.ckdf,faddr,0);
+					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ict.ckdf,faddr,0);
 				}
 			}
 			else if (nm.ict.ckdf == 1) {
@@ -4859,7 +4862,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = faddr;
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitExtTrigEvent(ts,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
+					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
 				}
 			}
 			else {
@@ -4873,7 +4876,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				// don't update pc
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitWatchpoint(ts,nm.ict.ckdf,faddr,0);
+					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ict.ckdf,faddr,0);
 				}
 			}
 			else if (nm.ict.ckdf == 1) {
@@ -4881,7 +4884,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = faddr;
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitWatchpoint(ts,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
+					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
 				}
 			}
 			else {
@@ -4913,7 +4916,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				}
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitCallRet(ts,nm.ict.ckdf,pc,nm.ict.ckdata[1],TraceDqr::isCall);
+					eventConverter->emitCallRet(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1],TraceDqr::isCall);
 				}
 			}
 			else if (nm.ict.ckdf == 1) {
@@ -4954,7 +4957,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 						return TraceDqr::DQERR_ERR;
 					}
 
-					eventConverter->emitCallRet(ts,nm.ict.ckdf,pc,faddr,crFlags);
+					eventConverter->emitCallRet(nm.coreId,ts,nm.ict.ckdf,pc,faddr,crFlags);
 				}
 			}
 			else {
@@ -4973,7 +4976,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			}
 
 			if (eventConverter != nullptr) {
-				eventConverter->emitException(ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
+				eventConverter->emitException(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_INTERRUPT:
@@ -4987,7 +4990,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			}
 
 			if (eventConverter != nullptr) {
-				eventConverter->emitInterrupt(ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
+				eventConverter->emitInterrupt(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_CONTEXT:
@@ -5001,7 +5004,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			}
 
 			if (eventConverter != nullptr) {
-				eventConverter->emitContext(ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
+				eventConverter->emitContext(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_PC_SAMPLE:
@@ -5015,7 +5018,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			}
 
 			if (eventConverter != nullptr) {
-				eventConverter->emitPeriodic(ts,nm.ict.ckdf,pc);
+				eventConverter->emitPeriodic(nm.coreId,ts,nm.ict.ckdf,pc);
 			}
 			break;
 		case TraceDqr::ICT_CONTROL:
@@ -5024,7 +5027,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				// does not update faddr or pc!
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitControl(ts,nm.ict.ckdf,nm.ict.ckdata[0],0);
+					eventConverter->emitControl(nm.coreId,ts,nm.ict.ckdf,nm.ict.ckdata[0],0);
 				}
 			}
 			else if (nm.ict.ckdf == 1) {
@@ -5032,7 +5035,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = faddr;
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitControl(ts,nm.ict.ckdf,nm.ict.ckdata[1],pc);
+					eventConverter->emitControl(nm.coreId,ts,nm.ict.ckdf,nm.ict.ckdata[1],pc);
 				}
 			}
 			else {
@@ -5061,7 +5064,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				// don't update pc
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitExtTrigEvent(ts,nm.ictWS.ckdf,faddr,0);
+					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ictWS.ckdf,faddr,0);
 				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
@@ -5069,7 +5072,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = faddr;
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitExtTrigEvent(ts,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
+					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
 				}
 			}
 			else {
@@ -5083,7 +5086,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				// don'tupdate pc
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitWatchpoint(ts,nm.ictWS.ckdf,faddr,0);
+					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ictWS.ckdf,faddr,0);
 				}
 			}
 			else if (nm.ictWS.ckdf <= 1) {
@@ -5091,7 +5094,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = faddr;
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitWatchpoint(ts,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
+					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
 				}
 			}
 			else {
@@ -5123,7 +5126,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				}
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitCallRet(ts,nm.ictWS.ckdf,pc,faddr,TraceDqr::isCall);
+					eventConverter->emitCallRet(nm.coreId,ts,nm.ictWS.ckdf,pc,faddr,TraceDqr::isCall);
 				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
@@ -5164,7 +5167,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 						return TraceDqr::DQERR_ERR;
 					}
 
-					eventConverter->emitCallRet(ts,nm.ictWS.ckdf,pc,faddr,crFlags);
+					eventConverter->emitCallRet(nm.coreId,ts,nm.ictWS.ckdf,pc,faddr,crFlags);
 				}
 			}
 			else {
@@ -5183,7 +5186,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			}
 
 			if (eventConverter != nullptr) {
-				eventConverter->emitException(ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
+				eventConverter->emitException(nm.coreId,ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_INTERRUPT:
@@ -5197,7 +5200,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			}
 
 			if (eventConverter != nullptr) {
-				eventConverter->emitInterrupt(ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
+				eventConverter->emitInterrupt(nm.coreId,ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_CONTEXT:
@@ -5211,7 +5214,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			}
 
 			if (eventConverter != nullptr) {
-				eventConverter->emitContext(ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
+				eventConverter->emitContext(nm.coreId,ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_PC_SAMPLE:
@@ -5225,7 +5228,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			}
 
 			if (eventConverter != nullptr) {
-				eventConverter->emitPeriodic(ts,nm.ictWS.ckdf,pc);
+				eventConverter->emitPeriodic(nm.coreId,ts,nm.ictWS.ckdf,pc);
 			}
 			break;
 		case TraceDqr::ICT_CONTROL:
@@ -5234,7 +5237,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				// does not update faddr or pc!
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitControl(ts,nm.ictWS.ckdf,nm.ictWS.ckdata[0],0);
+					eventConverter->emitControl(nm.coreId,ts,nm.ictWS.ckdf,nm.ictWS.ckdata[0],0);
 				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
@@ -5242,7 +5245,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = faddr;
 
 				if (eventConverter != nullptr) {
-					eventConverter->emitControl(ts,nm.ictWS.ckdf,nm.ictWS.ckdata[1],pc);
+					eventConverter->emitControl(nm.coreId,ts,nm.ictWS.ckdf,nm.ictWS.ckdata[1],pc);
 				}
 			}
 			else {

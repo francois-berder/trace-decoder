@@ -467,18 +467,20 @@ public:
 
 	TraceDqr::DQErr getStatus() { return status; }
 
-	TraceDqr::DQErr emitExtTrigEvent(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id);
-	TraceDqr::DQErr emitWatchpoint(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id);
-	TraceDqr::DQErr emitCallRet(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags);
-	TraceDqr::DQErr emitException(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause);
-	TraceDqr::DQErr emitInterrupt(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause);
-	TraceDqr::DQErr emitContext(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context);
-	TraceDqr::DQErr emitPeriodic(TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc);
-	TraceDqr::DQErr emitControl(TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc);
+	TraceDqr::DQErr emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id);
+	TraceDqr::DQErr emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id);
+	TraceDqr::DQErr emitCallRet(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags);
+	TraceDqr::DQErr emitException(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause);
+	TraceDqr::DQErr emitInterrupt(int coe,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause);
+	TraceDqr::DQErr emitContext(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context);
+	TraceDqr::DQErr emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc);
+	TraceDqr::DQErr emitControl(int core,TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc);
 
 private:
 
 	TraceDqr::DQErr status;
+	int numCores;
+	uint32_t frequency;
 	int eventFDs[CTF::et_numEventTypes];
 };
 
