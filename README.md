@@ -188,22 +188,28 @@ Use `dqr -h` to display usage information. It will display something like:
 
 ```
 Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-btm | -htm] -basename name
-           [-srcbits=nn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]
+           [-pf propfile] [-srcbits=nn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]
            [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]
            [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]
            [-noanalytics] [-freq nn] [-tssize=n] [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n]
-           [-s file] [-r addr] [-labels] [-nolables] [-debug] [-nodebug] [-v] [-h]
+           [-cutpath=<base path>] [-s file] [-r addr] [-labels] [-nolables] [-debug] [-nodebug] [-v] [-h]
 
 -t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).
 -e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).
 -s simfile:   Specify the name of the simulator output file. When using a simulator output file, cannot use
               a tracefile (-t option). Can provide an elf file (-e option), but is not required.
+-pf propfile: Specify a properties file containing information on trace. Properties may be overridden using command
+              flags.
 -ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.
 -catype nn:   Specify the type of the CA trace file. Valid options are none, instruction, and vector
 -btm:         Specify the type of the trace file as btm (branch trace messages). On by default.
 -htm:         Specify the type of the trace file as htm (history trace messages).
 -n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension
               should be given. The extensions .rtd and .elf will be added to basename.
+-cutpath=<cutPath>[,<newRoot>]: When searching for source files, <cutPath> is removed from the beginning of thepath name
+              found in the elf file for the source file name. If <newRoot> is given, it is prepended to the begging of the
+              after removing <cutPath>. If <cutPath> is not found, <newRoot> is not prepended. This allows having a local copy
+              of the source file sub-tree. If <cutPath> is not part of the file location, the original source path is used.
 -src:         Enable display of source lines in output if available (on by default).
 -nosrc:       Disable display of source lines in output.
 -file:        Display source file information in output (on by default).
@@ -223,6 +229,8 @@ Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vec
               concatenated and display as a string until a terminating \n or \0 is found. Also enabled processing
               and display of no-load-strings
 -noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair
+-nls:         Enables processing of no-load-strings
+-nonls:       Disable processing of no-load-strings.
 -addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and
               cause the address field to be jagged. Overrides value address size read from elf file.
 -addrsize=n+: Display address as n bits (32 <= n <= 64) unless a larger address size is seen, in which case the address
@@ -326,6 +334,45 @@ Except it will be much longer.
 If the files specified by the -t and -e options are not in the current directory, the path to each should be included. If the trace was collected with timestamps, they will be displayed in the trace information if the -trace option is given.
 
 All trace output is sent to stdout.
+
+### Using a Properties File With the Trace Decoder
+
+The command line dqr program can use a properties file if the `-pf <filename>` option is given on the command line. Not all options can be specified in the properties file, and some options, such as the CTF (Common Trace Format) and textual event file creation can only be specified in the properties file. The properties file is a text based file of the general form:
+
+`tag = value`
+
+Here is a list of the properties currently processed. The tag field is not case sensitive. Tags other than what is listed below are silently ignored.
+
+```
+rtd = <rtd file name. Can have abs or rel path>
+elf = <elf file name. Can have abs or rel path>
+srcbits = <number of src bits in trace messages. 2^srcbits = # cores. 0 is the default if srcbits is not present>
+bits = <number of address bits. Normally 32 or 64. Default is 32 if not present>
+trace.config.boolean.enable.itc.print.processing = <true | false. True enables normal ITC prints and nls prints. False enables nls prints. Default is false>
+trace.config.int.itc.print.channel = <n, where n is the itc channel number for itc prints. 0 is the default>
+trace.config.int.itc.print.buffersize = <n, where n is the number of bytes in the itc print buffer. 4096 is the default>
+source.root = <path to prepend to the path for source file lookup. Null by default>
+source.cutpath = <path to remove from beginning of source file lookup before adding source.root. Null by default>
+cafile = <CA trace file name. Can have abs or rel path>
+catype = <none | vector | instruction. Type of ca trace file. None by default>
+tssize = <n, where n is the number of bits in the timestamp counter. 40 by default>
+pathtype = <unix | windows | raw. How source paths should be displayed. unix will use '/' for folder separators, windows will use '\', raw wil use what is in the elf file for paths. Default is raw>
+labelsAsFunctions = <true | false. specifies if labels in elf symbol table are considered functions or not. Default is true>
+freq = <n, where n is the timestamp frequency in Hz. A value of 0 means unknown. 0 is the default>
+ctfenable = <true | false. A value of true enables CTF file generation. Default is false>
+eventconversionenable = <true | false. A value of true enables generation of text CSV files with event information. Default is false>
+addressdisplayflags = <width of addresses to display in bits. If width has a '+' appended to the end, the address displayed will grow past what is specified if needed. Default is 32+>
+```
+
+### CTF and Textual Event File Creation
+
+The trace decoder will translate a SiFive Nexus trace file into a CTF (Common Trace Format) file and textual event files. The CTF file can be processed by Trace Compass for viewing Flame Chart and Flame Graph data.
+
+If the property `ctfenable = true` is given in the properties file, a ctf folder will be created in the same folder as the Nexus trace file (usually named trace.rtd). CTF files will be written to the ctf folder, one per core plus a metadata file.
+
+If the `eventconversionenable = true` is contained in the properties file, an events folder will be created in the same folder as the Nexus trace file. Text based CSV files will be written to the events folder, one per event types. The first column of each event file is the processor ID (core number), the second column is the timestamp. If timestamps are not collected for the trace, all timestamp values will be 0. The columns after the timestamp are dependant on the type of events for the file.
+
+Not that CTF and Event conversion can only be enabled in the properties file, and not by using command line switches.
 
 ### ITC Print
 
