@@ -373,7 +373,7 @@ private:
 
 class CTFConverter {
 public:
-	CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq);
+	CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32_t freq);
 	~CTFConverter();
 
 	TraceDqr::DQErr getStatus() { return status; }
@@ -450,6 +450,7 @@ private:
 	int metadataFd;
 	int packetSeqNum;
 	uint32_t frequency;
+	int archSize;
 	event *eventBuffer[DQR_MAXCORES];
 	int eventIndex[DQR_MAXCORES];
 	event_context eventContext[DQR_MAXCORES];

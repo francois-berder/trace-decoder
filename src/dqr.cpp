@@ -6307,6 +6307,7 @@ SliceFileParser::~SliceFileParser()
 	if (SWTsock >= 0) {
 #ifdef WINDOWS
 		closesocket(SWTsock);
+		WSACleanup();
 #else  // WINDOWS
 		close(SWTsock);
 #endif // WINDOWS

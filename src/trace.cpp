@@ -31,6 +31,11 @@
 #include <cstdint>
 #include <cassert>
 #include <time.h>
+#ifdef WINDOWS
+#include <winsock2.h>
+#else // WINDOWS
+#include <unistd.h>
+#endif // WINDOWS
 
 #include "dqr.hpp"
 #include "trace.hpp"
@@ -1182,10 +1187,10 @@ static const char * const CTFMetadataEnvDef =
 			"\ttracer_minor = 11;\n"
 			"\ttracer_buffering_scheme = \"uid\";\n"
 			"\ttracer_buffering_id = 1000;\n"
-			"\tarchitecture_bit_width = 64;\n"
-			"\ttrace_name = \"my-user-space-session-5\";\n"
-			"\ttrace_creation_datetime = \"20210722T114247-0700\";\n"
-			"\thostname = \"nucbob\";\n"
+			"\tarchitecture_bit_width = %d;\n"
+			"\ttrace_name = \"%s\";\n"
+			"\ttrace_creation_datetime = \"%s\";\n"
+			"\thostname = \"%s\";\n"
 		"};\n"
 		"\n";
 
@@ -1196,7 +1201,6 @@ static const char * const CTFMetadataClockDef =
 			"\tdescription = \"Monotonic Clock\";\n"
 			"\tfreq = %d; /* Frequency, in Hz */\n"
 			"\t/* clock value offset from Epoch is: offset * (1/freq) */\n"
-			"\t/*offset = 1626470161640558449;*/\n"
 			"\toffset = %lld;\n"
 		"};\n"
 		"\n"
@@ -1411,6 +1415,8 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 	for (i = sepIndex+1; i < extIndex; i++) {
 		ebn[i - (sepIndex+1)] = baseNameIn[i];
 	}
+
+	ebn[i - (sepIndex+1)] = 0;
 
 	// figure out if this is an abs path or a rel path in baseNameIn
 
@@ -1662,9 +1668,11 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 	return TraceDqr::DQERR_OK;
 }
 
-CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq)
+CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32_t freq)
 {
 	status = TraceDqr::DQERR_OK;
+
+	archSize = arch_size;
 
 	for (int i = 0; i < (int)(sizeof eventIndex / sizeof eventIndex[0]); i++) {
 		eventIndex[i] = 0;
@@ -1799,12 +1807,46 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 	// time() will return time in seconds, which should be close enough
 
 	int64_t t;
+	struct tm *lt;
+	char tbuff[256];
+
 	t = (int64_t)time(nullptr);
+
+	lt = localtime(&t);
+
+	strftime(tbuff,sizeof tbuff,"%Y%m%dT%H%M%S%z",lt);
+
+	// get hostname
+
+	char hn[256];
+	int rc;
+
+#ifdef WINDOWS
+	WORD wVersionRequested;
+	WSADATA wsaData;
+
+	wVersionRequested = MAKEWORD(2,2);
+	rc = WSAStartup(wVersionRequested,&wsaData);
+	if (rc != 0) {
+		printf("Error: CTFConverter::CTFConverter(): WSAStartUP() failed with error %d\n",rc);
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+#endif // WINDOWS
+
+	rc = gethostname(hn,sizeof hn);
+	if (rc != 0) {
+		printf("gethostname failed!\n");
+	}
+
+#ifdef WINDOWS
+	WSACleanup();
+#endif // WINDOWS
 
 	// convert seconds to nanoseconds
 
 	sprintf(CTFMetadataClockDefDoctored,CTFMetadataClockDef,frequency,t * 1000000000);
-	sprintf(CTFMetadataEnvDefDoctored,CTFMetadataEnvDef,elfName);
+	sprintf(CTFMetadataEnvDefDoctored,CTFMetadataEnvDef,archSize,elfBaseName,tbuff,hn);
 
 	status = TraceDqr::DQERR_OK;
 }
@@ -3665,7 +3707,7 @@ TraceDqr::DQErr Trace::enableCTFConverter()
 		return TraceDqr::DQERR_ERR;
 	}
 
-	ctf = new CTFConverter(efName,rtdName,1 << srcbits,freq);
+	ctf = new CTFConverter(efName,rtdName,1 << srcbits,getArchSize(),freq);
 
 	status = ctf->getStatus();
 	if (status != TraceDqr::DQERR_OK) {
