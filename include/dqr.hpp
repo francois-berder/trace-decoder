@@ -848,7 +848,7 @@ public:
 	TraceDqr::DQErr setITCPrintOptions(int intFlags,int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
-	TraceDqr::DQErr enableCTFConverter();
+	TraceDqr::DQErr enableCTFConverter(int64_t startTime,char *hostName);
 	TraceDqr::DQErr enableEventConverter();
 
 	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);

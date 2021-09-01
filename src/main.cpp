@@ -688,37 +688,6 @@ int main(int argc, char *argv[])
 
 				return 1;
 			}
-
-			trace->setTraceType(traceType);
-
-			if (ca_name != nullptr) {
-				rc = trace->setCATraceFile(ca_name,caType);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Could not set cycle accurate trace file\n");
-					return 1;
-				}
-			}
-
-			trace->setTSSize(tssize);
-			trace->setPathType(pt);
-
-			if (cutPath != nullptr) {
-				rc = trace->subSrcPath(cutPath,newRoot);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Could not set cutPath or newRoot\n");
-					return 1;
-				}
-			}
-
-			trace->setLabelMode(labelFlag);
-
-			if (ctf_flag != false) {
-				rc = trace->enableCTFConverter();
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Could not set CTF file\n");
-					return 1;
-				}
-			}
 		}
 		else {
 			trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
@@ -765,7 +734,7 @@ int main(int argc, char *argv[])
 			trace->setLabelMode(labelFlag);
 
 			if (ctf_flag != false) {
-				rc = trace->enableCTFConverter();
+				rc = trace->enableCTFConverter(-1,nullptr);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: Could not set CTF file\n");
 					return 1;

@@ -346,6 +346,8 @@ public:
 	TraceDqr::DQErr propertyToAddrDispFlags(char *value);
 	TraceDqr::DQErr propertyToCTFEnable(char *value);
 	TraceDqr::DQErr propertyToEventConversionEnable(char *value);
+	TraceDqr::DQErr propertyToStartTime(char *value);
+	TraceDqr::DQErr propertyToHostName(char *value);
 
 	char *tfName;
 	char *efName;
@@ -362,9 +364,11 @@ public:
 	bool labelsAsFunctions;
 	uint32_t freq;
 	uint32_t addrDispFlags;
+	int64_t  startTime;
 	int tsSize;
 	bool CTFConversion;
 	bool eventConversionEnable;
+	char *hostName;
 
 private:
 };
@@ -373,7 +377,7 @@ private:
 
 class CTFConverter {
 public:
-	CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32_t freq);
+	CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32_t freq,int64_t t,char *hostName);
 	~CTFConverter();
 
 	TraceDqr::DQErr getStatus() { return status; }

@@ -1668,11 +1668,20 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 	return TraceDqr::DQERR_OK;
 }
 
-CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32_t freq)
+CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32_t freq,int64_t t,char *hostName)
 {
 	status = TraceDqr::DQERR_OK;
 
 	archSize = arch_size;
+
+	bool tFlag;
+
+	if (t == -1) {
+		tFlag = true;
+	}
+	else {
+		tFlag = false;
+	}
 
 	for (int i = 0; i < (int)(sizeof eventIndex / sizeof eventIndex[0]); i++) {
 		eventIndex[i] = 0;
@@ -1806,42 +1815,54 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32
 
 	// time() will return time in seconds, which should be close enough
 
-	int64_t t;
 	struct tm *lt;
 	char tbuff[256];
 
-	t = (int64_t)time(nullptr);
+	if (t == -1) {
+		t = (int64_t)time(nullptr);
+	}
 
 	lt = localtime(&t);
 
-	strftime(tbuff,sizeof tbuff,"%Y%m%dT%H%M%S%z",lt);
+	if (tFlag == true) {
+		strftime(tbuff,sizeof tbuff,"%Y%m%dT%H%M%S%z",lt);
+	}
+	else {
+		strftime(tbuff,sizeof tbuff,"%Y%m%dT%H%M%S",lt);
+	}
 
 	// get hostname
 
 	char hn[256];
-	int rc;
+
+	if (hostName == nullptr) {
+		int rc;
 
 #ifdef WINDOWS
-	WORD wVersionRequested;
-	WSADATA wsaData;
+		WORD wVersionRequested;
+		WSADATA wsaData;
 
-	wVersionRequested = MAKEWORD(2,2);
-	rc = WSAStartup(wVersionRequested,&wsaData);
-	if (rc != 0) {
-		printf("Error: CTFConverter::CTFConverter(): WSAStartUP() failed with error %d\n",rc);
-		status = TraceDqr::DQERR_ERR;
-		return;
-	}
+		wVersionRequested = MAKEWORD(2,2);
+		rc = WSAStartup(wVersionRequested,&wsaData);
+		if (rc != 0) {
+			printf("Error: CTFConverter::CTFConverter(): WSAStartUP() failed with error %d\n",rc);
+			status = TraceDqr::DQERR_ERR;
+			return;
+		}
 #endif // WINDOWS
 
-	rc = gethostname(hn,sizeof hn);
-	if (rc != 0) {
-		printf("gethostname failed!\n");
-	}
+		rc = gethostname(hn,sizeof hn);
+		if (rc != 0) {
+			strcpy(hn,"localhost");
+		}
 
 #ifdef WINDOWS
-	WSACleanup();
+		WSACleanup();
 #endif // WINDOWS
+	}
+	else {
+		strcpy(hn,hostName);
+	}
 
 	// convert seconds to nanoseconds
 
@@ -2324,6 +2345,8 @@ TraceSettings::TraceSettings()
 	tsSize = 40;
 	CTFConversion = false;
 	eventConversionEnable = false;
+	startTime = -1;
+	hostName = nullptr;
 }
 
 TraceSettings::~TraceSettings()
@@ -2346,6 +2369,16 @@ TraceSettings::~TraceSettings()
 	if (srcRoot != nullptr) {
 		delete [] srcRoot;
 		srcRoot = nullptr;
+	}
+
+	if (cutPath != nullptr) {
+		delete [] cutPath;
+		cutPath = nullptr;
+	}
+
+	if (hostName != nullptr) {
+		delete [] hostName;
+		hostName = nullptr;
 	}
 }
 
@@ -2485,6 +2518,20 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 				rc = propertyToAddrDispFlags(value);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: TraceSettings::addSettings(): Could not set address display flags in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("starttime", name) == 0) {
+				rc = propertyToStartTime(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set start time in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("hostname", name) == 0) {
+				rc = propertyToHostName(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set host name in settings\n");
 					return rc;
 				}
 			}
@@ -2801,6 +2848,39 @@ TraceDqr::DQErr TraceSettings::propertyToFreq(char *value)
 		if (endp == value) {
 			return TraceDqr::DQERR_ERR;
 		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToStartTime(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		startTime = (int64_t)strtoll(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToHostName(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		if (hostName != nullptr) {
+			delete [] hostName;
+			hostName = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		hostName = new char [l];
+		strcpy(hostName,value);
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -3471,7 +3551,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		// Do the code below only after setting efName above
 
-		rc = enableCTFConverter();
+		rc = enableCTFConverter(settings.startTime,settings.hostName);
 		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 			return status;
@@ -3696,7 +3776,7 @@ TraceDqr::DQErr Trace::setCATraceFile( char *caf_name,TraceDqr::CATraceType caty
 	return status;
 }
 
-TraceDqr::DQErr Trace::enableCTFConverter()
+TraceDqr::DQErr Trace::enableCTFConverter(int64_t startTime,char *hostName)
 {
 	if (ctf != nullptr) {
 		delete ctf;
@@ -3707,7 +3787,7 @@ TraceDqr::DQErr Trace::enableCTFConverter()
 		return TraceDqr::DQERR_ERR;
 	}
 
-	ctf = new CTFConverter(efName,rtdName,1 << srcbits,getArchSize(),freq);
+	ctf = new CTFConverter(efName,rtdName,1 << srcbits,getArchSize(),freq,startTime,hostName);
 
 	status = ctf->getStatus();
 	if (status != TraceDqr::DQERR_OK) {
