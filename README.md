@@ -362,6 +362,8 @@ freq = <n, where n is the timestamp frequency in Hz. A value of 0 means unknown.
 ctfenable = <true | false. A value of true enables CTF file generation. Default is false>
 eventconversionenable = <true | false. A value of true enables generation of text CSV files with event information. Default is false>
 addressdisplayflags = <width of addresses to display in bits. If width has a '+' appended to the end, the address displayed will grow past what is specified if needed. Default is 32+>
+starttime = <n, where n is the number of nanoseconds after the Unix Epoch. n == -1 (the default value if not specified) will use the system time as the start time for the trace. Starttime is used in the CTF conversion metadata file.>
+hostname = <host name. This will override the system host name and use the name provided as the host in the CTF conversion metadata file.>
 ```
 
 ### CTF and Textual Event File Creation
