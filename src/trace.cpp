@@ -278,11 +278,9 @@ CATrace::CATrace(char *caf_name,TraceDqr::CATraceType catype)
 	switch (catype) {
 	case TraceDqr::CATRACE_VECTOR:
 		traceQSize = 512;
-
 		caTraceQ = new CATraceQItem[traceQSize];
 		break;
 	case TraceDqr::CATRACE_INSTRUCTION:
-
 		traceQSize = 0;
 		caTraceQ = nullptr;
 		break;
@@ -583,10 +581,10 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V0;
 
-			QStart += 1;
-			if (QStart >= traceQSize) {
-				QStart = 0;
-			}
+//			QStart += 1;
+//			if (QStart >= traceQSize) {
+//				QStart = 0;
+//			}
 
 			return TraceDqr::DQERR_OK;
 		}
@@ -596,10 +594,10 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V1;
 
-			QStart += 1;
-			if (QStart >= traceQSize) {
-				QStart = 0;
-			}
+//			QStart += 1;
+//			if (QStart >= traceQSize) {
+//				QStart = 0;
+//			}
 
 			return TraceDqr::DQERR_OK;
 		}
@@ -631,10 +629,10 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 				cycles = caTraceQ[QStart].cycle;
 				caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V0;
 
-				QStart += 1;
-				if (QStart >= traceQSize) {
-					QStart = 0;
-				}
+//				QStart += 1;
+//				if (QStart >= traceQSize) {
+//					QStart = 0;
+//				}
 
 				return TraceDqr::DQERR_OK;
 			}
@@ -644,10 +642,10 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 				cycles = caTraceQ[QStart].cycle;
 				caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V1;
 
-				QStart += 1;
-				if (QStart >= traceQSize) {
-					QStart = 0;
-				}
+//				QStart += 1;
+//				if (QStart >= traceQSize) {
+//					QStart = 0;
+//				}
 
 				return TraceDqr::DQERR_OK;
 			}
@@ -674,6 +672,8 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 
 	TraceDqr::DQErr rc;
 
+	// QStart will be either traceQOut or after traceQOut
+
 	if (QStart == traceQIn) {
 		// get next record
 
@@ -685,13 +685,15 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 		}
 	}
 
+	// we want the stats below at the beginning of the Q, not the end, so we grab them here!
+
 	uint8_t tQInfo = caTraceQ[QStart].qDepth;
 	uint8_t tArithInfo = caTraceQ[QStart].arithInProcess;
 	uint8_t tLoadInfo = caTraceQ[QStart].loadInProcess;
 	uint8_t tStoreInfo = caTraceQ[QStart].storeInProcess;
 
 	while (QStart != traceQIn) {
-		switch (type) {
+		switch (type) { // type is what we are looking for. When we find a VISTART in the Q, it means one was removed from the Q!
 		case TraceDqr::CAVFLAG_VISTART:
 			caTraceQ[QStart].qDepth += 1;
 			break;
@@ -709,7 +711,7 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 			return TraceDqr::DQERR_ERR;
 		}
 
-		if ((caTraceQ[QStart].record & type) != 0) {
+		if ((caTraceQ[QStart].record & type) != 0) { // found what we were looking for in the q
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~type;
 
