@@ -16,7 +16,7 @@ set te_btmcount_offset     0x34
 set te_wordcount_offset    0x38
 set ts_control_offset      0x40
 set ts_lower_offset        0x44
-set te_upper_offset        0x48
+set ts_upper_offset        0x48
 set xti_control_offset     0x50
 set xto_control_offset     0x54
 set wp_control_offset      0x58
@@ -37,19 +37,23 @@ set pcs_sample          0x17c
 set pcs_sample_hi       0x178
 
 set num_cores  0
-set has_funnel 0
+set num_funnels 0
 set have_htm 0
 set has_event 0
 
 set trace_buffer_width 0
 
 #set traceBufferAddr 0x00000000
+set trace_buffer_width 0
+
+set traceBaseAddresses { 0x10000000 0x10001000 0x10002000 0x10003000 }
+set traceFunnelAddresses { 0x10004000 0x10005000 0x10006000 }
 
 set verbose 0
 
 set fs_enable_trace "on"
 
-# local helper functions not intented to be called directly
+# local helper functions not intended to be called directly
 
 proc wordhex {addr} {
     mem2array x 32 $addr 1
@@ -67,17 +71,19 @@ proc setAllTeControls {offset val} {
 #    echo "setAllTeControls([format 0x%08lx $offset] [format 0x%08lx $val])"
 
     foreach controlReg $traceBaseAddresses {
-    mww [expr $controlReg + $offset] $val
+        mww [expr $controlReg + $offset] $val
     }
 }
 
 proc setAllTfControls {offset val} {
-    global traceFunnelAddress
+    global traceFunnelAddresses
 
 #    echo "setAllTfControls([format 0x%08lx $offset] [format 0x%08lx $val])"
 
-    if {$traceFunnelAddress != 0} {
-    mww [expr $traceFunnelAddress + $offset] $val
+    if {($traceFunnelAddresses != 0) && ($traceFunnelAddresses != "")} {
+    	foreach controlReg $traceFunnelAddresses {
+        	mww [expr $controlReg + $offset] $val
+        }
     }
 }
 
@@ -85,18 +91,18 @@ proc setAllTfControls {offset val} {
 
 proc getAllCoreFunnelList {} {
     global traceBaseAddresses
-    global traceFunnelAddress
+    global traceFunnelAddresses
 
     set cores {}
     set index 0
 
     foreach controlReg $traceBaseAddresses {
-    lappend cores $index
-    set index [expr $index + 1]
+        lappend cores $index
+        set index [expr $index + 1]
     }
 
-    if {$traceFunnelAddress != "0x00000000" && $traceFunnelAddress != ""} {
-    lappend cores funnel
+    if {($traceFunnelAddresses != 0) && ($traceFunnelAddresses != "")} {
+        lappend cores funnel
     }
 
     return $cores
@@ -106,14 +112,13 @@ proc getAllCoreFunnelList {} {
 
 proc getAllCoreList {} {
     global traceBaseAddresses
-    global traceFunnelAddress
 
     set cores {}
     set index 0
 
     foreach controlReg $traceBaseAddresses {
-    lappend cores $index
-    set index [expr $index + 1]
+        lappend cores $index
+        incr index
     }
 
     return $cores
@@ -123,26 +128,26 @@ proc getAllCoreList {} {
 
 proc parseCoreFunnelList {cores} {
     global num_cores
-    global has_funnel
+    global num_funnels
 
     # parse core and build list of cores
 
     if {$cores == "all" || $cores == ""} {
-    return [getAllCoreFunnelList]
+        return [getAllCoreFunnelList]
     }
 
     set t [split $cores ","]
 
     foreach core $t {
-    if {$core == "funnel"} {
-        # only accept funnel if one is present
+        if {$core == "funnel"} {
+            # only accept funnel if one is present
 
-        if {$has_funnel == 0} {
-        return "error"
+            if {$num_funnels == 0} {
+                return "error"
+            }
+        } elseif {$core < 0 || $core > $num_cores} {
+            return "error"
         }
-    } elseif {$core < 0 || $core > $num_cores} {
-        return "error"
-    }
     }
 
     # t is now a list of cores
@@ -175,6 +180,77 @@ proc parseCoreList {cores} {
 proc cores {} {
     return [parseCoreFunnelList "all"]
 }
+
+# funnel routines for multi-core. Not indented to be called directly!
+
+proc hasFunnelSink { addr } {
+	global te_impl_offset
+
+    set impl [word [expr $addr + $te_impl_offset]]
+    if {($impl & (1 << 8))} {
+        return 1
+    }
+    
+    return 0
+}
+
+proc setFunnelSink { addr sink } {
+    global te_impl_offset
+    global te_control_offset
+
+# make sure sink is supported by funnel
+
+#echo "setFunnelSink(): addr: $addr sink: $sink"
+
+    switch [string toupper $sink] {
+    "SRAM"   { set checkbit 4
+               set sinkmask 4 }
+    "SBA"    { set checkbit 7
+               set sinkmask 7 }
+    "ATB"    { set checkbit 5
+               set sinkmask 5 }
+    "PIB"    { set checkbit 6
+               set sinkmask 6 }
+    "FUNNEL" { set checkbit 8
+               set sinkmask 8 }
+    default  { set sinkmask 0 }
+    }
+
+    if {$sinkmask == 0} {
+        return 1
+    }
+    
+    set impl [word [expr $addr + $te_impl_offset]]
+
+    if {($impl & (1 << $checkbit)) != 0} {
+        set control [word [expr $addr + $te_control_offset]]
+        set control [expr $control & ~(0x0f << 28)]
+        set control [expr $control | ($sinkmask << 28)]
+        mww [expr $addr + $te_control_offset] $control
+
+        return 0
+    }
+    
+    return 1
+}
+
+proc setFunnelSinks { sink } {
+    global traceBaseAddrArray
+    global traceFunnelAddrArray
+    global num_funnels
+
+    if {$num_funnels > 0} {
+        for {set i 0} {$i < ($num_funnels - 1)} {incr i} {
+            setFunnelSink $traceFunnelAddrArray($i) "funnel"
+        }
+    
+        setFunnelSink $traceBaseAddrArray(funnel) "SRAM"
+    }
+    
+    return $num_funnels
+}
+
+# end multi-core funnel routines
 
 proc checkHaveHTM {} {
     global traceBaseAddresses
@@ -245,21 +321,22 @@ proc checkHaveEvent {} {
 proc ite {} {
     global te_control_offset
     global traceBaseAddresses
-    global traceFunnelAddress
+    global traceBaseAddrArray
+    global num_funnels
 
     set rc 0
 
 #    echo "ite()"
 
-    foreach baseAddress $traceBaseAddresses {
-        set tracectl [word [expr $baseAddress + $te_control_offset]]
-        if {($tracectl & 0x6) != 0} {
-            return 1
+    if {$num_funnels > 0} {
+        set tracectl [word [expr $traceBaseAddrArray(funnel) + $te_control_offset]]
+        if {($tracectl & 0x2) == 0} {
+            return 0
         }
     }
 
-    if {$traceFunnelAddress != 0} {
-        set tracectl [word [expr $traceFunnelAddress + $te_control_offset]]
+    foreach baseAddress $traceBaseAddresses {
+        set tracectl [word [expr $baseAddress + $te_control_offset]]
         if {($tracectl & 0x6) != 0} {
             return 1
         }
@@ -272,12 +349,12 @@ proc setTraceBufferWidth {} {
     global traceBaseAddrArray
     global te_impl_offset
     global te_sinkbase_offset
-    global has_funnel
+    global num_funnels
     global trace_buffer_width
 
 #    echo "setTraceBufferWidth()"
 
-    if {$has_funnel != 0} {
+    if {$num_funnels > 0} {
         set impl [word [expr $traceBaseAddrArray(funnel) + $te_impl_offset]]
         if {($impl & (1 << 7))} {
             set t [word [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset]]
@@ -400,16 +477,12 @@ proc clearAndEnableTrace { core } {
 }
 
 proc enableTraceEncoder {core} {
-    global traceBaseAddrArray
-    global te_control_offset
     global fs_enable_trace
 
 #    echo "enableTraceEncoder($core)"
 
     if {$fs_enable_trace == "on"} {
-        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-        set t [expr $t | 0x00000003]
-        mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+        enableTraceEncoderManual $core
     }
 }
 
@@ -417,7 +490,7 @@ proc enableTraceEncoderManual {core} {
     global traceBaseAddrArray
     global te_control_offset
 
-#    echo "enableTraceEncoderManual($core)"
+#  echo "enableTraceEncoderManual($core)"
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t | 0x00000003]
@@ -425,16 +498,12 @@ proc enableTraceEncoderManual {core} {
 }
 
 proc enableTracing {core} {
-    global traceBaseAddrArray
-    global te_control_offset
     global fs_enable_trace
 
-#    echo "enableTraceing($core)"
+ #  echo "enableTraceing($core)"
 
     if {$fs_enable_trace == "on"} {
-        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-        set t [expr $t | 0x00000005]
-        mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+        enableTracingManual $core
     }
 }
 
@@ -442,12 +511,24 @@ proc enableTracingManual {core} {
     global traceBaseAddrArray
     global te_control_offset
     global fs_enable_trace
+    global num_funnels
+    global traceFunnelAddresses
 
-#    echo "enableTraceingManual($core)"
+#  echo "enableTraceingManual($core)"
 
-    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr $t | 0x00000005]
-    mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    if {$num_funnels > 0} {
+        foreach funnel $traceFunnelAddresses {
+            set t [word [expr $funnel + $te_control_offset]]
+            set t [expr $t | 0x00000003]
+            mww [expr $funnel + $te_control_offset] $t
+        }
+    }
+    
+    if {$core != "funnel"} {
+        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+        set t [expr $t | 0x00000005]
+        mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    }
 }
 
 proc disableTraceEncoder {core} {
@@ -461,11 +542,12 @@ proc disableTraceEncoder {core} {
 }
 
 proc disableTraceEncoderManual {core} {
-#    global traceBaseAddrArray
     global traceBaseAddresses
+    global traceBaseAddrArray
     global te_control_offset
     global fs_enable_trace
-    global traceFunnelAddress
+    global traceFunnelAddrArray
+    global num_funnels
 
 #    echo "disableTraceEncoderNManual($core)"
 
@@ -476,7 +558,7 @@ proc disableTraceEncoderManual {core} {
     set flushATB "false"
 
     set currentCore 0
-
+    
     foreach controlReg $traceBaseAddresses {
         set te [word [expr $controlReg + $te_control_offset]]
         set t [expr $te & ~0x00000004]
@@ -484,9 +566,9 @@ proc disableTraceEncoderManual {core} {
 
         # clear teTracing, make sure not in reset
         mww [expr $controlReg + $te_control_offset] $t
-        set t [expr $t & ~0x00000002]
 
         # clear teEnable
+        set t [expr $t & ~0x00000002]
         mww [expr $controlReg + $te_control_offset] $t
 
         # need to poll teEmpty here until it reads 1
@@ -494,6 +576,7 @@ proc disableTraceEncoderManual {core} {
         set t [word [expr $controlReg + $te_control_offset]]
         while {($t & 0x00000008) == 0} {
             set t [word [expr $controlReg + $te_control_offset]]
+            incr c
         }
 
         if {$currentCore != $core} {
@@ -512,34 +595,67 @@ proc disableTraceEncoderManual {core} {
         }
     }
 
-    if {$flushFunnel != "false"} {
-        set tf [word [expr $traceFunnelAddress + $te_control_offset]]
-    set t [expr $tf & ~0x00000004]
+    if {($flushFunnel != "false") && ($num_funnels > 0)} {
+       	# if multi-core, flush all slave funnels first
+   	    for {set f 0} { $f < ($num_funnels - 1)} {incr f} {
+            set tf [word [expr $traceFunnelAddrArray($f) + $te_control_offset]]
+            set t [expr $tf & ~0x00000004]
+            set t [expr $t | 0x00000001]
+
+            # clear teTracing, make sure not in reset
+            mww [expr $traceFunnelAddrArray($f) + $te_control_offset] $t
+            set t [expr $t & ~0x00000002]
+
+            # clear teEnable
+            mww [expr $traceFunnelAddrArray($f) + $te_control_offset] $t
+
+            # need to poll teEmpty here until it reads 1
+            set t [word [expr $traceFunnelAddrArray($f) + $te_control_offset]]
+            while {($t & 0x00000008) == 0} {
+                set t [word [expr $traceFunnelAddrArray($f) + $te_control_offset]]
+            }
+
+            # restore tfControl
+            mww [expr $traceFunnelAddrArray($f) + $te_control_offset] $tf
+
+            set sink [expr ($tf >> 28) & 0x0f]
+
+            switch $sink {
+            5 { set flushATB true    }
+            6 { set flushPIB true    }
+            }
+        }
+        
+        # now flush master funnel
+
+        set tf [word [expr $traceBaseAddrArray(funnel) + $te_control_offset]]
+        set t [expr $tf & ~0x00000004]
         set t [expr $t | 0x00000001]
 
-    # clear teTracing, make sure not in reset
-        mww [expr $traceFunnelAddress + $te_control_offset] $t
+        # clear teTracing, make sure not in reset
+        mww [expr $traceBaseAddrArray(funnel) + $te_control_offset] $t
         set t [expr $t & ~0x00000002]
-    # clear teEnable
-        mww [expr $traceFunnelAddress + $te_control_offset] $t
+
+        # clear teEnable
+        mww [expr $traceBaseAddrArray(funnel) + $te_control_offset] $t
 
         # need to poll teEmpty here until it reads 1
 
-        set t [word [expr $controlReg + $te_control_offset]]
+        set t [word [expr $traceBaseAddrArray(funnel) + $te_control_offset]]
         while {($t & 0x00000008) == 0} {
-            set t [word [expr $controlReg + $te_control_offset]]
+            set t [word [expr $traceBaseAddrArray(funnel) + $te_control_offset]]
         }
 
         if {$core != "funnel"} {
             # restore tfControl
-            mww [expr $traceFunnelAddress + $te_control_offset] $tf
+            mww [expr $traceBaseAddrArray(funnel) + $te_control_offset] $tf
         }
 
         set sink [expr ($tf >> 28) & 0x0f]
 
         switch $sink {
-    5 { set flushATB true    }
-    6 { set flushPIB true    }
+        5 { set flushATB true    }
+        6 { set flushPIB true    }
         }
     }
 
@@ -608,48 +724,128 @@ proc clearSinkError {core} {
 proc isTsEnabled {core} {
     global traceBaseAddrArray
     global ts_control_offset
+    global num_funnels
 
     if {$core != "funnel"} {
         set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
-    if {[expr $tsctl & 0x00008003] == 0x00008003} {
-        return "on"
-    }
+        
+        if {($tsctl & 0x00008001) != 0x00008001} {
+            return "off"
+        }
 
-    return "off"
+        switch [expr ($tsctl >> 4) & 0x07] {
+        0  { return "off" }
+        1  { return "on"  }
+        2  { if {($tsctl & 0x02) == 0x02} {
+                 return "on"
+             }
+             return "off"
+           }
+        3  { if {($tsctl & 0x02) == 0x02} {
+                 return "on"
+             }
+             return "off"
+           }
+        }
+
+        # must have a slave TS unit - check if master is on
+        
+        if {$num_funnels > 1} {
+            # check master funnel
+            set tsctl [word [expr $traceBaseAddrArray(funnel) + $ts_control_offset]]
+        } else {
+            # check core 0
+            set tsctl [word [expr $traceBaseAddrArray(0) + $ts_control_offset]]
+        }
+        
+        if {($tsctl & 0x03) == 0x03} {
+            return "on"
+        }
+    } elseif {$num_funnels > 1} {
+        # check if master funnel is on
+        set tsctl [word [expr $traceBaseAddrArray(funnel) + $ts_control_offset]]
+        
+        if {($tsctl & 0x 03) == 0x03} {
+          return "on"
+        }
     }
+    
+    return "off"
 }
 
 proc enableTs {core} {
     global traceBaseAddrArray
+    global _offset
+    global num_funnels
+    global traceFunnelAddresses
     global ts_control_offset
-
+    
 #    echo "enableTs($core)"
 
     if {$core != "funnel"} {
         set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
         set tsctl [expr $tsctl | 0x00008003]
         mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
+        
+        if {(($tsctl >> 4) & 0x07) == 4} {
+            #ts unit for core is a slave
+
+            if {$num_funnels > 1} {
+                foreach funnel $traceFunnelAddresses {
+                    set tsctl [word [expr $funnel + $ts_control_offset]]
+                    set tsctl [expr $tsctl | 0x00000003]
+                    mww [expr $funnel + $ts_control_offset] $tsctl
+                }
+            } else {
+                # master is in core 0 - enable it
+
+                set tsctl [word [expr $traceBaseAddrArray(0) + $ts_control_offset]]
+                set tsctl [expr $tsctl | 0x00000003]
+                mww [expr $traceBaseAddrArray(0) + $ts_control_offset] $tsctl
+            }
+        }
     }
 }
 
 proc disableTs {core} {
     global traceBaseAddrArray
     global ts_control_offset
+    global num_funnels
 
 #    echo "diableTs($core)"
 
-    set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
-    set tsctl [expr $tsctl & ~0x00008001]
-    mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
+#    if {$num_funnels > 1} {
+#        # this may not be necessary
+#        set tsctl [word [expr $traceBaseAddrArray(funnel) + $ts_control_offset]]
+#        set tsctl [expr $tsctl & ~0x00000001]
+#        mww [expr $traceBaseAddrArray(funnel) + $ts_control_offset] $tsctl
+#    }
+    
+    if {$core != "funnel"} {
+        set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
+        set tsctl [expr $tsctl & ~0x00008000]
+        mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
+    }
 }
 
 proc resetTs {core} {
     global traceBaseAddrArray
     global ts_control_offset
+    global num_funnels
 
 #    echo "resetTs($core)"
 
-    if {$core != "funnel"} {
+    if {$num_funnels > 1} {
+        # If there is a master funnel, always reset its ts unit
+        
+        set tsctl [word [expr $traceBaseAddrArray(funnel) + $ts_control_offset]]
+        set tsctl [expr $tsctl | 0x00008004]
+        mww [expr $traceBaseAddrArray(funnel) + $ts_control_offset] $tsctl
+        set t [expr $tsctl & ~0x00008004]
+        mww [expr $traceBaseAddrArray(funnel) + $ts_control_offset] $tsctl
+    }
+
+    if {$core != "funnel"} {        
         set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
         set tsctl [expr $tsctl | 0x00008004]
         mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
@@ -661,9 +857,14 @@ proc resetTs {core} {
 proc getTsDebug {core} {
     global traceBaseAddrArray
     global ts_control_offset
-
+	global num_funnels
+	
 #    echo "getTsDebug($core)"
 
+    if {$num_funnels > 1} {
+        return "on"
+    }
+    
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     if {[expr $tsctl & 0x00000008] != 0} {
         return "on"
@@ -684,23 +885,37 @@ proc getTsLower {core} {
 proc enableTsDebug {core} {
     global traceBaseAddrArray
     global ts_control_offset
-
+	global num_funnels
+	
 #    echo "enableTsDebug($core)"
+
+	if {$num_funnels > 1} {
+	    return 1
+	}
 
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set tsctl [expr $tsctl | 0x0000008]
     mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
+
+    return 0
 }
 
 proc disableTsDebug {core} {
     global traceBaseAddrArray
     global ts_control_offset
+    global num_funnels
 
 #    echo "disableTsDebug($core)"
 
+    if {$num_funnels > 1} {
+        return 1
+    }
+    
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set tsctl [expr $tsctl & ~0x0000008]
     mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
+    
+    return 0
 }
 
 proc getTsClockSrc {core} {
@@ -721,33 +936,26 @@ proc getTsClockSrc {core} {
     }
 }
 
-# Note: ts clock src is read only and cannot be set
-
-#proc setTsClockSrc {core clock} {
-#  global traceBaseAddrArray
-#  global ts_control_offset
-#
-#  switch $clock {
-#  "none"     { set src 0 }
-#  "external" { set src 1 }
-#  "bus"      { set src 2 }
-#  "core"     { set src 3 }
-#  "slave"    { set src 4 }
-#  default    { set src 0 }
-#  }
-#
-#  set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
-#  set t [expr $t & ~0x0070]
-#  set t [expr $t | ($src << 4)]
-#  mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $t
-#}
-
 proc getTsPrescale {core} {
     global traceBaseAddrArray
     global ts_control_offset
+    global num_funnels
 
 #    echo "getTsPrescale($core)"
 
+    if {$num_funnels > 1} {
+        # if multi-core, use master funnel and ignore core
+            
+        set t [word [expr $traceBaseAddrArray(funnel) + $ts_control_offset]]
+        set t [expr ($t >> 8) & 0x3]
+        switch $t {
+        0 { return 1  }
+        1 { return 4  }
+        2 { return 16 }
+        3 { return 64 }
+        }
+    }
+    
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set t [expr ($t >> 8) & 0x3]
     switch $t {
@@ -761,6 +969,7 @@ proc getTsPrescale {core} {
 proc setTsPrescale {core prescl} {
     global traceBaseAddrArray
     global ts_control_offset
+    global num_funnels
 
 #    echo "setTsPrescale($core $prescl)"
 
@@ -772,10 +981,19 @@ proc setTsPrescale {core prescl} {
         default { set ps 0 }
     }
 
-    set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
-    set t [expr $t & ~0x0300]
-    set t [expr $t | ($ps << 8)]
-    mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $t
+    # if multi-core, we ignore core, and just set master funnel
+
+    if {$num_funnels > 1} {
+        set t [word [expr $traceBaseAddrArray(funnel) + $ts_control_offset]]
+        set t [expr $t & ~0x0300]
+        set t [expr $t | ($ps << 8)]
+        mww [expr $traceBaseAddrArray(funnel) + $ts_control_offset] $t
+    } else {
+        set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
+        set t [expr $t & ~0x0300]
+        set t [expr $t | ($ps << 8)]
+        mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $t
+    }
 }
 
 proc getTsBranch {core} {
@@ -883,29 +1101,43 @@ proc getTsOwner {core} {
 proc setTeStopOnWrap {core wrap} {
     global traceBaseAddrArray
     global te_control_offset
-
+    global num_funnels
+    
 #    echo "setTeStopOnWrap($core $wrap)"
-
+	
     switch $wrap {
         "on"    { set sow 1 }
         "off"   { set sow 0 }
         default { set sow 0 }
     }
 
-    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr $t & ~0x4000]
-    set t [expr $t | ($sow << 14)]
-    mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+	if {$num_funnels > 0} {
+        set t [word [expr $traceBaseAddrArray(funnel) + $te_control_offset]]
+        set t [expr $t & ~0x4000]
+        set t [expr $t | ($sow << 14)]
+        mww [expr $traceBaseAddrArray(funnel) + $te_control_offset] $t
+	} else {
+        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+        set t [expr $t & ~0x4000]
+        set t [expr $t | ($sow << 14)]
+        mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    }
 }
 
 proc getTeStopOnWrap {core} {
     global traceBaseAddrArray
     global te_control_offset
-
+    global num_funnels
+    
 #    echo "getTeStopOnWrap($core)"
 
-    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr ($t >> 14) & 0x1]
+    if {$num_funnels > 0} {
+        set t [word [expr $traceBaseAddrArray(funnel) + $te_control_offset]]
+        set t [expr ($t >> 14) & 0x1]
+    } else {
+        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+        set t [expr ($t >> 14) & 0x1]
+    }
 
     switch $t {
     0 { return "off"  }
@@ -994,6 +1226,7 @@ proc setTargetTraceMode {core mode} {
     global traceBaseAddrArray
     global te_control_offset
     global has_event
+    global have_htm
 
 #    echo "setTargetTraceMode($core $mode)"
 
@@ -1008,6 +1241,12 @@ proc setTargetTraceMode {core mode} {
        "htmc"       { set tm 6 }
        "htm+sync"   { set tm 7 }
        "htm"        { set tm 7 }
+       "all"        { if {$have_htm == 1} {
+                          set tm 7
+                      } else {
+                          set tm 3
+                      }
+                    }
        default      { set tm 0 }
     }
 
@@ -1499,7 +1738,8 @@ proc srcbits {} {
 
 proc printtracebaseaddresses {} {
     global traceBaseAddresses
-    global traceFunnelAddress
+    global traceFunnelAddresses
+    global num_funnels
 
 #    echo "printtracebaseaddresses()"
 
@@ -1510,8 +1750,10 @@ proc printtracebaseaddresses {} {
         set core [expr $core + 1]
     }
 
-    if {$traceFunnelAddress != 0} {
-        echo "Funnel block at $traceFunnelAddress"
+    if {$numFunnels > 0} {
+        foreach funnel $traceFunnelAddresses {
+            echo "Funnel block at $funnel"
+        }
     }
 
     echo -n ""
@@ -2793,13 +3035,13 @@ proc writeCASRAMdata { core tracebegin traceend fp } {
 }
 
 proc getCapturedTraceSize { core } {
-    global has_funnel
+    global num_funnels
     global num_cores
     global verbose
 
 #    echo "getCapturedTraceSize($core)"
 
-    if {$has_funnel != 0} {
+    if {$num_funnels > 0} {
         set s [getSink funnel]
         switch [string toupper $s] {
             "SRAM" { return [getTraceBufferSizeSRAM funnel]}
@@ -3011,7 +3253,7 @@ proc writeSBAdataX { tb te fp } {
 }
 
 proc wtb {{file "trace.rtd"} {limit 0}} {
-    global has_funnel
+    global num_funnels
     global num_cores
     global verbose
 
@@ -3023,7 +3265,7 @@ proc wtb {{file "trace.rtd"} {limit 0}} {
 
     riscv set_prefer_sba off
 
-    if {$has_funnel != 0} {
+    if {$num_funnels > 0} {
         set s [getSink funnel]
 
         switch [string toupper $s] {
@@ -3410,7 +3652,7 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
     global te_sinkbase_offset
     global te_sinkbasehigh_offset
     global te_sinklimit_offset
-    global has_funnel
+    global num_funnels
     global te_sinkwp_offset
     global te_sinkrp_offset
     global trace_buffer_width
@@ -3480,14 +3722,15 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
                     mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0xfffffffc
                     set size [expr [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]] + $trace_buffer_width]
                     mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
-                    set teSink "$teSink , size: $size bytes" }
+                    set teSink "$teSink, size: $size bytes"
+                }
                 "SBA"   { 
                     set sinkBase [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
                     set sinkLimit [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
                     set sinkBaseHigh [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
                     set sinkBase [expr ($sinkBaseHigh << 32) + $sinkBase]
                     set sinkLimit [expr ($sinkBaseHigh << 32) + $sinkLimit]
-                    set teSink "$teSink ,base: [format 0x%08x $sinkBase], size: [expr $sinkLimit - $sinkBase + $trace_buffer_width] bytes"
+                    set teSink "$teSink, base: [format 0x%08x $sinkBase], size: [expr $sinkLimit - $sinkBase + $trace_buffer_width] bytes"
                 }
             }
         }
@@ -3515,7 +3758,7 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
         echo ""
     } elseif {[string compare -nocase $dst "atb"] == 0} {
         if {$cores == "all"} {
-            if {$has_funnel != 0} {
+            if {$num_funnels > 0} {
             foreach core $coreList {
                 set rc [setSink $core funnel]
                 if {$rc != ""} {
@@ -3545,7 +3788,7 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
         }
     } elseif {[string compare -nocase $dst "pib"] == 0} {
         if {$cores == "all"} {
-            if {$has_funnel != 0} {
+            if {$num_funnels > 0} {
                 foreach core $coreList {
                     set rc [setSink $core funnel]
                     if {$rc != ""} {
@@ -3575,7 +3818,7 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
         }
     } elseif {[string compare -nocase $dst "sram"] == 0} {
         if {$cores == "all"} {
-            if {$has_funnel != 0} {
+            if {$num_funnels > 0} {
                 foreach core $coreList {
                     set rc [setSink $core funnel]
                     if {$rc != ""} {
@@ -3611,7 +3854,7 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
     # set sink to system ram at address and size specified (if specified)
 
     if {$cores == "all"} {
-        if {$has_funnel != 0} {
+        if {$num_funnels > 0} {
             foreach core $coreList {
                 set rc [setSink $core funnel]
                 if {$rc != ""} {
@@ -3644,7 +3887,7 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
             }
         }
     } elseif {[string compare -nocase $dst funnel] == 0} {
-        if {$has_funnel == 0} {
+        if {$num_funnels == 0} {
             return "Error: funnel not present"
         }
 
@@ -4091,17 +4334,18 @@ proc init {} {
     global te_sinkwp_offset
     global traceBaseAddresses
     global caBaseAddresses
-    global traceFunnelAddress
+    global traceFunnelAddresses
     global traceBaseAddrArray
+    global traceFunnelAddrArray
     global CABaseAddrArray
     global num_cores
-    global has_funnel
+    global num_funnels
     global has_event
     global have_htm
 
 #    echo "init()"
 
-    # put all cores and funnel in a known state
+    # put all cores and funnels in a known state
 
     setAllTeControls $te_control_offset 0x01830001
     setAllTfControls $te_control_offset 0x00000001
@@ -4128,14 +4372,30 @@ proc init {} {
         incr core
     }
 
-    if {($traceFunnelAddress != 0x00000000) && ($traceFunnelAddress != "")} {
-        set traceBaseAddrArray(funnel) $traceFunnelAddress
-        set has_funnel 1
-        setSink funnel "SRAM"
-    } else {
-        set has_funnel 0
-    }
+	# find the master funnel. If there is only one funnel, it will be it. Otherwise
+	# look at all funnel destinations supported for each funnel
+	
+	# the idea is we will set all funnels except master to feed into the master
+	
+	set num_funnels 0
+	
+	if {($traceFunnelAddresses != 0) && ($traceFunnelAddresses != "")} {
+		foreach addr $traceFunnelAddresses {
+			if {[hasFunnelSink $addr] != 0} {
+				set traceFunnelAddrArray($num_funnels) $addr
+				incr num_funnels
+			} else {
+				set traceBaseAddrArray(funnel) $addr
+			}
+		}
+		
+		# num_funnels is the total number of funnels, including the master!!
+		
+		incr num_funnels
 
+        setFunnelSinks "SRAM"
+    }
+		
     set have_htm [checkHaveHTM]
 
     # see if we have an evControl reg
@@ -4358,6 +4618,88 @@ proc qitctriggerenable {{cores "all"}} {
 
 # dump trace registers (at least some of them)
 
+proc dts {{cores "all"}} {
+    global traceBaseAddrArray
+    global traceFunnelAddrArray
+    global te_control_offset
+    global te_impl_offset
+    global ts_control_offset
+    global ts_lower_offset
+    global ts_upper_offset
+
+    global num_funnels 
+    global has_event
+
+	if {$num_funnels > 0} {
+    	set coreList [parseCoreFunnelList $cores]
+	} else {
+    	set coreList [parseCoreList $cores]
+    }
+
+    if {$coreList == "error"} {
+        echo "Error: Usage: dts [corelist]"
+        return "error"
+    }
+
+    set doFunnel 0
+    
+	foreach core $coreList {
+	    if {$core == "funnel"} {
+	        set doFunnel 1
+	    } else {
+	        echo "core: $core"
+	        set tsc [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
+	        set tsch [format "0x%04x" $tsc]
+       		set tsw [expr ($tsc >> 24)]
+       		echo "ts_control: $tsch, ts width: $tsw"
+	        set tsl [word [expr $traceBaseAddrArray($core) + $ts_lower_offset]]
+	        set tsu [word [expr $traceBaseAddrArray($core) + $ts_upper_offset]]
+	        set tslh [format "%04x" $tsl]
+	        set tsuh [format "%04x" $tsu]
+	        echo "ts: 0x$tsu$tsl"
+	    }
+	}
+	
+	    if {$num_funnels > 0} {
+        for {set i 0} {$i < ($num_funnels - 1)} {incr i} {
+            setFunnelSink $traceFunnelAddrArray($i) "funnel"
+        }
+    
+        setFunnelSink $traceBaseAddrArray(funnel) "SRAM"
+    }
+	
+	if {$doFunnel != 0} {
+		if {$num_funnels > 0} {
+	        for {set i 0} {$i < ($num_funnels - 1)} {incr i} {
+	        	set fa [format "0x%08x" $traceFunnelAddrArray($i)]
+			    echo "funnel @ $fa:"
+    		    set tsc [word [expr $traceFunnelAddrArray($i) + $ts_control_offset]]
+        		set tsch [format "0x%04x" $tsc]
+        		set tsw [expr ($tsc >> 24)]
+        		echo "ts_control: $tsch, ts width: $tsw"
+        		set tsl [word [expr $traceFunnelAddrArray($i) + $ts_lower_offset]]
+        		set tsu [word [expr $traceFunnelAddrArray($i) + $ts_upper_offset]]
+        		set tslh [format "%04x" $tsl]
+        		set tsuh [format "%04x" $tsu]
+        		echo "ts: 0x$tsu$tsl"
+        	}
+    
+		}
+
+       	set fa [format "0x%08x" $traceBaseAddrArray(funnel)]
+	    echo "master funnel @ $fa:"
+        set tsc [word [expr $traceBaseAddrArray(funnel) + $ts_control_offset]]
+        set tsch [format "0x%04x" $tsc]
+   		set tsw [expr ($tsc >> 24)]
+   		echo "ts_control: $tsch, ts width: $tsw"
+        set tsl [word [expr $traceBaseAddrArray(funnel) + $ts_lower_offset]]
+        set tsu [word [expr $traceBaseAddrArray(funnel) + $ts_upper_offset]]
+        set tslh [format "%04x" $tsl]
+        set tsuh [format "%04x" $tsu]
+        echo "ts: 0x$tsu$tsl"
+	}
+}
+
 proc dtr {{cores "all"}} {
     global traceBaseAddrArray
     global te_control_offset
@@ -4376,7 +4718,7 @@ proc dtr {{cores "all"}} {
     global itc_trigenable_offset
     global ts_control_offset
 
-    global has_funnel 
+    global num_funnels 
     global has_event
 
     set coreList [parseCoreList $cores]
@@ -4598,7 +4940,7 @@ proc dtr {{cores "all"}} {
 
     echo "$rv"
 
-    if {$has_funnel != 0} {
+    if {$num_funnels > 0} {
         # display current status of funnel regs
   
         set rv "tfControl: "
