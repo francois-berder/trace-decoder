@@ -5932,7 +5932,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	uint8_t loadInProcess;
 	uint8_t storeInProcess;
 
+	Instruction  **savedInstPtr = nullptr;
 	NexusMessage **savedMsgPtr = nullptr;
+	Source       **savedSrcPtr = nullptr;
 
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
@@ -5952,9 +5954,19 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 		bool haveMsg;
 
+		if (savedInstPtr != nullptr) {
+			instInfo = savedInstPtr;
+			savedInstPtr = nullptr;
+		}
+
 		if (savedMsgPtr != nullptr) {
 			msgInfo = savedMsgPtr;
 			savedMsgPtr = nullptr;
+		}
+
+		if (savedSrcPtr != nullptr) {
+			srcInfo = savedSrcPtr;
+			savedSrcPtr = nullptr;
 		}
 
 		if (readNewTraceMessage != false) {
@@ -6049,8 +6061,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 				if ((nm.getCKSRC() == TraceDqr::ICT_CONTROL) && (eventFilterMask & (1 << CTF::et_controlIndex))) {
+					savedInstPtr = instInfo;
+					instInfo = nullptr;
 					savedMsgPtr = msgInfo;
 					msgInfo = nullptr;
+					savedSrcPtr = srcInfo;
+					srcInfo = nullptr;
 				}
 				break;
 			default:
