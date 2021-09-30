@@ -5932,6 +5932,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	uint8_t loadInProcess;
 	uint8_t storeInProcess;
 
+	NexusMessage **savedMsgPtr = nullptr;
+
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
 	}
@@ -5949,6 +5951,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //		staying in the same state that expects to get another message!!
 
 		bool haveMsg;
+
+		if (savedMsgPtr != nullptr) {
+			msgInfo = savedMsgPtr;
+			savedMsgPtr = nullptr;
+		}
 
 		if (readNewTraceMessage != false) {
 			rc = sfp->readNextTraceMsg(nm,analytics,haveMsg);
@@ -6042,6 +6049,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 				if ((nm.getCKSRC() == TraceDqr::ICT_CONTROL) && (eventFilterMask & (1 << CTF::et_controlIndex))) {
+					savedMsgPtr = msgInfo;
 					msgInfo = nullptr;
 				}
 				break;
