@@ -1739,7 +1739,7 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isExceptionReturn) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Excpetion Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
 		}
 		else {
 			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call/Return?? PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
@@ -1780,7 +1780,7 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 	}
 
 	if ((eventFDs[CTF::et_exeptionIndex] >= 0) || (eventFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Excpetion] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getExceptionCauseText(cause));
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getExceptionCauseText(cause));
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
@@ -2674,6 +2674,7 @@ TraceSettings::TraceSettings()
 	eventConversionEnable = false;
 	startTime = -1;
 	hostName = nullptr;
+	filterControlEvents = false;
 }
 
 TraceSettings::~TraceSettings()
@@ -2841,6 +2842,13 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
+			else if (strcasecmp("filterControlEvents",name) == 0) {
+				rc = propertyToFilterControlEvents(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set eventConversionEnable in settings\n");
+					return rc;
+				}
+			}
 			else if (strcasecmp("addressdisplayflags", name) == 0) {
 				rc = propertyToAddrDispFlags(value);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -2971,29 +2979,20 @@ TraceDqr::DQErr TraceSettings::propertyToNumAddrBits(char *value)
 
 TraceDqr::DQErr TraceSettings::propertyToITCPrintOpts(char *value)
 {
-	if ((value != nullptr) && (value[0] != '\0')) {
-		if (strcasecmp(value,"true") == 0) {
-			itcPrintOpts = TraceDqr::ITC_OPT_PRINT | TraceDqr::ITC_OPT_NLS;
-		}
-		else if (strcasecmp(value,"false") == 0) {
-			itcPrintOpts = TraceDqr::ITC_OPT_NLS;
-		}
-		else {
-			char *endp;
-			int v;
+	TraceDqr::DQErr rc;
+	bool opts;
 
-			v = strtol(value,&endp,0);
-			if (endp == value) {
-				return TraceDqr::DQERR_ERR;
-			}
+	rc = propertyToBool(value,opts);
 
-			if (v) {
-				itcPrintOpts = TraceDqr::ITC_OPT_PRINT | TraceDqr::ITC_OPT_NLS;
-			}
-			else {
-				itcPrintOpts = TraceDqr::ITC_OPT_NLS;
-			}
-		}
+	if (rc != TraceDqr::DQERR_OK) {
+		return rc;
+	}
+
+	if (opts) {
+		itcPrintOpts = TraceDqr::ITC_OPT_PRINT | TraceDqr::ITC_OPT_NLS;
+	}
+	else {
+		itcPrintOpts = TraceDqr::ITC_OPT_NLS;
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -3109,7 +3108,7 @@ TraceDqr::DQErr TraceSettings::propertyToCAType(char *value)
 
 TraceDqr::DQErr TraceSettings::propertyToPathType(char *value)
 {
-	if ((value == nullptr) && (value[0] != '\0')) {
+	if ((value != nullptr) && (value[0] != '\0')) {
 		if (strcasecmp("unix",value) == 0) {
 			pathType = TraceDqr::PATH_TO_UNIX;
 		}
@@ -3127,64 +3126,46 @@ TraceDqr::DQErr TraceSettings::propertyToPathType(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToLabelsAsFuncs(char *value)
+TraceDqr::DQErr TraceSettings::propertyToBool(char *src,bool &value)
 {
-	if ((value == nullptr) && (value[0] != '\0')) {
-		if (strcasecmp("true",value) == 0) {
-			labelsAsFunctions = true;		}
-		else if (strcasecmp("false",value) == 0) {
-			labelsAsFunctions = false;
+	if ((src != nullptr) && (src[0] != '\0')) {
+		if (strcasecmp("true",src) == 0) {
+			value = true;		}
+		else if (strcasecmp("false",src) == 0) {
+			value = false;
 		}
 		else {
-			return TraceDqr::DQERR_ERR;
+			char *endp;
+
+			value = strtol(src,&endp,0);
+			if (endp == src) {
+				return TraceDqr::DQERR_ERR;
+			}
 		}
 	}
 
 	return TraceDqr::DQERR_OK;
+}
+
+
+TraceDqr::DQErr TraceSettings::propertyToLabelsAsFuncs(char *value)
+{
+	return propertyToBool(value,labelsAsFunctions);
 }
 
 TraceDqr::DQErr TraceSettings::propertyToCTFEnable(char *value)
 {
-	if ((value != nullptr) && (value[0] != '\0')) {
-		char *endp;
-
-		if (strcasecmp("true",value) == 0) {
-			CTFConversion = true;
-		}
-		else if (strcasecmp("false",value) == 0) {
-			CTFConversion = false;
-		}
-		else {
-			CTFConversion = strtol(value,&endp,0);
-			if (endp == value) {
-				return TraceDqr::DQERR_ERR;
-			}
-		}
-	}
-
-	return TraceDqr::DQERR_OK;
+	return propertyToBool(value,CTFConversion);
 }
 
 TraceDqr::DQErr TraceSettings::propertyToEventConversionEnable(char *value)
 {
-	if ((value != nullptr) && (value[0] != '\0')) {
-		char *endp;
+	return propertyToBool(value,eventConversionEnable);
+}
 
-		if (strcasecmp("true",value) == 0) {
-			eventConversionEnable = true;
-		}
-		else if (strcasecmp("false",value) == 0) {
-			eventConversionEnable = false;
-		}
-		else {
-			eventConversionEnable = strtol(value,&endp,0);
-			if (endp == value) {
-				return TraceDqr::DQERR_ERR;
-			}
-		}
-	}
-
-	return TraceDqr::DQERR_OK;
+TraceDqr::DQErr TraceSettings::propertyToFilterControlEvents(char *value)
+{
+	return propertyToBool(value,filterControlEvents);
 }
 
 TraceDqr::DQErr TraceSettings::propertyToFreq(char *value)
@@ -3678,6 +3659,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	nlsStrings   = nullptr;
 	ctf          = nullptr;
 	eventConverter = nullptr;
+	eventFilterMask = 0;
 
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -3694,6 +3676,10 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	pathType = settings.pathType;
 
 	srcbits = settings.srcBits;
+
+	if (settings.filterControlEvents) {
+		eventFilterMask = (1 << CTF::et_controlIndex);
+	}
 
 	analytics.setSrcBits(srcbits);
 
@@ -5962,6 +5948,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //		need to set readNewTraceMessage where it is needed! That includes
 //		staying in the same state that expects to get another message!!
 
+		bool filter;
 		bool haveMsg;
 
 		if (readNewTraceMessage != false) {
@@ -6049,6 +6036,21 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 			}
+
+			// Check if this is a ICT Control message and if we are filtering them out
+
+			filter = false;
+
+			switch (nm.tcode) {
+			case TraceDqr::TCODE_INCIRCUITTRACE:
+			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+				if ((nm.getCKSRC() == TraceDqr::ICT_CONTROL) && (eventFilterMask & (1 << CTF::et_controlIndex))) {
+					filter = true;
+				}
+				break;
+			default:
+				break;
+			}
 		}
 
 		switch (state[currentCore]) {
@@ -6067,6 +6069,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// sync reason must be correct (exit debug or start tracing) or we stay in this state
 
 			TraceDqr::ADDRESS teAddr;
+			bool returnFlag;
+			returnFlag = true;
 
 			switch (nm.tcode) {
 			case TraceDqr::TCODE_ERROR:
@@ -6095,12 +6099,54 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				status = TraceDqr::DQERR_OK;
 
 				return status;
+			case TraceDqr::TCODE_INCIRCUITTRACE:
+                // we may have a valid address and time already if we saw a sync without an exit debug
+				// or start trace sync reason. So call processTraceMessage()
+
+				if (lastFaddr[currentCore] != 0) {
+					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: NextInstruction(): state TRACE_STATE_SYNCCATE: processTraceMessage()\n");
+
+						status = TraceDqr::DQERR_ERR;
+						state[currentCore] = TRACE_STATE_ERROR;
+
+						return status;
+					}
+				}
+
+				readNewTraceMessage = true;
+
+				// check if control ICT messages are being filtered
+
+				if (filter == false) {
+					if (msgInfo != nullptr) {
+						messageInfo = nm;
+
+						// currentAddresss should be 0 until we get a sync message. TS may
+						// have been set by a ICT control WS message
+
+						messageInfo.currentAddress = currentAddress[currentCore];
+						messageInfo.time = lastTime[currentCore];
+
+						if (messageInfo.processITCPrintData(itcPrint) == false) {
+							*msgInfo = &messageInfo;
+						}
+					}
+
+					status = TraceDqr::DQERR_OK;
+
+					return status;
+				}
+
+				// if filtering, fall through which will read new message and process
+
+				break;
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 			case TraceDqr::TCODE_DIRECT_BRANCH:
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
 			case TraceDqr::TCODE_DATA_ACQUISITION:
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
-			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_CORRELATION:
 			case TraceDqr::TCODE_RESOURCEFULL:
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
@@ -6117,7 +6163,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// this could be at the start of a trace, or after leaving a trace because of
 				// a correlation message
 
-		                // we may have a valid address and time already if we saw a sync without an exit debug				        // or start trace sync reason. So call processTraceMessage()
+                // we may have a valid address and time already if we saw a sync without an exit debug
+				// or start trace sync reason. So call processTraceMessage()
 
 				if (lastFaddr[currentCore] != 0) {
 					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
@@ -6216,6 +6263,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					return status;
 				}
+				returnFlag = false;
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 				// INCIRCUTTRACE_WS messages do not have a sync reason, but control(0,1) has
@@ -6262,14 +6310,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					return status;
                 case TraceDqr::ICT_CONTROL:
-                	bool returnFlag;
-                	returnFlag = true;
-
                 	if (nm.ictWS.ckdf == 1) {
                 		switch (nm.ictWS.ckdata[1]) {
                 		case TraceDqr::ICT_CONTROL_TRACE_ON:
                 		case TraceDqr::ICT_CONTROL_EXIT_DEBUG:
-                			// only exit debug or trace enable allow proceeding. All others stay in this state and return
+                			// only exit debug or trace enable allow proceeding (in the CA startup). All others stay in this state and return
 
                 			teAddr = nm.getF_Addr() << 1;
                 			returnFlag = false;
@@ -6279,17 +6324,19 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
                 		}
                 	}
 
-                	if (returnFlag) {
-                		rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
-						if (rc != TraceDqr::DQERR_OK) {
-							printf("Error: NextInstruction(): state TRACE_STATE_SYNCCATE: processTraceMessage()\n");
+               		rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: NextInstruction(): state TRACE_STATE_SYNCCATE: processTraceMessage()\n");
 
-							status = TraceDqr::DQERR_ERR;
-							state[currentCore] = TRACE_STATE_ERROR;
+						status = TraceDqr::DQERR_ERR;
+						state[currentCore] = TRACE_STATE_ERROR;
 
-							return status;
-						}
+						return status;
+    				}
 
+					readNewTraceMessage = true;
+
+                	if ((filter == false) && returnFlag) {
 						if (msgInfo != nullptr) {
 							messageInfo = nm;
 
@@ -6303,12 +6350,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 							}
 						}
 
-						readNewTraceMessage = true;
-
 						status = TraceDqr::DQERR_OK;
 
 						return status;
                 	}
+
+                	// if filtering, or returnFlag == false, fall through
+
                 	break;
 				case TraceDqr::ICT_NONE:
 				default:
@@ -6318,6 +6366,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					return status;
 				}
+
+				// if filtering, fall through
+
 				break;
 			case TraceDqr::TCODE_DEBUG_STATUS:
 			case TraceDqr::TCODE_DEVICE_ID:
@@ -6337,67 +6388,71 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				return status;
 			}
 
-			// run ca code until we get to the te trace address. only do 6 instructions a the most
+			if (returnFlag == false) {
+				// If returnFlag is false, we want to process the start of the CA trace
 
-			caSyncAddr = caTrace->getCATraceStartAddr();
+				// run ca code until we get to the te trace address. only do 6 instructions a the most
 
-//			printf("caSyncAddr: %08x, teAddr: %08x\n",caSyncAddr,teAddr);
-
-//			caTrace->dumpCurrentCARecord(1);
-
-			TraceDqr::ADDRESS savedAddr;
-			savedAddr = -1;
-
-			bool fail;
-			fail = false;
-
-			for (int i = 0; (fail == false) && (teAddr != caSyncAddr) && (i < 30); i++) {
-				rc = nextCAAddr(caSyncAddr,savedAddr);
-				if (rc != TraceDqr::DQERR_OK) {
-					fail = true;
-				}
-				else {
-//					printf("caSyncAddr: %08x, teAddr: %08x\n",caSyncAddr,teAddr);
-
-                    rc = caTrace->consume(caFlags,TraceDqr::INST_SCALER,pipeCycles,viStartCycles,viFinishCycles,qDepth,arithInProcess,loadInProcess,storeInProcess);
-					if (rc == TraceDqr::DQERR_EOF) {
-						state[currentCore] = TRACE_STATE_DONE;
-
-						status = rc;
-						return rc;
-					}
-
-					if (rc != TraceDqr::DQERR_OK) {
-						state[currentCore] = TRACE_STATE_ERROR;
-
-						status = rc;
-						return status;
-					}
-				}
-			}
-
-//			if (teAddr == caSyncAddr) {
-//				printf("ca sync found at address %08x, cycles: %d\n",caSyncAddr,cycles);
-//			}
-
-			if (teAddr != caSyncAddr) {
-				// unable to sync by fast-forwarding the CA trace to match the instruction trace
-				// so we will try to run the normal trace for a few instructions with the hope it
-				// will sync up with the ca trace! We set the max number of instructions to run
-				// the normal trace below, and turn tracing loose!
-
-				syncCount = 16;
-				caTrace->rewind();
 				caSyncAddr = caTrace->getCATraceStartAddr();
 
-//				printf("starting normal trace to sync up; caSyncAddr: %08x\n",caSyncAddr);
+//				printf("caSyncAddr: %08x, teAddr: %08x\n",caSyncAddr,teAddr);
+
+//				caTrace->dumpCurrentCARecord(1);
+
+				TraceDqr::ADDRESS savedAddr;
+				savedAddr = -1;
+
+				bool fail;
+				fail = false;
+
+				for (int i = 0; (fail == false) && (teAddr != caSyncAddr) && (i < 30); i++) {
+					rc = nextCAAddr(caSyncAddr,savedAddr);
+					if (rc != TraceDqr::DQERR_OK) {
+						fail = true;
+					}
+					else {
+	//					printf("caSyncAddr: %08x, teAddr: %08x\n",caSyncAddr,teAddr);
+
+	                    rc = caTrace->consume(caFlags,TraceDqr::INST_SCALER,pipeCycles,viStartCycles,viFinishCycles,qDepth,arithInProcess,loadInProcess,storeInProcess);
+						if (rc == TraceDqr::DQERR_EOF) {
+							state[currentCore] = TRACE_STATE_DONE;
+
+							status = rc;
+							return rc;
+						}
+
+						if (rc != TraceDqr::DQERR_OK) {
+							state[currentCore] = TRACE_STATE_ERROR;
+
+							status = rc;
+							return status;
+						}
+					}
+				}
+
+	//			if (teAddr == caSyncAddr) {
+	//				printf("ca sync found at address %08x, cycles: %d\n",caSyncAddr,cycles);
+	//			}
+
+				if (teAddr != caSyncAddr) {
+					// unable to sync by fast-forwarding the CA trace to match the instruction trace
+					// so we will try to run the normal trace for a few instructions with the hope it
+					// will sync up with the ca trace! We set the max number of instructions to run
+					// the normal trace below, and turn tracing loose!
+
+					syncCount = 16;
+					caTrace->rewind();
+					caSyncAddr = caTrace->getCATraceStartAddr();
+
+	//				printf("starting normal trace to sync up; caSyncAddr: %08x\n",caSyncAddr);
+				}
+
+				// readnextmessage should be false. So, we want to process the message like a normal message here
+				// if the addresses of the trace and the start of the ca trace sync later, it is handled in
+				// the other states
+
+				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 			}
-
-			// readnextmessage should be false. So, we want to process the message like a normal message here
-			// if the addresses of the trace and the start of the ca trace sync later, it is handled in
-			// the other states
-
-			state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 			break;
 		case TRACE_STATE_GETFIRSTSYNCMSG:
 			// start here for normal traces
@@ -6455,7 +6510,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					currentAddress[currentCore] = lastFaddr[currentCore];
 				}
 
-				if ((nm.ictWS.cksrc == TraceDqr::ICT_CONTROL) && (nm.ictWS.ckdf == 0)) {
+				if (filter == true) {
+					// no dasm or src if filtering
+				}
+				else if ((nm.ictWS.cksrc == TraceDqr::ICT_CONTROL) && (nm.ictWS.ckdf == 0)) {
 					// ICT_WS Control(0,0) only updates TS (if present). Does not change state or anything else
 					// because it is the only incircuittrace message type with no address
 				}
@@ -6533,20 +6591,26 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// this could be at the start of a trace, or after leaving a trace because of
 			// a correlation message
 
-			if (msgInfo != nullptr) {
-				messageInfo = nm;
+			if (filter == false) {
+				if (msgInfo != nullptr) {
+					messageInfo = nm;
 
-				messageInfo.currentAddress = currentAddress[currentCore];
+					messageInfo.currentAddress = currentAddress[currentCore];
 
-				messageInfo.time = lastTime[currentCore];
+					messageInfo.time = lastTime[currentCore];
 
-				if (messageInfo.processITCPrintData(itcPrint) == false) {
-					*msgInfo = &messageInfo;
+					if (messageInfo.processITCPrintData(itcPrint) == false) {
+						*msgInfo = &messageInfo;
+					}
 				}
+
+				status = TraceDqr::DQERR_OK;
+				return status;
 			}
 
-			status = TraceDqr::DQERR_OK;
-			return status;
+			// if filtering, fall through
+
+			break;
 		case TRACE_STATE_GETMSGWITHCOUNT:
 
 			// think GETMSGWITHCOUNT and GETNEXTMSG state are the same!! If so, combine them!
@@ -6606,7 +6670,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					addr = currentAddress[currentCore];
 				}
 				else {
-					if ((nm.getCKSRC() == TraceDqr::ICT_EXT_TRIG) && (nm.getCKDF() == 0)) {
+					if (filter != false) {
+						// do not return instruction or src info
+					}
+					else if ((nm.getCKSRC() == TraceDqr::ICT_EXT_TRIG) && (nm.getCKDF() == 0)) {
 						// no dasm or src for ext trigger in HTM instruction traces
 						addr = lastFaddr[currentCore];
 					}
@@ -6627,8 +6694,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 							instructionInfo.coreId = currentCore;
 							*instInfo = &instructionInfo;
-//							(*instInfo)->CRFlag = TraceDqr::isNone;
-//							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
+//								(*instInfo)->CRFlag = TraceDqr::isNone;
+//								(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
 							getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
 							(*instInfo)->timestamp = lastTime[currentCore];
 						}
@@ -6641,19 +6708,25 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					state[currentCore] = TRACE_STATE_GETMSGWITHCOUNT;
 				}
 
-				if (msgInfo != nullptr) {
-					messageInfo = nm;
-					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = addr;
-
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
-						*msgInfo = &messageInfo;
-					}
-				}
-
 				readNewTraceMessage = true;
 
-				return status;
+				if (filter == false) {
+					if (msgInfo != nullptr) {
+						messageInfo = nm;
+						messageInfo.time = lastTime[currentCore];
+						messageInfo.currentAddress = addr;
+
+						if (messageInfo.processITCPrintData(itcPrint) == false) {
+							*msgInfo = &messageInfo;
+						}
+					}
+
+					return status;
+				}
+
+				// fall through if filtering
+
+				break;
 			case TraceDqr::TCODE_ERROR:
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 
@@ -6917,7 +6990,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 
-				if ((nm.getCKSRC() == TraceDqr::ICT_CONTROL) && (nm.getCKDF() == 0)) {
+				if (filter != false) {
+					// do not return instruction or src info
+				}
+				else if ((nm.getCKSRC() == TraceDqr::ICT_CONTROL) && (nm.getCKDF() == 0)) {
 					// ICT_WS Control(0,0) only updates TS (if present). Does not change state or anything else
 					addr = currentAddress[currentCore];
 				}
@@ -6957,19 +7033,25 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 				}
 
-				if (msgInfo != nullptr) {
-					messageInfo = nm;
-					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = addr;
-
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
-						*msgInfo = &messageInfo;
-					}
-				}
-
 				readNewTraceMessage = true;
 
-				return status;
+				if (filter == false) {
+					if (msgInfo != nullptr) {
+						messageInfo = nm;
+						messageInfo.time = lastTime[currentCore];
+						messageInfo.currentAddress = addr;
+
+						if (messageInfo.processITCPrintData(itcPrint) == false) {
+							*msgInfo = &messageInfo;
+						}
+					}
+
+					return status;
+				}
+
+				// if filtering, fall through
+
+				break;
 			case TraceDqr::TCODE_ERROR:
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 

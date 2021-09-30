@@ -348,6 +348,7 @@ public:
 	TraceDqr::DQErr propertyToEventConversionEnable(char *value);
 	TraceDqr::DQErr propertyToStartTime(char *value);
 	TraceDqr::DQErr propertyToHostName(char *value);
+	TraceDqr::DQErr propertyToFilterControlEvents(char *value);
 
 	char *tfName;
 	char *efName;
@@ -369,8 +370,10 @@ public:
 	bool CTFConversion;
 	bool eventConversionEnable;
 	char *hostName;
+	bool filterControlEvents;
 
 private:
+	TraceDqr::DQErr propertyToBool(char *src,bool &value);
 };
 
 // class CTFConverter: class to convert nexus messages to CTF file

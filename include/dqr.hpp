@@ -930,6 +930,8 @@ private:
 	int              startMessageNum;
 	int              endMessageNum;
 
+	uint32_t         eventFilterMask;
+
 	int              tsSize;
 	TraceDqr::pathType pathType;
 
