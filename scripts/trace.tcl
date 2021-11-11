@@ -4366,6 +4366,10 @@ proc init {} {
 
 #    echo "init()"
 
+    if {[info exists traceFunnelAddresses] == 0} {
+      set traceFunnelAddresses { 0 }
+    }
+
     # put all cores and funnels in a known state
 
     setAllTeControls $te_control_offset 0x01830001
