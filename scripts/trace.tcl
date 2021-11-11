@@ -46,8 +46,8 @@ set trace_buffer_width 0
 #set traceBufferAddr 0x00000000
 set trace_buffer_width 0
 
-set traceBaseAddresses { 0x10000000 0x10001000 0x10002000 0x10003000 }
-set traceFunnelAddresses { 0x10004000 0x10005000 0x10006000 }
+#set traceBaseAddresses { 0x10000000 }
+#set traceFunnelAddresses { 0 }
 
 set verbose 0
 
@@ -182,6 +182,27 @@ proc cores {} {
 }
 
 # funnel routines for multi-core. Not indented to be called directly!
+
+proc getSinkBits {} {
+    global traceBaseAddrArray
+    global te_impl_offset
+    global num_cores
+    global num_funnels
+    
+    if {$num_funnels > 0} {
+        set sink [word [expr $traceBaseAddrArray(funnel) + $te_impl_offset]]
+        set hexSink [format "0x%08x" [expr $sink & 0x1f0]]
+        return $hexSink
+    }
+    
+    if {$num_cores > 0} {
+        set sink [word [expr $traceBaseAddrArray(0) + $te_impl_offset]]
+        set hexSink [format "0x%08x" [expr $sink & 0x1f0]]
+        return $hexSink
+    }
+    
+    return 0x0
+}
 
 proc hasFunnelSink { addr } {
 	global te_impl_offset
