@@ -5123,8 +5123,8 @@ bool NexusMessage::processITCPrintData(ITCPrint *itcPrint)
 {
 	bool rc = false;
 
-	// need to only do this once per message! Set a flag so we know we have done it.
-	// if flag set, return string (or null if none)
+	// need to only do this once per message! Return true if the message is an itc print or itc perf message
+	// and it has been consumed. Otherwise, false
 
 	if (itcPrint != nullptr) {
 		switch (tcode) {

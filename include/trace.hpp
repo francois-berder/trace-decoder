@@ -335,6 +335,9 @@ public:
 	TraceDqr::DQErr propertyToITCPrintOpts(char *value);
 	TraceDqr::DQErr propertyToITCPrintBufferSize(char *value);
 	TraceDqr::DQErr propertyToITCPrintChannel(char *value);
+	TraceDqr::DQErr propertyToITCPerfEnable(char *value);
+	TraceDqr::DQErr propertyToITCPerfChannel(char *value);
+	TraceDqr::DQErr propertyToITCPerfMask(char *value);
 	TraceDqr::DQErr propertyToSrcRoot(char *value);
 	TraceDqr::DQErr propertyToSrcCutPath(char *value);
 	TraceDqr::DQErr propertyToCAName(char *value);
@@ -371,6 +374,10 @@ public:
 	bool eventConversionEnable;
 	char *hostName;
 	bool filterControlEvents;
+
+	bool itcPerfEnable;
+	int itcPerfChannel;
+	uint32_t itcPerfMask;
 
 private:
 	TraceDqr::DQErr propertyToBool(char *src,bool &value);
@@ -466,7 +473,40 @@ private:
 	bool headerFlag[DQR_MAXCORES];
 };
 
-// class EventConverter: class to convert nexus messages to Evebt files
+// class PerfConverter: class to convert nexus data acquistion messages into perf files
+
+class PerfConverter {
+public:
+	PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,int addrBits,uint32_t channel,uint32_t freq);
+	~PerfConverter();
+
+	TraceDqr::DQErr processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,uint32_t addr,uint32_t data,bool &consumed);
+
+	TraceDqr::DQErr getStatus() { return status; }
+
+private:
+	TraceDqr::DQErr status;
+
+	uint32_t frequency;
+	int addrSize;
+
+	int perfFDs[CTF::pt_numPerfTypes];
+	int perfFD;
+
+	char *elfNamePath;
+
+	char perfNameGen[512];
+
+	class Disassembler *disassembler;
+
+	uint32_t perfChannel;
+	uint32_t perfCounterMask;
+	int nextPerfCounter[DQR_MAXCORES];
+	int haveLow[DQR_MAXCORES];
+	uint32_t savedLow[DQR_MAXCORES];
+};
+
+// class EventConverter: class to convert nexus messages to Event files
 
 class EventConverter {
 public:

@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <metal/machine/platform.h>
 #include <metal/hpm.h>
 
@@ -67,7 +68,7 @@
 static int itc_print_channel = 0;
 static int _trace_config = 0;
 
-int itc_enable(int channel)
+int itc_channelEnable(int channel)
 {
 	if ((channel < -1) || (channel > 31)) {
 		return 1;
@@ -120,7 +121,7 @@ static inline void _restore_inst_trace()
 
 static inline void _itc_print_write_uint32(uint32_t data)
 {
-	uint32_t *stimulus = &itcStimulus[itc_print_channel];
+	volatile uint32_t *stimulus = &itcStimulus[itc_print_channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -129,7 +130,7 @@ static inline void _itc_print_write_uint32(uint32_t data)
 
 static inline void _itc_print_write_uint8(uint8_t data)
 {
-	uint32_t *stimulus = &itcStimulus[itc_print_channel];
+	volatile uint32_t *stimulus = &itcStimulus[itc_print_channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -139,7 +140,7 @@ static inline void _itc_print_write_uint8(uint8_t data)
 
 static inline void _itc_print_write_uint16(uint16_t data)
 {
-	uint32_t *stimulus = &itcStimulus[itc_print_channel];
+	volatile uint32_t *stimulus = &itcStimulus[itc_print_channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -259,7 +260,7 @@ int itc_printf(const char *f, ... )
 
 inline void itc_write_i32(int channel, uint32_t data)
 {
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -268,7 +269,7 @@ inline void itc_write_i32(int channel, uint32_t data)
 
 inline void itc_write_it8(int channel, uint8_t data)
 {
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -278,7 +279,7 @@ inline void itc_write_it8(int channel, uint8_t data)
 
 inline void itc_write_i16(int channel, uint16_t data)
 {
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
 
@@ -291,12 +292,12 @@ inline int itc_nls_print_i32(int channel, uint32_t data)
 {
 	// check for a channel between [1, 31]
 	if ((channel < 0) || (channel > 31)) return 0;
-	
+
 	// get the address of the stimmulus register at the specified channel
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	// block until room in FIFO
-	while (*stimulus == 0) {}	
+	while (*stimulus == 0) {}
 
 	// add the data to the stimmulus register
 	*stimulus = data;
@@ -308,12 +309,12 @@ inline int itc_nls_print_i16(int channel, uint16_t data1, uint16_t data2)
 {
 	// check for a channel between [1, 31]
 	if ((channel < 0) || (channel > 31)) return 0;
-	
+
 	// get the address of the stimmulus register at the specified channel
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	// block until room in FIFO
-	while (*stimulus == 0) {}	
+	while (*stimulus == 0) {}
 
 	// concatonate the 2-16 bit values into 1 32 bit value and asignt to the
 	// stimulus register
@@ -326,12 +327,12 @@ inline int itc_nls_print_i11(int channel, uint16_t data1, uint16_t data2, uint16
 {
 	// check for a channel between [1, 31]
 	if ((channel < 0) || (channel > 31)) return 0;
-	
+
 	// get the address of the stimmulus register at the specified channel
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	// block until room in FIFO
-	while (*stimulus == 0) {}	
+	while (*stimulus == 0) {}
 
 	// mask off the upper 5 or 6 bits on data1, data2, and data 3
 	data1 &= 0x7FF;
@@ -349,12 +350,12 @@ inline int itc_nls_print_i8(int channel, uint8_t data1, uint8_t data2, uint8_t d
 {
 	// check for a channel between [1, 31]
 	if ((channel < 0) || (channel > 31)) return 0;
-	
+
 	// get the address of the stimulus register at the specified channel
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	// block until room in FIFO
-	while (*stimulus == 0) {}	
+	while (*stimulus == 0) {}
 
 	// Concatenate the 4-8 bit values into 1 32 bit value and asignt to the
 	// stimulus register
@@ -369,7 +370,7 @@ inline int itc_nls_printstr(int channel)
 	if ((channel < 0) || (channel > 31)) return 0;
 
 	// get the address of the stimulus register at the specified channel
-	uint32_t *stimulus = &itcStimulus[channel];
+	volatile uint32_t *stimulus = &itcStimulus[channel];
 
 	// block until room in FIFO
 	while (*stimulus == 0) {}
@@ -380,63 +381,121 @@ inline int itc_nls_printstr(int channel)
 	return 1;
 }
 
-static int hpm_pairings[32];
-// returns cpu address on success, NULL on failure
-struct metal_cpu *init_pc(){
-	// Initialize the pc's for the calling CPU
+static uint32_t *hpm_pairings[32];
+
+// returns address of cpu struct on success, NULL on failure
+
+struct metal_cpu *init_ITCPerf()
+{
+	// Initialize the stimulus register to cpu pairings and the performance counter to cpu pairings to nothing
+
 	// Get CPU device handle.
 	struct metal_cpu *cpu = metal_cpu_get(metal_cpu_get_current_hartid());
 
+	if (cpu == NULL) {
+		return NULL;
+	}
 
 	// Enable module
-	if (metal_hpm_init(cpu)) return NULL;
+
+	if (metal_hpm_init(cpu)) {
+		return NULL;
+	}
 
 	// clear the parings array
-	for (int i = 0; i < 32; i++) hpm_pairings[i] = -1;
+
+	for (int i = 0; i < (int)sizeof stimulusRegCPUPairing / sizeof stimulusRegCPUPairing[0]; i++) {
+		stimulusRegCPUPairing[i] = NULL;
+	}
+
+	for (int i = 0; i < (int)sizeof perfCounterCPUPairing / sizeof perfCounterCPUPairing[0]; i++) {
+		perfCounterCPUPairing[i] = -1;
+	}
+
+	//program the itc stuff here??
 
 	return cpu;
 }
 
-// returns 0 on success
-int set_pc_channel(int hpm_counter, int channel, struct metal_cpu *cpu){
-	// try to pair a performance counter to a channel
+// returns 0 on error, otherwise non-zero
+
+int set_perf_channel(int perfCntr, int channel)
+{
+	// pair a performance counter to a channel
 
 	// check to see if the channel is valid
-	if ((channel < 0) || (channel > 31)) return 0;
+	if ((channel < 0) || (channel > 31)) {
+		return 1;
+	}
 
 	// check to see if the hpm counter value is between 0 and 31 (the range of valid counters)
-	if ((hpm_counter < 0 ) || (channel > 31)) return 0;
+	if ((perfCntr < -1 ) || (perfCntr > 31)) {
+		return 1;
+	}
 
-	// check to see that CPU isnt NULL
-	if (!cpu) return 0;
+	printf("set_per_channel(%d,%d)\n",perfCntr,channel);
 
+	// enable the itc channel requested
+
+	itc_channelEnable(channel); // does this need to know core??
 
 	// set the value-pair since we didnt fail at enabling
-	hpm_pairings[hpm_counter] = channel;
 
-	return 1;
+	int hartID;
+
+	hartID = metal_cpu_get_current_hartid();
+
+	printf("hartID: %d\n",hartID);
+
+	if (perfCntr >= 0) {
+		stimulusRegCPUPairing[hartID] = &itcStimulus[channel];
+	}
+
+	perfCounterCPUPairing[hartID] = perfCntr;
+
+	//emit a marker???? That says what the data on the channel is??
+
+	// maybe output some info here on the mapping (pairing)? Like maybe the counter mapped to the channel (hpm_counter)
+
+	return 0;
 }
-int inject_pc(int hpm_counter, struct metal_cpu *cpu){
+
+// maybe change the return values to just 0, 1? maybe return the number of writes, or words written, or bytes written??
+
+int inject_perf_pc(int hpm_counter, struct metal_cpu *cpu)
+{
 	// if CPU isnt NULL and the channel has been configured, inject the message
 
+// should we periodicallly emit a marker saying what the perf count is??
+
+//maybe do no error checking to improve perf?
+
 	// check to see if the hpm counter value is between 0 and 31 (the range of valid counters)
-	if ((hpm_counter < 0 ) || (hpm_counter > 31)) return -1;
+//	if ((hpm_counter != -1) && (hpm_counter < 0 ) || (hpm_counter > 31)) {
+//		return -1;
+//	}
 
-	// check to see that CPU isnt NULL
-	if (!cpu) return -2;
+//	// check to see that CPU isnt NULL
+//	if (cpu == NULL) {
+//		return -2;
+//	}
 
-	// see if the channel has been configured
-	if(hpm_pairings[hpm_counter] == -1) return -3;
+//	// see if the channel has been configured
+//	if(hpm_pairings[hpm_counter] == NULL) {
+//		return -3;
+//	}
 
 	// get the stimulus register
-	uint32_t *stimulus = &itcStimulus[hpm_pairings[hpm_counter]];
+
+	volatile uint32_t *stimulus = hpm_pairings[hpm_counter];
 
 	// grab the datum and send it through the register
 	// the register reads are returned as unsigned long longs (64 bits, acording to sizeof running on an arty)
+
 	uint64_t data = metal_hpm_read_counter(cpu, hpm_counter);
 
 	// block until room in FIFO
-	while (*stimulus == 0) {}
+	while (*stimulus == 0) { /* empty */ }
 
 	// write the first 32 bits
 	*stimulus = (uint32_t)data;
@@ -445,19 +504,23 @@ int inject_pc(int hpm_counter, struct metal_cpu *cpu){
 	data = data >> 32;
 
 	// block until room in FIFO
-		while (*stimulus == 0) {}
+	while (*stimulus == 0) { /* empty */ }
 
-	// write the first 32 bits
+	// write the second 32 bits
 	*stimulus = (uint32_t)data;
 
 	return 1;
 }
-int reset_pc_counter(int hpm_counter, struct metal_cpu *cpu){
+
+int reset_pc_counter(int hpm_counter, struct metal_cpu *cpu)
+{
 	// check to see if the hpm counter value is between 0 and 31 (the range of valid counters)
 	if ((hpm_counter < 0 ) || (hpm_counter > 31)) return 0;
 
 	// check to see that CPU isnt NULL
-	if (!cpu) return 0;
+	if (cpu == NULL) {
+		return 0;
+	}
 
 	// clear the value
 	metal_hpm_clear_counter(cpu, hpm_counter);

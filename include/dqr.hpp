@@ -111,6 +111,43 @@ public:
 		et_periodicIndex,
 		et_numEventTypes
 	};
+
+	enum perf_t {
+		pt_0,
+		pt_1,
+		pt_2,
+		pt_3,
+		pt_4,
+		pt_5,
+		pt_6,
+		pt_7,
+		pt_8,
+		pt_9,
+		pt_10,
+		pt_11,
+		pt_12,
+		pt_13,
+		pt_14,
+		pt_15,
+		pt_16,
+		pt_17,
+		pt_18,
+		pt_19,
+		pt_20,
+		pt_21,
+		pt_22,
+		pt_23,
+		pt_24,
+		pt_25,
+		pt_26,
+		pt_27,
+		pt_28,
+		pt_29,
+		pt_30,
+		pt_31,
+		pt_pc,
+		pt_numPerfTypes
+	};
 };
 
 class TraceDqr {
@@ -851,6 +888,7 @@ public:
 	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
 	TraceDqr::DQErr enableCTFConverter(int64_t startTime,char *hostName);
 	TraceDqr::DQErr enableEventConverter();
+	TraceDqr::DQErr enablePerfConverter(int perfChannel);
 
 	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
@@ -911,6 +949,7 @@ private:
 	class Disassembler    *disassembler;
 	class CTFConverter    *ctf;
 	class EventConverter  *eventConverter;
+	class PerfConverter   *perfConverter;
 	char                  *rtdName;
 	char                  *efName;
 	char                  *cutPath;
@@ -964,7 +1003,7 @@ private:
 	TraceDqr::DQErr nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &savedAddr);
 
 	TraceDqr::ADDRESS computeAddress();
-	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts);
+	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts,bool &consumed);
 };
 
 class SRec {
