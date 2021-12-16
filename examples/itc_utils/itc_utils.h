@@ -30,9 +30,9 @@ void itc_write_uint32(int channel, uint32_t data);
 void itc_write_uint8(int channel, uint8_t data);
 void itc_write_uint16(int channel, uint16_t data);
 
-/* 
- * ITC No Load String Print Functions. Writes either no value, 1 32 bit value, 2 16 bit values, 
- * 2 11 bit and 1 10 bit values, or 4 8 bit values to the specified stimulus register to be used as arguments 
+/*
+ * ITC No Load String Print Functions. Writes either no value, 1 32 bit value, 2 16 bit values,
+ * 2 11 bit and 1 10 bit values, or 4 8 bit values to the specified stimulus register to be used as arguments
  * in a saved formattable string that will be printed in the trace file.
  * Channel can be between 0 and 31. Returns 1 on success, 0 on failure
  */

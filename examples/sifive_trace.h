@@ -14,6 +14,7 @@ Value Replacement Macros
 
 // Values for intruction selection
 #define TE_INSTRUCTION_NONE        0
+#define TE_INSTRUCTION_EVENT       1
 #define TE_INSTRUCTION_BTMSYNC     3
 #define TE_INSTRUCTION_HTM         6
 #define TE_INSTRUCTION_HTMSYNC     7
@@ -37,6 +38,7 @@ Value Replacement Macros
 #define TE_SYNCMAXBTM_16348        9
 #define TE_SYNCMAXBTM_32768        10
 #define TE_SYNCMAXBTM_65536        11
+#define TE_SYNCMAXBTM_OFF          15
 
 // Macros for the sync max instruction value assignment
 #define TE_SYNCMAXINST_32          0
@@ -45,6 +47,7 @@ Value Replacement Macros
 #define TE_SYNCMAXINST_256         3
 #define TE_SYNCMAXINST_512         4
 #define TE_SYNCMAXINST_1024        5
+#define TE_SYNCMAXINST_OFF         15
 
 // Values for selecting a core's sink
 #define TE_SINK_DEFAULT            0
@@ -159,7 +162,8 @@ union ITC_Stimulus{
 struct TraceRegMemMap {
     uint32_t te_control_register;                   //   (0x00)
     uint32_t te_impl_register;                      //   (0x04)
-    uint32_t reserved_08_0c[2];                     //   (0x08-0x0c)
+    uint32_t reserved_08;                           //   (0x08)
+    uint32_t ev_control_register;                   //   (0x0c)
     uint32_t te_sinkbase_register;                  //   (0x10)
     uint32_t te_sinkbasehigh_register;              //   (0x14)
     uint32_t te_sinklimit_register;                 //   (0x18)
@@ -368,8 +372,8 @@ Register Manipulation
 #define getTeSinkLimit(core)            (tmm[core]->te_sinklimit_register)
 
 // The te_SinkWP register
-#define getTeSinkWpReg(core)            (tmm[core]->te_sink_wp_register)
-#define setTeSinkWpReg(core, opt)       (tmm[core]->te_sink_wp_register = (opt))
+#define getTeSinkWp(core)            (tmm[core]->te_sink_wp_register)
+#define setTeSinkWp(core, opt)       (tmm[core]->te_sink_wp_register = (opt))
 
 #define getTeSinkWrap(core)             (_getGeneric(tmm[core]->te_sink_wp_register,    \
                                          0x1, 0x0)
@@ -377,8 +381,8 @@ Register Manipulation
                                          0x1, opt, 0x0))
 
 // The te_SinkRP register
-#define getTeSinkRpReg(core)            (tmm[core]->te_sink_rp_register)
-#define setTeSinkRpReg(core, opt)       (tmm[core]->te_sink_wp_register = (opt))
+#define getTeSinkRp(core)            (tmm[core]->te_sink_rp_register)
+#define setTeSinkRp(core, opt)       (tmm[core]->te_sink_wp_register = (opt))
 
 // The te_SinkData register
 #define setTeSinkData(core, value)      (tmm[core]->te_sink_data_register = (value))
@@ -989,7 +993,7 @@ Manual Tracing -- Can be either a single core, or all cores using TRACE_CORES_AL
     }                                                                                   \
 }
 
-// Configure the time stamp control register to user specified paremeters
+// Configure the time stamp control register to user specified parameters
 #define tsConfig(core, debug, prescale, branch, instru, own){                           \
     setTsInstrumentation(core, instru);                                                 \
     setTsOwnership(core, own);                                                          \

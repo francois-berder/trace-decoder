@@ -6,7 +6,6 @@
 #define SIFIVE_PERF_H_
 
 #include <stdint.h>
-//#include <stdio.h>
 
 #include <metal/cpu.h>
 #include <metal/hpm.h>
@@ -27,6 +26,7 @@ typedef struct {
     } teControl;
     uint32_t itcTraceEnable;
     struct {
+    	uint8_t tsCount;
         uint8_t tsDebug;
         uint8_t tsPrescale;
         uint8_t tsEnable;
@@ -39,7 +39,9 @@ typedef struct {
     uint32_t teSinkLimit;
 } perf_settings_t;
 
-int perfInit(int num_cores,int num_funnels);
-int perfTimerISRInit(int core,int interval,uint32_t counterMask,int itcChannel,int stopOnWrap);
+int perfInit(int num_cores,int num_funnels,int addr_size);
+int perfTimerISRInit(int core,int interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt);
+int timerSampleOn(int core);
+int timerSampleOff(int core);
 
 #endif // SIFIVE_PERF_H_
