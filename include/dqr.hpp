@@ -111,43 +111,6 @@ public:
 		et_periodicIndex,
 		et_numEventTypes
 	};
-
-	enum perf_t {
-		pt_0,
-		pt_1,
-		pt_2,
-		pt_3,
-		pt_4,
-		pt_5,
-		pt_6,
-		pt_7,
-		pt_8,
-		pt_9,
-		pt_10,
-		pt_11,
-		pt_12,
-		pt_13,
-		pt_14,
-		pt_15,
-		pt_16,
-		pt_17,
-		pt_18,
-		pt_19,
-		pt_20,
-		pt_21,
-		pt_22,
-		pt_23,
-		pt_24,
-		pt_25,
-		pt_26,
-		pt_27,
-		pt_28,
-		pt_29,
-		pt_30,
-		pt_31,
-		pt_pc,
-		pt_numPerfTypes
-	};
 };
 
 class TraceDqr {

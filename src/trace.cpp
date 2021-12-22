@@ -1485,18 +1485,21 @@ PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int 
 	addrSize = addrBits;
 
 	perfChannel = channel;
-	perfCounterMask = 0;
 
-	for (int i = 0; i < (int)(sizeof nextPerfCounter / sizeof nextPerfCounter[0]); i++) {
-		nextPerfCounter[i] = CTF::pt_pc;
+	for (int i = 0; i < (int)(sizeof state / sizeof state[0]); i++) {
+		state[i] = perfStateStart;
 	}
 
-	for (int i = 0; i < (int)(sizeof haveLow / sizeof haveLow[0]); i++) {
-		haveLow[i] = false;
+	for (int i = 0; i < (int)(sizeof cntrMaskIndex / sizeof cntrMaskIndex[0]); i++) {
+		cntrMaskIndex[i] = 0;
 	}
 
-	for (int i = 0; i < (int)(sizeof savedLow / sizeof savedLow[0]); i++) {
-		savedLow[i] = false;
+	for (int i = 0; i < (int)(sizeof cntrMask / sizeof cntrMask[0]); i++) {
+		cntrMask[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof cntrValPending / sizeof cntrValPending[0]); i++) {
+		cntrValPending[i] = false;
 	}
 
 	for (int i = 0; i < (int)(sizeof perfFDs / sizeof perfFDs[0]); i++) {
@@ -1596,111 +1599,38 @@ PerfConverter::~PerfConverter()
 	}
 }
 
-TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,uint32_t addr,uint32_t data,bool &consumed)
+TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc)
 {
-	// figure out if this itc channel is of interest
-
-printf("processITCPrint()\n");fflush(stdout);
-
-	if ((addr < (uint32_t)perfChannel*4) || (addr >= (((uint32_t)perfChannel+1)*4))) {
-		// not writing to this perf channel
-
-		consumed = false;
-
-		printf("boink1\n");fflush(stdout);
-		return TraceDqr::DQERR_OK;
-	}
-
-	int perfCounter;
-
-	perfCounter = nextPerfCounter[coreId];
-
-	// perf counters are 64 bits. The lower 32 bits are written first
-	// If the PC is greater then 32 bits, it will also be written as two messages
-
-	if ((haveLow[coreId] == false) && ((perfCounter != CTF::pt_pc) || (addrSize > 32))) {
-		savedLow[coreId] = data;
-		haveLow[coreId] = true;
-
-		consumed = true;
-
-		printf("boink2\n");fflush(stdout);
-		return TraceDqr::DQERR_OK;
-	}
-
-	// might want to add sync code here?? (look for sync data in data stream??)
-
-	// if we get here, we have either saved the low 32 bits previously, or we have a 32 bit pc
-
-	// build a 64 bit value from current data and saved data
-
-	uint64_t data64;
-	data64 = (((uint64_t)data) << 32) | (uint64_t)savedLow[coreId];
-
-	haveLow[coreId] = false;
-	savedLow[coreId] = 0;
-
-	// compute updated nextPerfCounter
-
-	if (perfCounterMask != 0) {
-		int nextPerf = perfCounter + 1;
-
-		int tpcm = perfCounterMask >> nextPerf;
-
-		while ((tpcm != 0) && ((tpcm & 1) == 0)) {
-			tpcm >>= 1;
-			nextPerf += 1;
-		}
-
-		if (tpcm == 0) {
-			nextPerf = CTF::pt_pc;
-		}
-
-		nextPerfCounter[coreId] = nextPerf;
-	}
-
-	// figure out what perf counter we are doing?
-
 	char msgBuff[512];
 	int n;
 
-	if (perfFDs[perfCounter] < 0) {
-		if (perfCounter == CTF::pt_pc) {
-			sprintf(msgBuff,perfNameGen,".pc");
-		}
-		else {
-			char ext[4];
-			sprintf(ext,".%d",perfCounter);
-			sprintf(msgBuff,perfNameGen,ext);
-		}
+	if (perfFDs[pt_addressIndex] < 0) {
+		sprintf(msgBuff,perfNameGen,"address");
 
 #ifdef WINDOWS
-		perfFDs[perfCounter] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+		perfFDs[pt_addressIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
 #else // WINDOWS
-		perfFDs[perfCounter] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+		perfFDs[pt_addressIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
 #endif // WINDOWS
 
-		if (perfFDs[perfCounter] < 0) {
-			printf("Error: PerfConverter::processITCPerf(): Couldn't open file %s for writing\n",msgBuff);
-
-			consumed = false;
-
+		if (perfFDs[pt_addressIndex] < 0) {
+			printf("Error: PerfConverter::emitAddress(): Couldn't open file %s for writing\n",msgBuff);
 			status = TraceDqr::DQERR_ERR;
 
-			return TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_OK;
 		}
 
-		write(perfFDs[perfCounter],elfNamePath,strlen(elfNamePath));
+		write(perfFDs[pt_addressIndex],elfNamePath,strlen(elfNamePath));
 	}
 
-	if ((perfFDs[perfCounter] >= 0) || (perfFD >= 0)) {
+	if ((perfFDs[pt_addressIndex] >= 0) || (perfFD >= 0)) {
 		char fileInfoBuff[512];
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
 		f = sizeof "\n";
 
-		if ((perfCounter == CTF::pt_pc) && (disassembler != nullptr)) {
+		if (disassembler != nullptr) {
 			int   rc;
 			const char *filename;
 			int   cutPathIndex;
@@ -1708,7 +1638,7 @@ printf("processITCPrint()\n");fflush(stdout);
 			unsigned int   linenumber;
 			const char *line;
 
-			rc = disassembler->getSrcLines(data64,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
 			if (rc == 1) {
 				// have file/line info
 
@@ -1716,27 +1646,348 @@ printf("processITCPrint()\n");fflush(stdout);
 			}
 		}
 
-		if (perfCounter == CTF::pt_pc) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [PC] PC=0x%08Lx",coreId,ts,data64);
-		}
-		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d Counter%d=0x%08Lx",coreId,ts,perfCounter,data64);
-		}
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Address] PC=0x%08llx",core,ts,pc);
 
 		if (perfFD >= 0) {
 			write(perfFD,msgBuff,n);
 			write(perfFD,fileInfoBuff,f);
 		}
 
-		if (perfFDs[perfCounter] >= 0) {
-			write(perfFDs[perfCounter],msgBuff,n);
-			write(perfFDs[perfCounter],fileInfoBuff,f);
+		if (perfFDs[pt_addressIndex] >= 0) {
+			write(perfFDs[pt_addressIndex],msgBuff,n);
+			write(perfFDs[pt_addressIndex],fileInfoBuff,f);
 		}
 	}
 
-	consumed = true;
+	return TraceDqr::DQERR_OK;
+}
 
-	printf("boink3\n");fflush(stdout);
+TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint64_t cntrVal)
+{
+	char msgBuff[512];
+	int n;
+
+	if (perfFDs[cntrIndex] < 0) {
+		char tmpBuff[64];
+		sprintf(tmpBuff,"perfchannel%d",cntrIndex);
+		sprintf(msgBuff,perfNameGen,tmpBuff);
+
+#ifdef WINDOWS
+		perfFDs[cntrIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		perfFDs[cntrIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (perfFDs[cntrIndex] < 0) {
+			printf("Error: PerfConverter::emitAddress(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		write(perfFDs[cntrIndex],elfNamePath,strlen(elfNamePath));
+	}
+
+	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n";
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Perf Cntr Index=%d] [Perf Cntr Val= %lld ",core,ts,pc,cntrIndex,cntrVal);
+
+		if (perfFD >= 0) {
+			write(perfFD,msgBuff,n);
+			write(perfFD,fileInfoBuff,f);
+		}
+
+		if (perfFDs[cntrIndex] >= 0) {
+			write(perfFDs[cntrIndex],msgBuff,n);
+			write(perfFDs[cntrIndex],fileInfoBuff,f);
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,uint32_t cntrMask)
+{
+	// only write the mask the the combined file
+
+	if (perfFD >= 0) {
+		char msgBuff[512];
+		int n;
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Perf Cntr Mask=0x%08x]\n",core,ts,pc,cntrMask);
+
+		write(perfFD,msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint32_t cntrDef)
+{
+	char msgBuff[512];
+	int n;
+
+	if (perfFDs[cntrIndex] < 0) {
+		char tmpBuff[64];
+		sprintf(tmpBuff,"perfchannel%d",cntrIndex);
+		sprintf(msgBuff,perfNameGen,tmpBuff);
+
+#ifdef WINDOWS
+		perfFDs[cntrIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		perfFDs[cntrIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (perfFDs[cntrIndex] < 0) {
+			printf("Error: PerfConverter::emitPerfCntrDef(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		write(perfFDs[cntrIndex],elfNamePath,strlen(elfNamePath));
+	}
+
+	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n";
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Perf Cntr Index=%d] [Perf Cntr Def=0x%08x",core,ts,pc,cntrIndex,cntrDef);
+
+		if (perfFD >= 0) {
+			write(perfFD,msgBuff,n);
+			write(perfFD,fileInfoBuff,f);
+		}
+
+		if (perfFDs[cntrIndex] >= 0) {
+			write(perfFDs[cntrIndex],msgBuff,n);
+			write(perfFDs[cntrIndex],fileInfoBuff,f);
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,uint32_t addr,uint32_t data,bool &consumed)
+{
+	// figure out if this itc channel is of interest
+
+printf("processITCPerf()\n");fflush(stdout);
+
+	// all cores use the same channel number (in their own reg space)
+
+	consumed = false;
+
+	if ((addr < (uint32_t)perfChannel*4) || (addr >= (((uint32_t)perfChannel+1)*4))) {
+		// not writing to this perf channel
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	while (!consumed) {
+		switch (state[coreId]) {
+		case perfStateStart:
+			if (data == markerValue) {
+				state[coreId] = perfStateGetMarkerMask;
+			}
+			else {
+				// should be an instruction pointer
+
+				if (addrSize > 32) {
+					savedLow32[coreId] = data;
+					state[coreId] = perfStateGetAddrH;
+				}
+				else {
+					lastAddress[coreId] = data;
+
+					emitPerfAddr(coreId,ts,lastAddress[coreId]);
+
+					if (cntrMask[coreId] != 0) {
+						state[coreId] = perfStateGetCntr;
+						cntrMaskIndex[coreId] = 0;
+
+						// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+						while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+							cntrMaskIndex[coreId] += 1;
+						}
+					}
+					else {
+						state[coreId] = perfStateStart;
+					}
+				}
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetAddrH:
+			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
+
+			emitPerfAddr(coreId,ts,lastAddress[coreId]);
+
+			if (cntrMask[coreId] == 0) {
+				state[coreId] = perfStateStart;
+			}
+			else {
+				state[coreId] = perfStateGetCntr;
+
+				cntrMaskIndex[coreId] = 0;
+
+				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetCntr:
+			if (addr & 0x3) {
+				// havea partial write - extention of previous write
+
+				if (cntrValPending[coreId] == false) {
+					state[coreId] = perfStateError;
+					return TraceDqr::DQERR_ERR;
+				}
+
+				emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+
+				cntrValPending[coreId] = false;
+
+				while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+
+				if (cntrMaskIndex[coreId] >= 32) {
+					// out of counter defs, go to start state
+
+					state[coreId] = perfStateStart;
+				}
+
+				consumed = true;
+			}
+			else {
+				// have a full write
+
+				if (cntrValPending[coreId]) {
+					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+
+					while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+						cntrMaskIndex[coreId] += 1;
+					}
+
+					if (cntrMaskIndex[coreId] >= 32) {
+						// out of counter defs, go to start state
+
+						cntrValPending[coreId] = false;
+
+						state[coreId] = perfStateStart;
+
+						// don't return, just loop again and reprocess this value!! Leave consumed == false to make it happen
+					}
+					else {
+						savedLow32[coreId] = data;
+						cntrValPending[coreId] = true;
+
+						consumed = true;
+					}
+				}
+				else {
+					savedLow32[coreId] = data;
+					cntrValPending[coreId] = true;
+
+					consumed = true;
+				}
+			}
+			break;
+		case perfStateGetMarkerMask:
+			cntrMask[coreId] = data;
+			cntrMaskIndex[coreId] = 0;
+
+			if (cntrMask[coreId] == 0) {
+				// no counter defs - goto start
+				state[coreId] = perfStateStart;
+			}
+			else {
+				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+
+				state[coreId] = perfStateGetCounterDefs;
+			}
+
+			emitPerfCntrMask(coreId,ts,lastAddress[coreId],cntrMask[coreId]);
+
+			consumed = true;
+			break;
+		case perfStateGetCounterDefs:
+			// perf counter defs should be 64 bits, but it looks like the metal library only returns the lower
+			// 32 bits, so for now we treat them as 32 bits
+
+
+			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
+
+			emitPerfCntrDef(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],data);
+
+			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+				cntrMaskIndex[coreId] += 1;
+			}
+
+			if (cntrMaskIndex[coreId] >= 32) {
+				// out of counter defs, go to start state
+
+				state[coreId] = perfStateStart;
+			}
+
+			consumed = true;
+			break;
+		case perfStateError:
+			return TraceDqr::DQERR_ERR;
+		}
+	}
 
 	return TraceDqr::DQERR_OK;
 }
@@ -5957,8 +6208,6 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 
-		printf("boink4\n");fflush(stdout);
-
 		if (perfConverter != nullptr) { // or should this be a general itc process thing?? could we process all itc messages here?
 			TraceDqr::DQErr rc;
 			rc = perfConverter->processITCPerf(nm.coreId,ts,nm.dataAcquisition.idTag,nm.dataAcquisition.data,consumed);
@@ -7171,8 +7420,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					state[currentCore] = TRACE_STATE_GETMSGWITHCOUNT;
 				}
 				break;
-			case TraceDqr::TCODE_DATA_ACQUISITION: if no timestamp info, do we want this message?
-				break;
+			case TraceDqr::TCODE_DATA_ACQUISITION:
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 			case TraceDqr::TCODE_DIRECT_BRANCH:
