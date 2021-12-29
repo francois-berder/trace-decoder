@@ -1812,8 +1812,6 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 {
 	// figure out if this itc channel is of interest
 
-printf("processITCPerf()\n");fflush(stdout);
-
 	// all cores use the same channel number (in their own reg space)
 
 	consumed = false;
@@ -6187,9 +6185,6 @@ TraceDqr::DQErr Trace::nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &sav
 
 TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts,bool &consumed)
 {
-
-	printf("processTraceMessage()\n");fflush(stdout);
-
 	consumed = false;
 
 	switch (nm.tcode) {
@@ -6835,7 +6830,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	uint8_t loadInProcess;
 	uint8_t storeInProcess;
 
-	bool consumed;
+	bool consumed = false;
 
 	Instruction  **savedInstPtr = nullptr;
 	NexusMessage **savedMsgPtr = nullptr;
@@ -6981,7 +6976,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 		switch (state[currentCore]) {
 		case TRACE_STATE_SYNCCATE:	// Looking for a CA trace sync
-//			printf("TRACE_STATE_SYNCCATE\n");
+			// printf("TRACE_STATE_SYNCCATE\n");
 
 			if (caTrace == nullptr) {
 				// have an error! Should never have TRACE_STATE_SYNC without a caTrace ptr
@@ -7013,7 +7008,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.currentAddress = currentAddress[currentCore];
 					messageInfo.time = lastTime[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -7330,8 +7325,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		case TRACE_STATE_GETFIRSTSYNCMSG:
 			// start here for normal traces
 
-//			printf("TRACE_STATE_GETFIRSTSYNCMSG\n");
-
 			// read trace messages until a sync is found. Should be the first message normally
 			// unless the wrapped buffer
 
@@ -7421,6 +7414,16 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 				break;
 			case TraceDqr::TCODE_DATA_ACQUISITION:
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 			case TraceDqr::TCODE_DIRECT_BRANCH:
@@ -7468,7 +7471,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				messageInfo.time = lastTime[currentCore];
 
-				if (messageInfo.processITCPrintData(itcPrint) == false) {
+				if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 					*msgInfo = &messageInfo;
 				}
 			}
@@ -7609,9 +7612,34 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				readNewTraceMessage = true;
 
 				return status;
+			case TraceDqr::TCODE_DATA_ACQUISITION:
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_GETMSGWITHCOUNT: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+
+				// for now, return message;
+
+				if (msgInfo != nullptr) {
+					messageInfo = nm;
+					messageInfo.time = lastTime[currentCore];
+					messageInfo.currentAddress = currentAddress[currentCore];
+
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
+						*msgInfo = &messageInfo;
+					}
+				}
+
+				readNewTraceMessage = true;
+
+				return status;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
-			case TraceDqr::TCODE_DATA_ACQUISITION:
 				// these message have no address or count info, so we still need to get
 				// another message.
 
@@ -7628,7 +7656,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -7765,7 +7793,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					messageInfo.currentAddress = lastFaddr[currentCore] + nm.correlation.i_cnt*2;
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -7911,7 +7939,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -7921,6 +7949,31 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				return status;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 			case TraceDqr::TCODE_DATA_ACQUISITION:
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_GETNXTMSG: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+
+				// for now, return message;
+
+				if (msgInfo != nullptr) {
+					messageInfo = nm;
+					messageInfo.time = lastTime[currentCore];
+					messageInfo.currentAddress = currentAddress[currentCore];
+
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
+						*msgInfo = &messageInfo;
+					}
+				}
+
+				readNewTraceMessage = true;
+
+				return status;
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 				// retire these instantly by returning them through msgInfo
 
@@ -7933,7 +7986,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
