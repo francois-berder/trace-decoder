@@ -39,9 +39,9 @@ typedef struct {
     uint32_t teSinkLimit;
 } perf_settings_t;
 
-int perfInit(int num_cores,int num_funnels,int addr_size);
+int perfInit(int num_cores,int num_funnels);
 int perfTimerISRInit(int core,int interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt);
-int timerSampleOn(int core);
-int timerSampleOff(int core);
+
+//add manual protos!
 
 #endif // SIFIVE_PERF_H_

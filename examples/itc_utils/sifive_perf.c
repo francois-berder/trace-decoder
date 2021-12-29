@@ -8,7 +8,9 @@
 
 static int numCores;
 static int numFunnels;
-static int addrSize;
+
+extern volatile int intr_count; // remove
+
 
 extern struct TraceRegMemMap volatile * const tmm[];
 extern struct CaTraceRegMemMap volatile * const cmm[];
@@ -43,6 +45,33 @@ static void perfEmitMarker(int core,uint32_t perfCntrMask)
 
     // write the first counter mask
     *stimulus = perfCntrMask;
+
+    // skip the lower two counters because they are fixed function
+
+    uint32_t tmpPerfCntrMask = perfCntrMask >> 2;
+
+    if (tmpPerfCntrMask != 0) {
+        int counter = 2;
+        struct metal_cpu *cpu;
+
+        cpu = metal_cpu_get(core);
+
+        while (tmpPerfCntrMask != 0) {
+        	if (tmpPerfCntrMask & 1) {
+        		uint32_t mask;
+        		mask = metal_hpm_get_event(cpu, counter);
+
+        	    // block until room in FIFO
+        	    while (*stimulus == 0) { /* empty */ }
+
+        	    // write the first counter mask
+        	    *stimulus = mask;
+        	}
+
+        	tmpPerfCntrMask >>= 1;
+        	counter += 1;
+        }
+    }
 }
 
 int perfSetChannel(uint32_t perfCntrMask,int channel)
@@ -56,19 +85,17 @@ int perfSetChannel(uint32_t perfCntrMask,int channel)
 
 	int hartID;
 
-	hartID = metal_cpu_get_current_hartid();
+    hartID = metal_cpu_get_current_hartid();
 
 	// enable the itc channel requested
 
-    setITCTraceEnable(hartID, getITCTraceEnable(hartID) | 1 << (channel));                                     \
+    setITCTraceEnable(hartID, (getITCTraceEnable(hartID)) | 1 << (channel));                                     \
 
 	// set the value-pair since we didnt fail at enabling
 
 	perfStimulusCPUPairing[hartID] = (uint32_t*)&tmm[hartID]->itc_stimulus_register[channel];
 
 	perfCounterCPUPairing[hartID] = perfCntrMask;
-
-	printf("perfSetChannel(): cpu %d, stimulus: 0x%08x, mask: 0x%08x\n",hartID,perfStimulusCPUPairing[hartID],perfCounterCPUPairing[hartID]);
 
 	return 0;
 }
@@ -115,14 +142,14 @@ int perfWriteCntrs()
     while (*stimulus == 0) { /* empty */ }
 
     // write the first 32 bits
-    *stimulus = (uint32_t)pc;
+    *stimulus = pc;
 
-    if (addrSize > 32) {
+    if ((sizeof(void*) * 8) > 32) {
     	// block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write the second 32 bits - add support for > 32 bit PCs later
-        *stimulus = (uint32_t)(pcH);
+        *stimulus = pcH;
     }
 
     int perfCntrIndex = 0;
@@ -164,7 +191,9 @@ int perfWriteCntrs()
 int perfResetCntr(int hpm_counter, struct metal_cpu *cpu)
 {
 	// check to see if the hpm counter value is between 0 and 31 (the range of valid counters)
-	if ((hpm_counter < 0 ) || (hpm_counter > 31)) return 0;
+	if ((hpm_counter < 0 ) || (hpm_counter > 31)) {
+		return 0;
+	}
 
 	// check to see that CPU isnt NULL
 	if (cpu == NULL) {
@@ -177,11 +206,10 @@ int perfResetCntr(int hpm_counter, struct metal_cpu *cpu)
 	return 1;
 }
 
-int perfInit(int num_cores,int num_funnels,int addr_size)
+int perfInit(int num_cores,int num_funnels)
 {
     numCores = num_cores;
     numFunnels = num_funnels;
-    addrSize = addr_size;
 
     return 0;
 }
@@ -361,13 +389,20 @@ static int perfCounterInit(int core,perf_settings_t *settings)
             setITCTraceEnable(core,settings->itcTraceEnable);
     }
 
+    if (core == PERF_CORES_ALL) {
+        for (int i = 0; i < numCores; i++) {
+            setTeTracing(i,1);
+        }
+    }
+    else {
+    	setTeTracing(core,1);
+    }
+
     return 0;
 }
 
 static unsigned long long next_mcount;
 static unsigned long long interval;
-
-extern volatile int intr_count;
 
 static void perfTimerHandler(int id,void *data)
 {
@@ -396,15 +431,13 @@ static void perfTimerHandler(int id,void *data)
 
     pc = metal_cpu_get_exception_pc(cpu);
 
-    // if stimulus is null, skip below!
-
     // block until room in FIFO
     while (*stimulus == 0) { /* empty */ }
 
     // write the first 32 bits
     *stimulus = (uint32_t)pc;
 
-    if (addrSize > 32) {
+    if ((sizeof(void*) * 8) > 32) {
     	// block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
@@ -472,15 +505,11 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
         _interval = 100;
     }
 
-    printf("perfTimerConfit(%d,%d,%d,0x%08x)\n",core,_interval,itcChannel,perfCntrMask);
-
     int hartID;
 
     // hartID = metal_cpu_get_current_hartid();
 
     hartID = getTeImplHartId(core);
-
-    printf("hartID: %d core: %d\n",hartID,core);
 
     struct metal_cpu *cpu;
 
@@ -496,8 +525,6 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
     timebase = metal_cpu_get_timebase(cpu);
 
     if ((timeval == 0) || (timebase == 0)) {
-        printf("timeval: %u timebase: %u\n",(unsigned int)timeval,(unsigned int)timebase);
-
         return 1;
     }
 
@@ -505,8 +532,6 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
 
 //    interval = _interval * timebase / 1000000;
     interval = 32500/10;
-
-    printf("setting interval to %u, timebase: %u\n",(uint32_t)interval,(uint32_t)timebase);
 
     struct metal_interrupt *cpu_intr;
 
@@ -519,7 +544,7 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
 		return 1;
 	}
 
-    metal_interrupt_init(cpu_intr);
+	metal_interrupt_init(cpu_intr);
 
     struct metal_interrupt *tmr_intr;
 
@@ -558,8 +583,6 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
 	if (rc != 0) {
 		return 1;
 	}
-
-//	emit marker!!
 
 	return 0;
 }
@@ -618,9 +641,7 @@ int perfTimerISRInit(int core,int interval,uint32_t counterMask,int itcChannel,i
 {
     perf_settings_t settings;
 
-//    settings.teControl.teInstruction = TE_INSTRUCTION_EVENT;
     settings.teControl.teInstruction = TE_INSTRUCTION_NONE;
-//    settings.teControl.teInstruction = TE_INSTRUCTION_HTM;
     settings.teControl.teInstrumentation = TE_INSTRUMENTATION_ITC;
     settings.teControl.teStallOrOverflow = 0;
     settings.teControl.teStallEnable = 0;
@@ -667,32 +688,4 @@ int perfTimerISRInit(int core,int interval,uint32_t counterMask,int itcChannel,i
     }
 
     return 0;
-}
-
-int timerSampleOn(int core)
-{
-    if (core == PERF_CORES_ALL) {
-        for (int i = 0; i < numCores; i++) {
-            setTeTracing(i,1);
-        }
-    }
-    else {
-    	setTeTracing(core,1);
-    }
-
-	return 0;
-}
-
-int timerSampleOff(int core)
-{
-    if (core == PERF_CORES_ALL) {
-        for (int i = 0; i < numCores; i++) {
-            setTeTracing(i,0);
-        }
-    }
-    else {
-    	setTeTracing(core,0);
-    }
-
-	return 0;
 }
