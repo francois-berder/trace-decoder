@@ -337,6 +337,7 @@ public:
 	TraceDqr::DQErr propertyToITCPrintChannel(char *value);
 	TraceDqr::DQErr propertyToITCPerfEnable(char *value);
 	TraceDqr::DQErr propertyToITCPerfChannel(char *value);
+	TraceDqr::DQErr propertyToITCPerfMarkerValue(char *value);
 	TraceDqr::DQErr propertyToITCPerfMask(char *value);
 	TraceDqr::DQErr propertyToSrcRoot(char *value);
 	TraceDqr::DQErr propertyToSrcCutPath(char *value);
@@ -377,6 +378,7 @@ public:
 
 	bool itcPerfEnable;
 	int itcPerfChannel;
+	int itcPerfMarkerValue;
 	uint32_t itcPerfMask;
 
 private:
@@ -477,7 +479,7 @@ private:
 
 class PerfConverter {
 public:
-	PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,int addrBits,uint32_t channel,uint32_t freq);
+	PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,int addrBits,uint32_t channel,uint32_t marker,uint32_t freq);
 	~PerfConverter();
 
 	TraceDqr::DQErr processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,uint32_t addr,uint32_t data,bool &consumed);
@@ -560,8 +562,8 @@ private:
 
 	TraceDqr::DQErr emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc);
 	TraceDqr::DQErr emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint64_t cntrVal);
-	TraceDqr::DQErr emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,uint32_t cntrMask);
-	TraceDqr::DQErr emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint32_t cntrDef);
+	TraceDqr::DQErr emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,uint32_t cntrMask);
+	TraceDqr::DQErr emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint32_t cntrDef);
 };
 
 // class EventConverter: class to convert nexus messages to Event files

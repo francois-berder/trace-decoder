@@ -851,7 +851,7 @@ public:
 	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
 	TraceDqr::DQErr enableCTFConverter(int64_t startTime,char *hostName);
 	TraceDqr::DQErr enableEventConverter();
-	TraceDqr::DQErr enablePerfConverter(int perfChannel);
+	TraceDqr::DQErr enablePerfConverter(int perfChannel,uint32_t markerValue);
 
 	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);

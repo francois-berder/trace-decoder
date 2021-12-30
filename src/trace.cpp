@@ -1478,13 +1478,14 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 //	printf("absPath: %s\n",absPath);
 }
 
-PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,int addrBits,uint32_t channel,uint32_t freq)
+PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,int addrBits,uint32_t channel,uint32_t marker,uint32_t freq)
 {
 	status = TraceDqr::DQERR_OK;
 
 	addrSize = addrBits;
 
 	perfChannel = channel;
+	markerValue = marker;
 
 	for (int i = 0; i < (int)(sizeof state / sizeof state[0]); i++) {
 		state[i] = perfStateStart;
@@ -1614,7 +1615,7 @@ TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,Trac
 #endif // WINDOWS
 
 		if (perfFDs[pt_addressIndex] < 0) {
-			printf("Error: PerfConverter::emitAddress(): Couldn't open file %s for writing\n",msgBuff);
+			printf("Error: PerfConverter::emitAddr(): Couldn't open file %s for writing\n",msgBuff);
 			status = TraceDqr::DQERR_ERR;
 
 			return TraceDqr::DQERR_OK;
@@ -1628,7 +1629,7 @@ TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,Trac
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -1645,8 +1646,7 @@ TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,Trac
 				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
 			}
 		}
-
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Address] PC=0x%08llx",core,ts,pc);
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Address]",core,ts,pc);
 
 		if (perfFD >= 0) {
 			write(perfFD,msgBuff,n);
@@ -1679,7 +1679,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 #endif // WINDOWS
 
 		if (perfFDs[cntrIndex] < 0) {
-			printf("Error: PerfConverter::emitAddress(): Couldn't open file %s for writing\n",msgBuff);
+			printf("Error: PerfConverter::emitPerfCntr(): Couldn't open file %s for writing\n",msgBuff);
 			status = TraceDqr::DQERR_ERR;
 
 			return TraceDqr::DQERR_OK;
@@ -1693,7 +1693,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -1711,7 +1711,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 			}
 		}
 
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Perf Cntr Index=%d] [Perf Cntr Val= %lld ",core,ts,pc,cntrIndex,cntrVal);
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Perf Cntr] [Index=%d] [Value=%lld] ",core,ts,pc,cntrIndex,cntrVal);
 
 		if (perfFD >= 0) {
 			write(perfFD,msgBuff,n);
@@ -1727,7 +1727,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr PerfConverter::emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,uint32_t cntrMask)
+TraceDqr::DQErr PerfConverter::emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,uint32_t cntrMask)
 {
 	// only write the mask the the combined file
 
@@ -1735,7 +1735,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,
 		char msgBuff[512];
 		int n;
 
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Perf Cntr Mask=0x%08x]\n",core,ts,pc,cntrMask);
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Perf Cntr Mask] [Mask=0x%08x]\n",core,ts,cntrMask);
 
 		write(perfFD,msgBuff,n);
 	}
@@ -1743,7 +1743,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint32_t cntrDef)
+TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint32_t cntrDef)
 {
 	char msgBuff[512];
 	int n;
@@ -1770,38 +1770,14 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,T
 	}
 
 	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
-		char fileInfoBuff[512];
-		int f;
-
-		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
-
-		if (disassembler != nullptr) {
-			int   rc;
-			const char *filename;
-			int   cutPathIndex;
-			const char *functionname;
-			unsigned int   linenumber;
-			const char *line;
-
-			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
-			}
-		}
-
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Perf Cntr Index=%d] [Perf Cntr Def=0x%08x",core,ts,pc,cntrIndex,cntrDef);
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Perf Cntr Def] [Index=%d] [Def=0x%08x]\n",core,ts,cntrIndex,cntrDef);
 
 		if (perfFD >= 0) {
 			write(perfFD,msgBuff,n);
-			write(perfFD,fileInfoBuff,f);
 		}
 
 		if (perfFDs[cntrIndex] >= 0) {
 			write(perfFDs[cntrIndex],msgBuff,n);
-			write(perfFDs[cntrIndex],fileInfoBuff,f);
 		}
 	}
 
@@ -1851,7 +1827,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 						}
 					}
 					else {
-						state[coreId] = perfStateStart;
+						state[coreId] = perfStateStart; // already in this state, but won't hurt
 					}
 				}
 			}
@@ -1893,6 +1869,8 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 
 				cntrValPending[coreId] = false;
 
+				cntrMaskIndex[coreId] += 1;
+
 				while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
 					cntrMaskIndex[coreId] += 1;
 				}
@@ -1910,6 +1888,8 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 
 				if (cntrValPending[coreId]) {
 					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+
+					cntrMaskIndex[coreId] += 1;
 
 					while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
 						cntrMaskIndex[coreId] += 1;
@@ -1941,9 +1921,9 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			break;
 		case perfStateGetMarkerMask:
 			cntrMask[coreId] = data;
-			cntrMaskIndex[coreId] = 0;
+			cntrMaskIndex[coreId] = 2;
 
-			if (cntrMask[coreId] == 0) {
+			if (cntrMask[coreId] < (1 << 2)) {
 				// no counter defs - goto start
 				state[coreId] = perfStateStart;
 			}
@@ -1957,7 +1937,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 				state[coreId] = perfStateGetCounterDefs;
 			}
 
-			emitPerfCntrMask(coreId,ts,lastAddress[coreId],cntrMask[coreId]);
+			emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
 
 			consumed = true;
 			break;
@@ -1965,10 +1945,11 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			// perf counter defs should be 64 bits, but it looks like the metal library only returns the lower
 			// 32 bits, so for now we treat them as 32 bits
 
-
 			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
 
-			emitPerfCntrDef(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],data);
+			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],data);
+
+			cntrMaskIndex[coreId] += 1;
 
 			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
 				cntrMaskIndex[coreId] += 1;
@@ -2120,7 +2101,7 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2188,7 +2169,7 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2316,7 +2297,7 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2396,7 +2377,7 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2459,7 +2440,7 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2542,7 +2523,7 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2605,7 +2586,7 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2688,7 +2669,7 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -3414,6 +3395,7 @@ TraceSettings::TraceSettings()
 	itcPerfEnable = false;
 	itcPerfMask = 0;
 	itcPerfChannel = 6;
+	itcPerfMarkerValue = (uint32_t)(('p' << 24) | ('e' << 16) | ('r' << 8) | ('f' << 0));
 	cutPath = nullptr;
 	srcRoot = nullptr;
 	pathType = TraceDqr::PATH_TO_UNIX;
@@ -3534,6 +3516,13 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 				rc = propertyToITCPerfChannel(value);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: TraceSettings::addSettings(): Could not set ITC perf channel in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("trace.config.int.itc.perf.marker",name) == 0) {
+				rc = propertyToITCPerfMarkerValue(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set ITC perf marker value in settings\n");
 					return rc;
 				}
 			}
@@ -3836,6 +3825,21 @@ TraceDqr::DQErr TraceSettings::propertyToITCPerfChannel(char *value)
 		char *endp;
 
 		itcPerfChannel = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToITCPerfMarkerValue(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		itcPerfMarkerValue = strtol(value,&endp,0);
 
 		if (endp == value) {
 			return TraceDqr::DQERR_ERR;
@@ -4783,10 +4787,12 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		// Do the code below only after setting efName above
 
 		int perfChannel;
+		uint32_t markerValue;
 
 		perfChannel = settings.itcPerfChannel;
+		markerValue = settings.itcPerfMarkerValue;
 
-		rc = enablePerfConverter(perfChannel);
+		rc = enablePerfConverter(perfChannel,markerValue);
 		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 			return status;
@@ -5026,7 +5032,7 @@ TraceDqr::DQErr Trace::enableCTFConverter(int64_t startTime,char *hostName)
 	return status;
 }
 
-TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel)
+TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue)
 {
 	if (perfConverter != nullptr) {
 		delete perfConverter;
@@ -5040,7 +5046,7 @@ TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel)
 	int addrSize;
 	addrSize = getAddressSize();
 
-	perfConverter = new PerfConverter(efName,rtdName,disassembler,1 << srcbits,addrSize,perfChannel,freq);
+	perfConverter = new PerfConverter(efName,rtdName,disassembler,1 << srcbits,addrSize,perfChannel,markerValue,freq);
 
 	status = perfConverter->getStatus();
 	if (status != TraceDqr::DQERR_OK) {
