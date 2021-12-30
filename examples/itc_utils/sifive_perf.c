@@ -6,14 +6,40 @@
 #include <metal/cpu.h>
 #include <metal/hpm.h>
 
+typedef struct {
+    struct {
+        uint8_t teInstruction;
+        uint8_t teInstrumentation;
+        uint8_t teStallOrOverflow;
+        uint8_t teStallEnable;
+        uint8_t teStopOnWrap;
+        uint8_t teInhibitSrc;
+        uint8_t teSyncMaxBTM;
+        uint8_t teSyncMaxInst;
+        uint8_t teSink;
+    } teControl;
+    uint32_t itcTraceEnable;
+    struct {
+    	uint8_t tsCount;
+        uint8_t tsDebug;
+        uint8_t tsPrescale;
+        uint8_t tsEnable;
+        uint8_t tsBranch;
+        uint8_t tsInstrumentation;
+        uint8_t tsOwnership;
+    } tsControl;
+    uint32_t teSinkBase;
+    uint32_t teSinkBaseH;
+    uint32_t teSinkLimit;
+} perf_settings_t;
+
 static int numCores;
 static int numFunnels;
 
-extern volatile int intr_count; // remove
-
+//extern volatile int intr_count; // remove
 
 extern struct TraceRegMemMap volatile * const tmm[];
-extern struct CaTraceRegMemMap volatile * const cmm[];
+//extern struct CaTraceRegMemMap volatile * const cmm[];
 extern struct TfTraceRegMemMap volatile * const fmm;
 
 // array of pointers to stimulus registers. Maps a core id to a stimulus register. Supports multi-core
@@ -74,7 +100,7 @@ static void perfEmitMarker(int core,uint32_t perfCntrMask)
     }
 }
 
-int perfSetChannel(uint32_t perfCntrMask,int channel)
+static int perfSetChannel(uint32_t perfCntrMask,int channel)
 {
 	// pair a performance counter mask to a channel
 
@@ -409,9 +435,13 @@ static void perfTimerHandler(int id,void *data)
     int hartID;		// use hartID as CPU index
     struct metal_cpu *cpu;
 
-    intr_count += 1;
+//    intr_count += 1;
 
     cpu = (struct metal_cpu *)data;
+
+    unsigned long long pc;
+
+    pc = metal_cpu_get_exception_pc(cpu);
 
     hartID = metal_cpu_get_current_hartid();
 
@@ -426,10 +456,6 @@ static void perfTimerHandler(int id,void *data)
     }
 
     volatile uint32_t *stimulus = perfStimulusCPUPairing[hartID];
-
-    unsigned long long pc;
-
-    pc = metal_cpu_get_exception_pc(cpu);
 
     // block until room in FIFO
     while (*stimulus == 0) { /* empty */ }
@@ -485,7 +511,6 @@ static void perfTimerHandler(int id,void *data)
     metal_cpu_set_mtimecmp(cpu, next_mcount);
 }
 
-
 static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntrMask,int markerCnt)
 {
     if ((core < 0) || (core >= numCores)) {
@@ -497,7 +522,7 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
     	perfMarkerCntReload = markerCnt;
     }
     else {
-    	perfMarkerCnt = 0;
+    	perfMarkerCnt = 1;
     	perfMarkerCntReload = 0;
     }
 
@@ -528,10 +553,7 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
         return 1;
     }
 
-//    interval = interval * (timebase / 10000) / 100;
-
-//    interval = _interval * timebase / 1000000;
-    interval = 32500/10;
+    interval = timebase * _interval / 1000000000;
 
     struct metal_interrupt *cpu_intr;
 
@@ -566,8 +588,6 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
         return 1;
     }
 
-//    probably want to either get mtime for t, or set mtime to 0?
-
     next_mcount = metal_cpu_get_mtime(cpu) + interval;
 
     metal_cpu_set_mtimecmp(cpu, next_mcount);
@@ -589,11 +609,22 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
 
 int perfManualInit(int core,int interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)
 {
+    if ((core < 0) || (core >= numCores)) {
+        return 1;
+    }
+
+    if (markerCnt != 0) {
+    	perfMarkerCnt = 1;
+    	perfMarkerCntReload = markerCnt;
+    }
+    else {
+    	perfMarkerCnt = 1;
+    	perfMarkerCntReload = 0;
+    }
+
     perf_settings_t settings;
 
-//    settings.teControl.teInstruction = TE_INSTRUCTION_EVENT;
     settings.teControl.teInstruction = TE_INSTRUCTION_NONE;
-//    settings.teControl.teInstruction = TE_INSTRUCTION_HTM;
     settings.teControl.teInstrumentation = TE_INSTRUMENTATION_ITC;
     settings.teControl.teStallOrOverflow = 0;
     settings.teControl.teStallEnable = 0;
