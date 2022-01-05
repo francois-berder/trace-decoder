@@ -607,7 +607,7 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
 	return 0;
 }
 
-int perfManualInit(int core,int interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)
+int perfManualInit(int core,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)
 {
     if ((core < 0) || (core >= numCores)) {
         return 1;

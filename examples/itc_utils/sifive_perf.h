@@ -16,6 +16,6 @@ int perfInit(int num_cores,int num_funnels);
 int perfTimerISRInit(int core,int interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt);
 int perfWriteCntrs();
 int perfResetCntr(int hpm_counter, struct metal_cpu *cpu);
-int perfManualInit(int core,int interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt);
+int perfManualInit(int core,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt);
 
 #endif // SIFIVE_PERF_H_
