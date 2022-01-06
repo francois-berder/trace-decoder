@@ -164,18 +164,25 @@ int perfWriteCntrs()
 
     volatile uint32_t *stimulus = perfStimulusCPUPairing[hartID];
 
-    // block until room in FIFO
-    while (*stimulus == 0) { /* empty */ }
+    if (pcH != 0) {
+        // block until room in FIFO
+        while (*stimulus == 0) { /* empty */ }
 
-    // write the first 32 bits
-    *stimulus = pc;
+        // write the first 32 bits, set bit 0 to indicate 64 bit address
+        *stimulus = pc | 1;
 
-    if ((sizeof(void*) * 8) > 32) {
     	// block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
-        // write the second 32 bits - add support for > 32 bit PCs later
+        // write the second 32 bits
         *stimulus = pcH;
+    }
+    else {
+        // block until room in FIFO
+        while (*stimulus == 0) { /* empty */ }
+
+        // write 32 bit pc
+        *stimulus = pc;
     }
 
     int perfCntrIndex = 0;
@@ -457,18 +464,25 @@ static void perfTimerHandler(int id,void *data)
 
     volatile uint32_t *stimulus = perfStimulusCPUPairing[hartID];
 
-    // block until room in FIFO
-    while (*stimulus == 0) { /* empty */ }
+    if ((pc >> 32) != 0) {
+        // block until room in FIFO
+        while (*stimulus == 0) { /* empty */ }
 
-    // write the first 32 bits
-    *stimulus = (uint32_t)pc;
+        // write the first 32 bits, set bit 0 to indicate 64 bit address
+        *stimulus = (uint32_t)pc | 1;
 
-    if ((sizeof(void*) * 8) > 32) {
     	// block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
-        // write the second 32 bits - add support for > 32 bit PCs later
+        // write the second 32 bits
         *stimulus = (uint32_t)(pc >> 32);
+    }
+    else {
+        // block until room in FIFO
+        while (*stimulus == 0) { /* empty */ }
+
+        // write 32 bit pc
+        *stimulus = (uint32_t)pc;
     }
 
     int perfCntrIndex = 0;

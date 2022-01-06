@@ -1478,11 +1478,9 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 //	printf("absPath: %s\n",absPath);
 }
 
-PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,int addrBits,uint32_t channel,uint32_t marker,uint32_t freq)
+PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t channel,uint32_t marker,uint32_t freq)
 {
 	status = TraceDqr::DQERR_OK;
-
-	addrSize = addrBits;
 
 	perfChannel = channel;
 	markerValue = marker;
@@ -1807,8 +1805,8 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			else {
 				// should be an instruction pointer
 
-				if (addrSize > 32) {
-					savedLow32[coreId] = data;
+				if (data & 1) {
+					savedLow32[coreId] = data ^ 1;
 					state[coreId] = perfStateGetAddrH;
 				}
 				else {
@@ -5043,10 +5041,7 @@ TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue)
 		return TraceDqr::DQERR_ERR;
 	}
 
-	int addrSize;
-	addrSize = getAddressSize();
-
-	perfConverter = new PerfConverter(efName,rtdName,disassembler,1 << srcbits,addrSize,perfChannel,markerValue,freq);
+	perfConverter = new PerfConverter(efName,rtdName,disassembler,1 << srcbits,perfChannel,markerValue,freq);
 
 	status = perfConverter->getStatus();
 	if (status != TraceDqr::DQERR_OK) {

@@ -479,7 +479,7 @@ private:
 
 class PerfConverter {
 public:
-	PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,int addrBits,uint32_t channel,uint32_t marker,uint32_t freq);
+	PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t channel,uint32_t marker,uint32_t freq);
 	~PerfConverter();
 
 	TraceDqr::DQErr processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,uint32_t addr,uint32_t data,bool &consumed);
@@ -539,7 +539,6 @@ private:
 	TraceDqr::DQErr status;
 
 	uint32_t frequency;
-	int addrSize;
 
 	int perfFDs[pt_numPerfTypes];
 	int perfFD;
