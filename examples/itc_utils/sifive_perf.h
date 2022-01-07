@@ -12,7 +12,7 @@
 
 #define PERF_CORES_ALL (numCores)
 
-int perfInit(int num_cores,int num_funnels);
+int perfInit(int num_cores,int num_funnels,unsigned long long timerFreq);
 int perfTimerISRInit(int core,int interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt);
 int perfWriteCntrs();
 int perfResetCntr(int hpm_counter, struct metal_cpu *cpu);

@@ -1,7 +1,6 @@
 
 #include "sifive_trace.h"
 #include "sifive_perf.h"
-#include "itc_utils.h"
 
 #include <metal/cpu.h>
 #include <metal/hpm.h>
@@ -31,12 +30,14 @@ typedef struct {
     uint32_t teSinkBase;
     uint32_t teSinkBaseH;
     uint32_t teSinkLimit;
+    uint32_t perfCntrMask;
+    int      itcChannel;
 } perf_settings_t;
 
 static int numCores;
 static int numFunnels;
 
-//extern volatile int intr_count; // remove
+static unsigned long long timerFreq;
 
 extern struct TraceRegMemMap volatile * const tmm[];
 //extern struct CaTraceRegMemMap volatile * const cmm[];
@@ -239,10 +240,12 @@ int perfResetCntr(int hpm_counter, struct metal_cpu *cpu)
 	return 1;
 }
 
-int perfInit(int num_cores,int num_funnels)
+int perfInit(int num_cores,int num_funnels,unsigned long long _timerFreq)
 {
     numCores = num_cores;
     numFunnels = num_funnels;
+
+    timerFreq = _timerFreq;
 
     return 0;
 }
@@ -260,6 +263,15 @@ static int perfCounterInit(int core,perf_settings_t *settings)
     if (settings == NULL) {
         return 1;
     }
+
+    // set channel pairing
+
+    int rc;
+
+	rc = perfSetChannel(settings->perfCntrMask,settings->itcChannel);
+	if (rc != 0) {
+		return 1;
+	}
 
     // reset trace encoder
 
@@ -442,8 +454,6 @@ static void perfTimerHandler(int id,void *data)
     int hartID;		// use hartID as CPU index
     struct metal_cpu *cpu;
 
-//    intr_count += 1;
-
     cpu = (struct metal_cpu *)data;
 
     unsigned long long pc;
@@ -567,7 +577,8 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
         return 1;
     }
 
-    interval = timebase * _interval / 1000000000;
+//    interval = timebase * _interval / 1000000;
+    interval = timerFreq * _interval / 1000000;
 
     struct metal_interrupt *cpu_intr;
 
@@ -612,11 +623,6 @@ static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntr
     if (metal_interrupt_enable(cpu_intr, 0) == -1) {
         return 1;
     }
-
-	rc = perfSetChannel(perfCntrMask,itcChannel);
-	if (rc != 0) {
-		return 1;
-	}
 
 	return 0;
 }
@@ -663,6 +669,9 @@ int perfManualInit(int core,uint32_t counterMask,int itcChannel,int stopOnWrap,i
     settings.teSinkBase = 0;
     settings.teSinkBaseH = 0;
     settings.teSinkLimit = 0;
+
+    settings.perfCntrMask = counterMask;
+    settings.itcChannel = itcChannel;
 
     int rc;
 
@@ -711,6 +720,9 @@ int perfTimerISRInit(int core,int interval,uint32_t counterMask,int itcChannel,i
     settings.teSinkBase = 0;
     settings.teSinkBaseH = 0;
     settings.teSinkLimit = 0;
+
+    settings.perfCntrMask = counterMask;
+    settings.itcChannel = itcChannel;
 
     int rc;
 
