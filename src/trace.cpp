@@ -1667,7 +1667,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 
 	if (perfFDs[cntrIndex] < 0) {
 		char tmpBuff[64];
-		sprintf(tmpBuff,"perfchannel%d",cntrIndex);
+		sprintf(tmpBuff,"perfcounter%d",cntrIndex);
 		sprintf(msgBuff,perfNameGen,tmpBuff);
 
 #ifdef WINDOWS
