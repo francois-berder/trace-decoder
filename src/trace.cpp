@@ -1478,15 +1478,16 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 //	printf("absPath: %s\n",absPath);
 }
 
-PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t channel,uint32_t marker,uint32_t freq)
+PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t channel,uint32_t marker,uint32_t funcMarker,uint32_t freq)
 {
 	status = TraceDqr::DQERR_OK;
 
 	perfChannel = channel;
 	markerValue = marker;
+	funcMarkerValue = funcMarker;
 
 	for (int i = 0; i < (int)(sizeof state / sizeof state[0]); i++) {
-		state[i] = perfStateStart;
+		state[i] = perfStateSync;
 	}
 
 	for (int i = 0; i < (int)(sizeof cntrMaskIndex / sizeof cntrMaskIndex[0]); i++) {
@@ -1660,6 +1661,130 @@ TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,Trac
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr PerfConverter::emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS csAddr)
+{
+	char msgBuff[512];
+	int n;
+
+	if (perfFDs[pt_fnIndex] < 0) {
+		sprintf(msgBuff,perfNameGen,"callret");
+
+#ifdef WINDOWS
+		perfFDs[pt_fnIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		perfFDs[pt_fnIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (perfFDs[pt_fnIndex] < 0) {
+			printf("Error: PerfConverter::emitPerfFnEntry(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		write(perfFDs[pt_fnIndex],elfNamePath,strlen(elfNamePath));
+	}
+
+	if ((perfFDs[pt_fnIndex] >= 0) || (perfFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n" - 1;
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(fnAddr,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Func Enter] [Called From 0x%08llx]",core,ts,fnAddr,csAddr);
+
+		if (perfFD >= 0) {
+			write(perfFD,msgBuff,n);
+			write(perfFD,fileInfoBuff,f);
+		}
+
+		if (perfFDs[pt_fnIndex] >= 0) {
+			write(perfFDs[pt_fnIndex],msgBuff,n);
+			write(perfFDs[pt_fnIndex],fileInfoBuff,f);
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS csAddr)
+{
+	char msgBuff[512];
+	int n;
+
+	if (perfFDs[pt_fnIndex] < 0) {
+		sprintf(msgBuff,perfNameGen,"callret");
+
+#ifdef WINDOWS
+		perfFDs[pt_fnIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		perfFDs[pt_fnIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (perfFDs[pt_fnIndex] < 0) {
+			printf("Error: PerfConverter::emitPerfFnExit(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		write(perfFDs[pt_fnIndex],elfNamePath,strlen(elfNamePath));
+	}
+
+	if ((perfFDs[pt_fnIndex] >= 0) || (perfFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n" - 1;
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(fnAddr,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Func Exit] [Returning to 0x%08llx]",core,ts,fnAddr,csAddr);
+
+		if (perfFD >= 0) {
+			write(perfFD,msgBuff,n);
+			write(perfFD,fileInfoBuff,f);
+		}
+
+		if (perfFDs[pt_fnIndex] >= 0) {
+			write(perfFDs[pt_fnIndex],msgBuff,n);
+			write(perfFDs[pt_fnIndex],fileInfoBuff,f);
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint64_t cntrVal)
 {
 	char msgBuff[512];
@@ -1796,11 +1921,33 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 		return TraceDqr::DQERR_OK;
 	}
 
+//	printf("--> processITCPerf(): data: 0x%08x address: 0x%08x state:%d core:%d\n",data,addr,state[coreId],coreId);
+
 	while (!consumed) {
 		switch (state[coreId]) {
+		case perfStateSync:
+//			printf("state sync\n");
+			if (data == markerValue) {
+				state[coreId] = perfStateStart;
+			}
+			else if (data == funcMarkerValue) {
+				state[coreId] = perfStateFuncStart;
+			}
+			else {
+				consumed = true;
+			}
+			break;
+
+		// states for timer and manual perf data parsing
+
 		case perfStateStart:
+//			printf("state start\n");
 			if (data == markerValue) {
 				state[coreId] = perfStateGetMarkerMask;
+				consumed = true;
+			}
+			else if (data == funcMarkerValue) {
+				state[coreId] = perfStateSync;
 			}
 			else {
 				// should be an instruction pointer
@@ -1828,9 +1975,8 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 						state[coreId] = perfStateStart; // already in this state, but won't hurt
 					}
 				}
+				consumed = true;
 			}
-
-			consumed = true;
 			break;
 		case perfStateGetAddrH:
 			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
@@ -1961,7 +2107,284 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 
 			consumed = true;
 			break;
+
+		// states for function entry/exit parsing
+
+		case perfStateFuncStart:
+//			printf("state func start: 0x%08x\n",data);
+
+			if (data == funcMarkerValue) {
+				state[coreId] = perfStateFuncGetMarkerMask;
+				consumed = true;
+			}
+			else if (data == markerValue) {
+				state[coreId] = perfStateSync;
+			}
+			else if ((addr & 0x3) == 3) {
+				if (data == 'C') {
+					state[coreId] = perfStateFuncCallStart;
+				}
+				else {
+					state[coreId] = perfStateError;
+				}
+				consumed = true;
+			}
+			else {
+				state[coreId] = perfStateFuncReturnStart;
+			}
+			break;
+		case perfStateFuncCallStart:
+//			printf("state perfStatFuncCallstart: %08x\n",data);
+			if (data & 1) {
+				savedLow32[coreId] = data ^ 1;
+				state[coreId] = perfStateFuncCallGetfnAddrH;
+			}
+			else {
+				lastAddress[coreId] = data;
+				state[coreId] = perfStateFuncGetCallSite;
+			}
+			consumed = true;
+			break;
+		case perfStateFuncCallGetfnAddrH:
+//			printf("state perfStateFuncCallGetfnAddrH: 0x%08x\n",data);
+			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
+			state[coreId] = perfStateFuncGetCallSite;
+			consumed = true;
+			break;
+		case perfStateFuncGetCallSite:
+//			printf("state perfStateFuncGetCallSite: 0x%08x\n",data);
+			if (data & 1) {
+				savedLow32[coreId] = data ^ 1;
+				state[coreId] = perfStateFuncGetCallSiteH;
+			}
+			else {
+				emitPerfFnEntry(coreId,ts,lastAddress[coreId],(uint64_t)data);
+
+				if (cntrMask[coreId] != 0) {
+					state[coreId] = perfStateFuncGetCntr;
+					cntrMaskIndex[coreId] = 0;
+
+					// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+						cntrMaskIndex[coreId] += 1;
+					}
+				}
+				else {
+					state[coreId] = perfStateFuncStart;
+				}
+			}
+			consumed = true;
+			break;
+		case perfStateFuncGetCallSiteH:
+//			printf("state perfStateFuncGetCallSiteH: 0x%08x\n",data);
+			emitPerfFnEntry(coreId,ts,lastAddress[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+
+			if (cntrMask[coreId] != 0) {
+				state[coreId] = perfStateFuncGetCntr;
+				cntrMaskIndex[coreId] = 0;
+
+				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+			}
+			else {
+				state[coreId] = perfStateFuncStart;
+			}
+			consumed = true;
+			break;
+		case perfStateFuncReturnStart:
+//			printf("state perfStateFuncReturnStart: 0x%08x\n",data);
+			if (data & 1) {
+				savedLow32[coreId] = data ^ 1;
+				state[coreId] = perfStateFuncReturnStartH;
+			}
+			else {
+				lastAddress[coreId] = data;
+				state[coreId] = perfStateFuncReturnGetCallSite;
+			}
+			consumed = true;
+			break;
+		case perfStateFuncReturnStartH:
+//			printf("state perfStateFuncReturnStartH: 0x%08x\n",data);
+
+			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
+			state[coreId] = perfStateFuncReturnGetCallSite;
+			consumed = true;
+			break;
+		case perfStateFuncReturnGetCallSite:
+//			printf("state perfStateFuncReturnGetCallSite: 0x%08x\n",data);
+
+			if (data & 1) {
+				savedLow32[coreId] = data ^ 1;
+				state[coreId] = perfStateFuncReturnGetCallSiteH;
+			}
+			else {
+				emitPerfFnExit(coreId,ts,lastAddress[coreId],(uint64_t)data);
+
+				if (cntrMask[coreId] != 0) {
+					state[coreId] = perfStateFuncGetCntr;
+					cntrMaskIndex[coreId] = 0;
+
+					// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+						cntrMaskIndex[coreId] += 1;
+					}
+				}
+				else {
+					state[coreId] = perfStateFuncStart;
+				}
+			}
+			consumed = true;
+			break;
+		case perfStateFuncReturnGetCallSiteH:
+//			printf("state perfStateFuncReturnGetCallSiteH: 0x%08x\n",data);
+
+			emitPerfFnExit(coreId,ts,lastAddress[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+
+			if (cntrMask[coreId] != 0) {
+				state[coreId] = perfStateFuncGetCntr;
+				cntrMaskIndex[coreId] = 0;
+
+				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+			}
+			else {
+				state[coreId] = perfStateFuncStart;
+			}
+			consumed = true;
+			break;
+		case perfStateFuncGetCntr:
+//			printf("state perfStateFuncGetCntr: 0x%08x\n",data);
+
+			if ((addr & 0x03) == 3) {
+				if (cntrValPending[coreId]) {
+					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+					cntrValPending[coreId] = false;
+				}
+
+				state[coreId] = perfStateFuncStart;
+			}
+			else if (addr & 0x3) {
+				// havea partial write - extention of previous write
+
+				if (cntrValPending[coreId] == false) {
+					state[coreId] = perfStateError;
+					return TraceDqr::DQERR_ERR;
+				}
+
+				emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+
+				cntrValPending[coreId] = false;
+
+				cntrMaskIndex[coreId] += 1;
+
+				while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+
+				if (cntrMaskIndex[coreId] >= 32) {
+					// out of counter defs, go to start state
+
+					state[coreId] = perfStateFuncStart;
+				}
+
+				consumed = true;
+			}
+			else {
+				// have a full write
+
+				if (cntrValPending[coreId]) { // flush pending, add new to pending
+					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+
+					cntrValPending[coreId] = false;
+
+					cntrMaskIndex[coreId] += 1;
+
+					while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+						cntrMaskIndex[coreId] += 1;
+					}
+
+					if (cntrMaskIndex[coreId] >= 32) {
+						// out of counter defs, go to start state
+
+						state[coreId] = perfStateFuncStart;
+
+						// don't return, just loop again and reprocess this value!! Leave consumed == false to make it happen
+					}
+					else {
+						savedLow32[coreId] = data;
+						cntrValPending[coreId] = true;
+
+						consumed = true;
+					}
+				}
+				else {
+					savedLow32[coreId] = data;
+					cntrValPending[coreId] = true;
+
+					consumed = true;
+				}
+			}
+			break;
+		case perfStateFuncGetMarkerMask:
+//			printf("state perfStateFuncGetMarkerMask: 0x%08x\n",data);
+
+			cntrMask[coreId] = data;
+			cntrMaskIndex[coreId] = 2;
+
+			if (cntrMask[coreId] < (1 << 2)) {
+				// no counter defs - goto start
+				state[coreId] = perfStateFuncStart;
+			}
+			else {
+				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+
+				state[coreId] = perfStateFuncGetCounterDefs;
+			}
+
+			emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
+
+			consumed = true;
+			break;
+		case perfStateFuncGetCounterDefs:
+//			printf("state perfStateFuncGetCounterDefs: 0x%08x\n",data);
+
+			// perf counter defs should be 64 bits, but it looks like the metal library only returns the lower
+			// 32 bits, so for now we treat them as 32 bits
+
+			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
+
+			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],data);
+
+			cntrMaskIndex[coreId] += 1;
+
+			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+				cntrMaskIndex[coreId] += 1;
+			}
+
+			if (cntrMaskIndex[coreId] >= 32) {
+				// out of counter defs, go to start state
+
+				state[coreId] = perfStateFuncStart;
+			}
+
+			consumed = true;
+			break;
+
 		case perfStateError:
+//			printf("state perfStateError: 0x%08x\n",data);
+
 			return TraceDqr::DQERR_ERR;
 		}
 	}
@@ -3394,6 +3817,7 @@ TraceSettings::TraceSettings()
 	itcPerfMask = 0;
 	itcPerfChannel = 6;
 	itcPerfMarkerValue = (uint32_t)(('p' << 24) | ('e' << 16) | ('r' << 8) | ('f' << 0));
+	itcPerfFuncMarkerValue = (uint32_t)(('f' << 24) | ('u' << 16) | ('n' << 8) | ('c' << 0));
 	cutPath = nullptr;
 	srcRoot = nullptr;
 	pathType = TraceDqr::PATH_TO_UNIX;
@@ -3521,6 +3945,13 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 				rc = propertyToITCPerfMarkerValue(value);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: TraceSettings::addSettings(): Could not set ITC perf marker value in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("trace.config.int.itc.perf.functionmarker",name) == 0) {
+				rc = propertyToITCPerfFuncMarkerValue(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set ITC perf funciton marker value in settings\n");
 					return rc;
 				}
 			}
@@ -3838,6 +4269,21 @@ TraceDqr::DQErr TraceSettings::propertyToITCPerfMarkerValue(char *value)
 		char *endp;
 
 		itcPerfMarkerValue = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToITCPerfFuncMarkerValue(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		itcPerfFuncMarkerValue = strtol(value,&endp,0);
 
 		if (endp == value) {
 			return TraceDqr::DQERR_ERR;
@@ -4786,11 +5232,13 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		int perfChannel;
 		uint32_t markerValue;
+		uint32_t funcMarkerValue;
 
 		perfChannel = settings.itcPerfChannel;
 		markerValue = settings.itcPerfMarkerValue;
+		funcMarkerValue = settings.itcPerfFuncMarkerValue;
 
-		rc = enablePerfConverter(perfChannel,markerValue);
+		rc = enablePerfConverter(perfChannel,markerValue,funcMarkerValue);
 		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 			return status;
@@ -5030,7 +5478,7 @@ TraceDqr::DQErr Trace::enableCTFConverter(int64_t startTime,char *hostName)
 	return status;
 }
 
-TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue)
+TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue,uint32_t funcMarkerValue)
 {
 	if (perfConverter != nullptr) {
 		delete perfConverter;
@@ -5041,7 +5489,7 @@ TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue)
 		return TraceDqr::DQERR_ERR;
 	}
 
-	perfConverter = new PerfConverter(efName,rtdName,disassembler,1 << srcbits,perfChannel,markerValue,freq);
+	perfConverter = new PerfConverter(efName,rtdName,disassembler,1 << srcbits,perfChannel,markerValue,funcMarkerValue,freq);
 
 	status = perfConverter->getStatus();
 	if (status != TraceDqr::DQERR_OK) {

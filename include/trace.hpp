@@ -338,6 +338,7 @@ public:
 	TraceDqr::DQErr propertyToITCPerfEnable(char *value);
 	TraceDqr::DQErr propertyToITCPerfChannel(char *value);
 	TraceDqr::DQErr propertyToITCPerfMarkerValue(char *value);
+	TraceDqr::DQErr propertyToITCPerfFuncMarkerValue(char *value);
 	TraceDqr::DQErr propertyToITCPerfMask(char *value);
 	TraceDqr::DQErr propertyToSrcRoot(char *value);
 	TraceDqr::DQErr propertyToSrcCutPath(char *value);
@@ -378,7 +379,8 @@ public:
 
 	bool itcPerfEnable;
 	int itcPerfChannel;
-	int itcPerfMarkerValue;
+	uint32_t itcPerfMarkerValue;
+	uint32_t itcPerfFuncMarkerValue;
 	uint32_t itcPerfMask;
 
 private:
@@ -479,7 +481,7 @@ private:
 
 class PerfConverter {
 public:
-	PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t channel,uint32_t marker,uint32_t freq);
+	PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t channel,uint32_t marker,uint32_t funcMarker,uint32_t freq);
 	~PerfConverter();
 
 	TraceDqr::DQErr processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,uint32_t addr,uint32_t data,bool &consumed);
@@ -488,11 +490,24 @@ public:
 
 private:
 	enum perfConverterState {
+		perfStateSync,
 		perfStateStart,
 		perfStateGetMarkerMask,
 		perfStateGetAddrH,
 		perfStateGetCntr,
 		perfStateGetCounterDefs,
+		perfStateFuncStart,
+		perfStateFuncGetMarkerMask,
+		perfStateFuncCallStart,
+		perfStateFuncReturnStart,
+		perfStateFuncReturnStartH,
+		perfStateFuncReturnGetCallSite,
+		perfStateFuncReturnGetCallSiteH,
+		perfStateFuncCallGetfnAddrH,
+		perfStateFuncGetCallSite,
+		perfStateFuncGetCallSiteH,
+		perfStateFuncGetCntr,
+		perfStateFuncGetCounterDefs,
 		perfStateError,
 	};
 
@@ -533,6 +548,7 @@ private:
 		pt_30Index,
 		pt_31Index,
 		pt_addressIndex,
+		pt_fnIndex,
 		pt_numPerfTypes
 	};
 
@@ -553,6 +569,7 @@ private:
 	perfConverterState state[DQR_MAXCORES];
 
 	uint32_t markerValue;
+	uint32_t funcMarkerValue;
 	uint32_t cntrMaskIndex[DQR_MAXCORES];
 	uint32_t cntrMask[DQR_MAXCORES];
 	bool     cntrValPending[DQR_MAXCORES];
@@ -560,6 +577,8 @@ private:
 	TraceDqr::ADDRESS lastAddress[DQR_MAXCORES];
 
 	TraceDqr::DQErr emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc);
+	TraceDqr::DQErr emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS callSite);
+	TraceDqr::DQErr emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS callSite);
 	TraceDqr::DQErr emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint64_t cntrVal);
 	TraceDqr::DQErr emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,uint32_t cntrMask);
 	TraceDqr::DQErr emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint32_t cntrDef);
