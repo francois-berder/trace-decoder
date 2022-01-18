@@ -1707,7 +1707,7 @@ TraceDqr::DQErr PerfConverter::emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,T
 				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
 			}
 		}
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Func Enter] [Called From 0x%08llx]",core,ts,fnAddr,csAddr);
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Func Enter at 0x%08llx] [Called From 0x%08llx]",core,ts,fnAddr,csAddr);
 
 		if (perfFD >= 0) {
 			write(perfFD,msgBuff,n);
@@ -1769,7 +1769,7 @@ TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,Tr
 				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
 			}
 		}
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Func Exit] [Returning to 0x%08llx]",core,ts,fnAddr,csAddr);
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Func Exit] [Func at 0x%08llx] [Returning to 0x%08llx]",core,ts,fnAddr,csAddr);
 
 		if (perfFD >= 0) {
 			write(perfFD,msgBuff,n);
