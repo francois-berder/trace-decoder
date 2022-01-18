@@ -2065,9 +2065,9 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			break;
 		case perfStateGetMarkerMask:
 			cntrMask[coreId] = data;
-			cntrMaskIndex[coreId] = 2;
+			cntrMaskIndex[coreId] = 3; // skip over cntr 0 - 2; they are fixed function and not programmable
 
-			if (cntrMask[coreId] < (1 << 2)) {
+			if (cntrMask[coreId] < (1 << 3)) {
 				// no counter defs - goto start
 				state[coreId] = perfStateStart;
 			}
@@ -2337,9 +2337,9 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 //			printf("state perfStateFuncGetMarkerMask: 0x%08x\n",data);
 
 			cntrMask[coreId] = data;
-			cntrMaskIndex[coreId] = 2;
+			cntrMaskIndex[coreId] = 3;  // skip over cntr 0 - 2; they are fixed function and not programmable
 
-			if (cntrMask[coreId] < (1 << 2)) {
+			if (cntrMask[coreId] < (1 << 3)) {
 				// no counter defs - goto start
 				state[coreId] = perfStateFuncStart;
 			}
