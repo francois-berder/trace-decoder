@@ -14,7 +14,7 @@
 #define PERF_MARKER_VAL		(('p' << 24) | ('e' << 16) | ('r' << 8) | ('f' << 0))
 #define PERF_FUNCMARKER_VAL (('f' << 24) | ('u' << 16) | ('n' << 8) | ('c' << 0))
 
-int perfInit(int num_cores,int num_funnels,unsigned long long timerFreq);
+int perfInit(int num_cores,int num_funnels);
 int perfTimerISRInit(int interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt);
 int perfManualInit(uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt);
 int perfFuncEntryExitInit(uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt);

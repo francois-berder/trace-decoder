@@ -44,8 +44,6 @@ typedef enum {
 static int numCores;
 static int numFunnels;
 
-static unsigned long long timerFreq;
-
 extern struct TraceRegMemMap volatile * const tmm[];
 extern struct TfTraceRegMemMap volatile * const fmm;
 
@@ -298,7 +296,7 @@ __attribute__((no_instrument_function)) int perfResetCntrs(uint32_t cntrMask)
 	return 1;
 }
 
-__attribute__((no_instrument_function)) int perfInit(int num_cores,int num_funnels,unsigned long long _timerFreq)
+__attribute__((no_instrument_function)) int perfInit(int num_cores,int num_funnels)
 {
 	timerTracingEnabled = 0;
 	manualTracingEnabled = 0;
@@ -307,8 +305,6 @@ __attribute__((no_instrument_function)) int perfInit(int num_cores,int num_funne
 
     numCores = num_cores;
     numFunnels = num_funnels;
-
-    timerFreq = _timerFreq;
 
     for (int i = 0; i < sizeof perfStimulusCPUPairing / sizeof perfStimulusCPUPairing[0]; i++) {
     	perfStimulusCPUPairing[i] = NULL;
@@ -794,18 +790,17 @@ __attribute__((no_instrument_function)) static int perfTimerInit(int core,int _i
 
     cachedCPU[core] = cpu;
 
-    unsigned long long timeval;
-    unsigned long long timebase;
+    unsigned long long mtimeval;
+    unsigned long long mtimebase;
 
-    timeval = metal_cpu_get_timer(cpu);
-    timebase = metal_cpu_get_timebase(cpu);
+    mtimeval = metal_cpu_get_mtime(cpu);
+    mtimebase = metal_cpu_get_mtime_timebase(cpu);
 
-    if ((timeval == 0) || (timebase == 0)) {
+    if ((mtimeval == 0) || (mtimebase == 0)) {
         return 1;
     }
 
-//    interval = timebase * _interval / 1000000;
-    interval = timerFreq * _interval / 1000000;
+    interval = mtimebase * _interval / 1000000;
 
     struct metal_interrupt *cpu_intr;
 
