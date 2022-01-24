@@ -4944,6 +4944,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	ctf          = nullptr;
 	eventConverter = nullptr;
 	eventFilterMask = 0;
+	perfConverter = nullptr;
 
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -5341,6 +5342,11 @@ void Trace::cleanUp()
 	if (eventConverter != nullptr) {
 		delete eventConverter;
 		eventConverter = nullptr;
+	}
+
+	if (perfConverter != nullptr) {
+		delete perfConverter;
+		perfConverter = nullptr;
 	}
 }
 
