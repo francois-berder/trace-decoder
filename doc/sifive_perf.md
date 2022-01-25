@@ -219,6 +219,8 @@ Support for programming what the HPM counters 3 and up actually count can be don
 
 ### Current Limitations
 
+Freedom Studio (and perhaps other debuggers) alter the trace encoder and funnel registers on break/resume. It is recommended you do not set any breakpoints between the calls to the performance library init routines until after you have executed the code you wish to collect performance data for.
+
 Stack size needs to be at least 800 bytes. Check the linker script to make sure. If odd behavior is seen, try increasing the stack size further. The amount needed will depend on the actual program being traced.
 
 The current SiFive performance library has the following known limitations:
