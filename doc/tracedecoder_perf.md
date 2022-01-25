@@ -12,13 +12,13 @@ The sifive_perf library will embed selected performance data into the trace usin
 
 The SiFive Perf Library allows collecting address and timestamp information, as well as up to 32 additional HPM performance counter registers. Address/timestamp information is always collected. The programmer chooses which performance counters to also collect.
 
-When extracting performance data from a trace with the trace decoder, a text file will be created in the same folder as the trace file (.rtd file) with the same base name as the elf file, and the extension \`.perf'. This file will contain all data collected. Additionally, a folder in the same directory as the trace file named \`perf' will be created, and it will be populated with files; one for each type of performance data found in the trace file. The base name for each file in the perf folder will be the same as the elf file, and each file will have an extension that identifies what type of performance data it contains. A list of all possible extentions and the performance data they contain is below.
+When extracting performance data from a trace with the trace decoder, a text file will be created in the same folder as the trace file (.rtd file) with the same base name as the elf file, and the extension \`.perf'. This file will contain all data collected. Additionally, a folder in the same directory as the trace file named \`perf' will be created, and it will be populated with files; one for each type of performance data found in the trace file. The base name for each file in the perf folder will be the same as the elf file, and each file will have an extension that identifies what type of performance data it contains. A list of all possible extensions and the performance data they contain is below.
 
-| Extension | Descripition |
-| :-------- | :----------- |
+| Extension | Description |
+| :-------- | :---------- |
 | address   | Address and timestamp information when using the manual or timer ISR based performance data collection |
 | callret   | Function entry/exit information. Includes function address and where called from for both function entry and exit. Created if the trace was created using function entry/exit instrumentation |
-| perfcoutnerN | Values of the HPM register N, where N is 0 - 31. Counters 0 - 2 are fixed function. Coutners 3 - 31 can be programmed. The programming of the event registers for each counter collected is also provided |
+| perfcoutnerN | Values of the HPM register N, where N is 0 - 31. Counters 0 - 2 are fixed function. Counters 3 - 31 can be programmed. The programming of the event registers for each counter collected is also provided |
 
 In addition to the performance counter information, there will be information in each file specifying the path to the elf file used to generate the trace and how the performance counter was programmed. The aggregate performance data file will also contain a bit mask specifying what performance counters were collected. The bit mask is 32 bits, and each non-zero bit specifies that performance counter was collected in the trace.
 
@@ -57,11 +57,11 @@ Each line after the elf file name/path starts with the core number the data was 
 | [Perf_Cntr_Mask] | The mask specifying which HPM performance counters were collected |
 | [Perf Cntr Def] | The programming of the specified HPM performance counter|
 | [Address] | The address associated with the timestamp and any additional data |
-| [Func Enter at 0xaddress] | Function entry instrumenation. Has function address and address of where it was called from |
+| [Func Enter at 0xaddress] | Function entry instrumentation. Has function address and address of where it was called from |
 | [Func Exit] | Function exit instrumentation. Has address of function, and address of where it was called from |
 | [Perf Cntr]| HPM performance counter information is being reported. The [Index=n] field specifies which counter the data is for. The [Value=nnnn] field gives the value of the performance counter in decimal. All counts are absolute; they are not relative to the last time that performance counter value was given |
 
-All lines with an associated address that can be resolved to a source file and line by the trace decoder will end with fl:sourcefile:sourceline information. Addtional information (such as the index of the performance counter) may be present for some types of lines.
+All lines with an associated address that can be resolved to a source file and line by the trace decoder will end with fl:sourcefile:sourceline information. Additional information (such as the index of the performance counter) may be present for some types of lines.
 
 The individual performance counter text files will have a subset of the information; that which only pertains to that HPM performance counters.
 
