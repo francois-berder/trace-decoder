@@ -15,7 +15,7 @@ This will cause both Aux Access Write messages and Data Acquisition messages to 
 
 #### Custom itcprintf()/itcputs() Function
 
-One method of sending printed output to the ITC 0 stimulus register is to use custom itcprintf() and itcputs() functions. These functions take the normal printf() and puts() argument list but sends all output to the ITC 0 stimulus register. Example itcprintf() and itcpus() are in the examples directory. Add them to your project either by cutting and pasting the source to your source, or copying the files into your project and adding them to the project.
+One method of sending printed output to the ITC 0 stimulus register is to use custom itcprintf() and itcputs() functions. These functions take the normal printf() and puts() argument list but sends all output to the ITC 0 stimulus register. Example itcprintf() and itcputs() are in the examples directory. Add them to your project either by cutting and pasting the source to your source, or copying the files into your project and adding them to the project.
 
 For example, if your program had a call to itcprintf() as in:
 
@@ -31,7 +31,7 @@ Among all the other trace output from dqr would be the line:
 
 #### Redirected stdio
 
-The other mechanism for getting print data in the trace message stream is to redirect all stdio output to the ITC 0 stimulus registers. To do that, you must have a bsp for your processor that was build with redirected stdout.
+The other mechanism for getting print data in the trace message stream is to redirect all stdio output to the ITC 0 stimulus registers. To do that, you must have a bsp for your processor that was built with redirected stdout.
 
 To see if your bsp has stdout redirected, you can check the design.dst file in the bsp directory for the project processor. There should be a chosen record in the design.dts file, something like:
 
@@ -167,7 +167,7 @@ stdout-path="/soc/trace-encoder-0@20007000:115200";
 
 The address after the ```@``` is the base address for the device, and should match that for the trace-encoder found elsewhere in the file. The number after the ```:``` is the baud rate. It is not needed for the trace-encoder device, but is needed for the design.dts file to be parsed correctly.
 
-If your dts file does not have a chosen record, go ahead and build the bsp using the update-targets.sh script as directed below. This will amoung other things, create a chosen record that you can edit. After building the bsp, go back and edit the chosen recored and rebuild the bsp. Your dts file will not have a chosen record if it has never been used to build a bsp, such as when they are distributed with a mcs or bit file.
+If your dts file does not have a chosen record, go ahead and build the bsp using the update-targets.sh script as directed below. This will, among other things, create a chosen record that you can edit. After building the bsp, go back and edit the chosen record and rebuild the bsp. Your dts file will not have a chosen record if it has never been used to build a bsp, such as when they are distributed with a mcs or bit file.
 
 If the dts file does not have a trace-encoder record, it does not support redirection of stdout to the ITC, and redirection cannot be done.
 
@@ -212,9 +212,9 @@ For the newly created project, all output sent to stdout should now be redirecte
 
 #### Limitations
 
-The example code for ITCPrintf() inherits any limitations imposed on the normal printf() function because it relies on vsnprintf() to do the conversion from the argument list to text. The vsnprintf()/printf() functions do not support floating point or 64 bit integer display.
+The example code for itcprintf() inherits any limitations imposed on the normal printf() function because it relies on vsnprintf() to do the conversion from the argument list to text. The vsnprintf()/printf() functions do not support floating point or 64 bit integer display.
 
-#### Mutli-core and ITC Printing
+#### Multi-Core and ITC Printing
 
 Currently both mechanisms to capture print data in the trace message stream print only to core 0's ITC 0. This means if doing multi-core tracing, all ITC print messages will show up at core 0 ITC Prints, as in:
 
