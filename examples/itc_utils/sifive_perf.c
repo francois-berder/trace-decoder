@@ -132,14 +132,20 @@ __attribute__((no_instrument_function)) static void perfEmitMarker(int core,uint
         int counter = 3;
         while (tmpPerfCntrMask != 0) {
         	if (tmpPerfCntrMask & 1) {
-        		uint32_t mask;
-        		mask = metal_hpm_get_event(cpu, counter);
+        		uint64_t mask;
+        		mask = (uint64_t)metal_hpm_get_event(cpu, counter);
 
         	    // block until room in FIFO
         	    while (*stimulus == 0) { /* empty */ }
 
         	    // write the first counter mask
-        	    *stimulus = mask;
+        	    *stimulus = (uint32_t)mask;
+
+        	    // block until room in FIFO
+        	    while (*stimulus == 0) { /* empty */ }
+
+        	    // write the first counter mask
+        	    *stimulus = (uint32_t)(mask >> 32);
         	}
 
         	tmpPerfCntrMask >>= 1;
@@ -239,7 +245,12 @@ __attribute__((no_instrument_function)) int perfWriteCntrs()
         if (perfCntrMask & 1) {
             unsigned long long perfCntrVal;
 
-            perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
+            if (perfCntrIndex == 1) {
+            	perfCntrVal = metal_cpu_get_mtime(cpu);
+            }
+            else {
+            	perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
+            }
 
             // block until room in FIFO
             while (*stimulus == 0) { /* empty */ }
@@ -329,6 +340,12 @@ __attribute__((no_instrument_function)) static int perfCounterInit(int core,perf
 
     if (settings == NULL) {
         return 1;
+    }
+
+    if (numFunnels > 1) {
+    	// currently don't support more than one funnel (multi-cluster)
+
+    	return 1;
     }
 
     // set channel pairing
@@ -494,7 +511,12 @@ __attribute__((no_instrument_function)) static void perfTimerHandler(int id,void
 	        if (perfCntrMask & 1) {
 	            unsigned long long perfCntrVal;
 
-	            perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
+	            if (perfCntrIndex == 1) {
+	            	perfCntrVal = metal_cpu_get_mtime(cpu);
+	            }
+	            else {
+	            	perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
+	            }
 
 	            // block until room in FIFO
 	            while (*stimulus == 0) { /* empty */ }
@@ -624,7 +646,12 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_enter(void *this
         if (perfCntrMask & 1) {
             unsigned long long perfCntrVal;
 
-            perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
+            if (perfCntrIndex == 1) {
+            	perfCntrVal = metal_cpu_get_mtime(cpu);
+            }
+            else {
+            	perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
+            }
 
             // block until room in FIFO
             while (*stimulus == 0) { /* empty */ }
@@ -741,7 +768,12 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_exit(void *this_
         if (perfCntrMask & 1) {
             unsigned long long perfCntrVal;
 
-            perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
+            if (perfCntrIndex == 1) {
+            	perfCntrVal = metal_cpu_get_mtime(cpu);
+            }
+            else {
+            	perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
+            }
 
             // block until room in FIFO
             while (*stimulus == 0) { /* empty */ }

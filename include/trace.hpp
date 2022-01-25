@@ -496,6 +496,7 @@ private:
 		perfStateGetAddrH,
 		perfStateGetCntr,
 		perfStateGetCounterDefs,
+		perfStateGetCounterDefsH,
 		perfStateFuncStart,
 		perfStateFuncGetMarkerMask,
 		perfStateFuncCallStart,
@@ -508,6 +509,7 @@ private:
 		perfStateFuncGetCallSiteH,
 		perfStateFuncGetCntr,
 		perfStateFuncGetCounterDefs,
+		perfStateFuncGetCounterDefsH,
 		perfStateError,
 	};
 
@@ -581,7 +583,7 @@ private:
 	TraceDqr::DQErr emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS callSite);
 	TraceDqr::DQErr emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint64_t cntrVal);
 	TraceDqr::DQErr emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,uint32_t cntrMask);
-	TraceDqr::DQErr emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint32_t cntrDef);
+	TraceDqr::DQErr emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint64_t cntrDef);
 };
 
 // class EventConverter: class to convert nexus messages to Event files

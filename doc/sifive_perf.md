@@ -180,9 +180,7 @@ Marker messages provide information to the trace decoder on what HPM counters ar
 
 Following the marker identification will be a second 32 bit data acquisition message that contains the counter mask. Non-zero bits in the mask give which HPM counters will be recorded.
 
-Following the counter mask will be a series of 0 to 29 data acquisition messages with the programming of any HPM counters from counter 3 and up that are being recorded. The programming for HPM counters 0, 1, and 2 is not provided in the marker counter definitions (if they are selected by the mask) because they are fixed-function and cannot be programmed.
-
-HPM performance counter configuration registers are 64 bits, but the current metal HPM routines only read the lower 32 bits. Because of this restriction, only the lower 32 bits are currently written into the marker messages. In the future all 64 bits will be written as two full 32 bit data acquisition messages.
+Following the counter mask will be a series of 0 to 58 data acquisition messages with the programming of any HPM counters from counter 3 and up that are being recorded. There will be two data acquistion messages for every HPM counter from 3 to 31 selected in the counter mask (each configuration register is 64 bits). The programming for HPM counters 0, 1, and 2 is not provided in the marker counter definitions (if they are selected by the mask) because they are fixed-function and cannot be programmed.
 
 Below is an example of the format for a timer ISR or manual marker written into the trace buffer. It assumes ITC channel 6 for performance data, and an HPM counter mask of 0x00000007. This marker will not contain any counter configuration data because only counters 0, 1, and 2 are being captured.
 

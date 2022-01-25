@@ -1866,7 +1866,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint32_t cntrDef)
+TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint64_t cntrDef)
 {
 	char msgBuff[512];
 	int n;
@@ -1893,7 +1893,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,i
 	}
 
 	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Perf Cntr Def] [Index=%d] [Def=0x%08x]\n",core,ts,cntrIndex,cntrDef);
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Perf Cntr Def] [Index=%d] [Def=0x%08llx]\n",core,ts,cntrIndex,cntrDef);
 
 		if (perfFD >= 0) {
 			write(perfFD,msgBuff,n);
@@ -2086,12 +2086,18 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateGetCounterDefs:
-			// perf counter defs should be 64 bits, but it looks like the metal library only returns the lower
-			// 32 bits, so for now we treat them as 32 bits
-
 			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
 
-			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],data);
+			savedLow32[coreId] = data;
+
+			state[coreId] = perfStateGetCounterDefsH;
+
+			consumed = true;
+			break;
+		case perfStateGetCounterDefsH:
+			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
+
+			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
 
 			cntrMaskIndex[coreId] += 1;
 
@@ -2360,12 +2366,18 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 		case perfStateFuncGetCounterDefs:
 //			printf("state perfStateFuncGetCounterDefs: 0x%08x\n",data);
 
-			// perf counter defs should be 64 bits, but it looks like the metal library only returns the lower
-			// 32 bits, so for now we treat them as 32 bits
+			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
+
+			savedLow32[coreId] = data;
+			state[coreId] = perfStateFuncGetCounterDefsH;
+			consumed = true;
+			break;
+		case perfStateFuncGetCounterDefsH:
+//			printf("state perfStateFuncGetCounterDefsH: 0x%08x\n",data);
 
 			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
 
-			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],data);
+			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
 
 			cntrMaskIndex[coreId] += 1;
 
