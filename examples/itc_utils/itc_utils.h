@@ -44,14 +44,4 @@ int itc_nls_print_i16(int channel, uint16_t data1, uint16_t data2);
 int itc_nls_print_i11(int channel, uint16_t data1, uint16_t data2, uint16_t data3);
 int itc_nls_print_i8(int channel, uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4);
 
-/*
- * Performance Counter ITC insertion functions. Pairs a CPU's performance counter to an ITC channel, and allows the
- * injection of the counters data to the trace file via itc_writes.
- */
-struct metal_cpu * init_pc();
-int set_pc_channel(int hpm_counter, int channel, struct metal_cpu *cpu);
-int inject_pc(int hpm_counter, struct metal_cpu *cpu);
-int reset_pc_counter(int hpm_counter, struct metal_cpu *cpu);
-
-
 #endif // ITC_UTILS_H
