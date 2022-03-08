@@ -495,8 +495,11 @@ private:
 		perfStateGetMarkerMask,
 		perfStateGetAddrH,
 		perfStateGetCntr,
-		perfStateGetCounterDefs,
-		perfStateGetCounterDefsH,
+		perfStateGetCounterType,
+		perfStateGetCounterCode,
+		perfStateGetCounterEventData,
+		perfStateGetCounterEventDataH,
+		perfStateGetCounterInfo,
 		perfStateFuncStart,
 		perfStateFuncGetMarkerMask,
 		perfStateFuncCallStart,
@@ -508,8 +511,11 @@ private:
 		perfStateFuncGetCallSite,
 		perfStateFuncGetCallSiteH,
 		perfStateFuncGetCntr,
-		perfStateFuncGetCounterDefs,
-		perfStateFuncGetCounterDefsH,
+		perfStateFuncGetCounterType,
+		perfStateFuncGetCounterCode,
+		perfStateFuncGetCounterEventData,
+		perfStateFuncGetCounterEventDataH,
+		perfStateFuncGetCounterInfo,
 		perfStateError,
 	};
 
@@ -575,6 +581,9 @@ private:
 	uint32_t cntrMaskIndex[DQR_MAXCORES];
 	uint32_t cntrMask[DQR_MAXCORES];
 	bool     cntrValPending[DQR_MAXCORES];
+	uint32_t cntrType[DQR_MAXCORES];
+	uint32_t cntrCode[DQR_MAXCORES];
+	uint64_t cntrEventData[DQR_MAXCORES];
 	uint32_t savedLow32[DQR_MAXCORES];
 	TraceDqr::ADDRESS lastAddress[DQR_MAXCORES];
 
@@ -583,7 +592,7 @@ private:
 	TraceDqr::DQErr emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS callSite);
 	TraceDqr::DQErr emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint64_t cntrVal);
 	TraceDqr::DQErr emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,uint32_t cntrMask);
-	TraceDqr::DQErr emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint64_t cntrDef);
+	TraceDqr::DQErr emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint32_t cntrType,uint32_t cntrCode,uint64_t eventData,uint32_t cntrInfo);
 };
 
 // class EventConverter: class to convert nexus messages to Event files

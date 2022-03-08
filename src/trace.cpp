@@ -1502,6 +1502,14 @@ PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int 
 		cntrValPending[i] = false;
 	}
 
+	for (int i = 0; i < (int)(sizeof cntrCode / sizeof cntrCode[0]); i++) {
+		cntrCode[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof cntrEventData / sizeof cntrEventData[0]); i++) {
+		cntrEventData[i] = 0;
+	}
+
 	for (int i = 0; i < (int)(sizeof perfFDs / sizeof perfFDs[0]); i++) {
 		perfFDs[i] = -1;
 	}
@@ -1866,7 +1874,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint64_t cntrDef)
+TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint32_t cntrType,uint32_t cntrCode,uint64_t eventData,uint32_t cntrInfo)
 {
 	char msgBuff[512];
 	int n;
@@ -1893,7 +1901,10 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,i
 	}
 
 	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Perf Cntr Def] [Index=%d] [Def=0x%08llx]\n",core,ts,cntrIndex,cntrDef);
+		uint32_t csr = cntrInfo & 0xfff;
+		uint32_t bits = ((cntrInfo >> 12) & 0x3f)+1;
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Perf Cntr Def] [Counter=%d] [Type=%d] [Code=%d] [EventData=0x%08lx] [CntrCSR=0x%03x] [CntrBits=%d]\n",core,ts,cntrIndex,cntrType,cntrCode,eventData,csr,bits);
 
 		if (perfFD >= 0) {
 			write(perfFD,msgBuff,n);
@@ -2068,7 +2079,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 		case perfStateGetMarkerMask:
 //			printf("perfStateGetMarkerMask\n");
 			cntrMask[coreId] = data;
-			cntrMaskIndex[coreId] = 3; // skip over cntr 0 - 2; they are fixed function and not programmable
+			cntrMaskIndex[coreId] = 0;
 
 			if (cntrMask[coreId] < (1 << 3)) {
 				// no counter defs - goto start
@@ -2081,39 +2092,79 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 					cntrMaskIndex[coreId] += 1;
 				}
 
-				state[coreId] = perfStateGetCounterDefs;
+				state[coreId] = perfStateGetCounterType;
 			}
 
 			emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
 
 			consumed = true;
 			break;
-		case perfStateGetCounterDefs:
-//			printf("perfStateGetCounterDefs\n");
+		case perfStateGetCounterType:
+//			printf("perfStateGetCounterType\n");
+
 			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
 
-			savedLow32[coreId] = data;
+			cntrType[coreId] = data;
 
-			state[coreId] = perfStateGetCounterDefsH;
+			switch (data) {
+			case 0:
+			case 1:
+			case 15:
+				cntrEventData[coreId] = 0;
+				state[coreId] = perfStateGetCounterCode;
+				break;
+			case 2:
+				cntrCode[coreId] = 0;
+				state[coreId] = perfStateGetCounterEventData;
+				break;
+			default:
+				state[coreId] = perfStateError;
+			}
 
 			consumed = true;
 			break;
-		case perfStateGetCounterDefsH:
-//			printf("perfStateGetCounterDefsH\n");
-			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
+		case perfStateGetCounterCode:
+//			printf("perfStateGetCounterCode\n");
 
-			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+			cntrCode[coreId] = data;
+
+			state[coreId] = perfStateGetCounterInfo;
+
+			consumed = true;
+			break;
+		case perfStateGetCounterEventData:
+//			printf("perfStateFuncGetCounterEventData\n");
+
+			savedLow32[coreId] = data;
+
+			state[coreId] = perfStateGetCounterEventDataH;
+
+			consumed = true;
+			break;
+		case perfStateGetCounterEventDataH:
+//			printf("perfStateGetCounterEventDataH\n");
+
+			cntrEventData[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
+
+			state[coreId] = perfStateGetCounterInfo;
+
+			consumed = true;
+			break;
+		case perfStateGetCounterInfo:
+			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],cntrType[coreId],cntrCode[coreId],cntrEventData[coreId],data);
 
 			cntrMaskIndex[coreId] += 1;
 
 			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
 				cntrMaskIndex[coreId] += 1;
 			}
-
 			if (cntrMaskIndex[coreId] >= 32) {
 				// out of counter defs, go to start state
 
 				state[coreId] = perfStateStart;
+			}
+			else {
+				state[coreId] = perfStateGetCounterType;
 			}
 
 			consumed = true;
@@ -2345,11 +2396,12 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 				}
 			}
 			break;
+
 		case perfStateFuncGetMarkerMask:
-//			printf("state perfStateFuncGetMarkerMask: 0x%08x\n",data);
+//			printf("perfStateFuncGetMarkerMask\n");
 
 			cntrMask[coreId] = data;
-			cntrMaskIndex[coreId] = 3;  // skip over cntr 0 - 2; they are fixed function and not programmable
+			cntrMaskIndex[coreId] = 0;
 
 			if (cntrMask[coreId] < (1 << 3)) {
 				// no counter defs - goto start
@@ -2362,39 +2414,79 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 					cntrMaskIndex[coreId] += 1;
 				}
 
-				state[coreId] = perfStateFuncGetCounterDefs;
+				state[coreId] = perfStateFuncGetCounterType;
 			}
 
 			emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
 
 			consumed = true;
 			break;
-		case perfStateFuncGetCounterDefs:
-//			printf("state perfStateFuncGetCounterDefs: 0x%08x\n",data);
+		case perfStateFuncGetCounterType:
+//			printf("perfStateFuncGetCounterType (type=%d)\n",data);
 
 			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
 
-			savedLow32[coreId] = data;
-			state[coreId] = perfStateFuncGetCounterDefsH;
+			cntrType[coreId] = data;
+
+			switch (data) {
+			case 0:
+			case 1:
+			case 15:
+				cntrEventData[coreId] = 0;
+				state[coreId] = perfStateFuncGetCounterCode;
+				break;
+			case 2:
+				cntrCode[coreId] = 0;
+				state[coreId] = perfStateFuncGetCounterEventData;
+				break;
+			default:
+				state[coreId] = perfStateError;
+			}
+
 			consumed = true;
 			break;
-		case perfStateFuncGetCounterDefsH:
-//			printf("state perfStateFuncGetCounterDefsH: 0x%08x\n",data);
+		case perfStateFuncGetCounterCode:
+//			printf("perfStateFuncGetCounterCode\n");
 
-			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
+			cntrCode[coreId] = data;
 
-			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+			state[coreId] = perfStateFuncGetCounterInfo;
+
+			consumed = true;
+			break;
+		case perfStateFuncGetCounterEventData:
+//			printf("perfStateFuncGetCounterEventData\n");
+
+			savedLow32[coreId] = data;
+
+			state[coreId] = perfStateFuncGetCounterEventDataH;
+
+			consumed = true;
+			break;
+		case perfStateFuncGetCounterEventDataH:
+//			printf("perfStateFuncGetCounterEventDataH\n");
+
+			cntrEventData[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
+
+			state[coreId] = perfStateFuncGetCounterInfo;
+
+			consumed = true;
+			break;
+		case perfStateFuncGetCounterInfo:
+			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],cntrType[coreId],cntrCode[coreId],cntrEventData[coreId],data);
 
 			cntrMaskIndex[coreId] += 1;
 
 			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
 				cntrMaskIndex[coreId] += 1;
 			}
-
 			if (cntrMaskIndex[coreId] >= 32) {
 				// out of counter defs, go to start state
 
 				state[coreId] = perfStateFuncStart;
+			}
+			else {
+				state[coreId] = perfStateFuncGetCounterType;
 			}
 
 			consumed = true;
