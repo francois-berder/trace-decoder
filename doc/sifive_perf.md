@@ -172,29 +172,44 @@ Function entry/exit level tracing requires compiling the desired code to trace w
 
 ### Performance Data Format
 
-All performance data is written to the trace buffer using ITC stimulus register writes creating data acquisition messages in the trace buffer. Only the itc channel specified in the initialization functions is used for all writes.
+All performance data is written to the trace buffer using ITC stimulus register writes creating data acquisition messages in the trace buffer. Only the itc channel specified in the initialization functions is used for all writes. All data is in binary.
+
+The captured performance trace is a combination of header information and performance trace data. The header contains information on the type of performance trace (function entry-exit information or periodic and manual information). The header also contains information on the HPM counters being measured (which ones, and how they are configured). The header is called the marker, which also identifies the start of the trace.
 
 Marker Message Format:
 
-Marker messages provide information to the trace decoder on what HPM counters are being recorded and the programming of the HPM counters, as well as the type of performance trace. Every marker messages begins with a full 32 bit data acquisition messages with the data value `0x70657266` (which is ('p'<<24)|('e'<<16)|('r'<<8)|('f'<<0)) for manual and timer based writes. If doing function entry/exit instruementation, the marker message will begin with a `0x66756e63` (which is ('f'<<24|('u'<<16)|('n'<<8)|('c')<<0). The beginning value allows the trace decoder to identify a marker in the performance data stream, and the type of tracing being performed. It is possible an actual counter value will coincide with the marker header value, which would cause decoder confusion, but unlikely.
+Marker messages provide information to the trace decoder on what HPM counters are being recorded and the programming of the HPM counters, as well as the type of performance trace. Every marker messages begins with a full 32 bit data acquisition messages with the data value `0x70657266` (which is ('p'<<24)|('e'<<16)|('r'<<8)|('f'<<0)) for manual and timer based writes. If doing function entry/exit instrumentation, the marker message will begin with a `0x66756e63` (which is ('f'<<24|('u'<<16)|('n'<<8)|('c')<<0). The beginning value allows the trace decoder to identify a marker in the performance data stream, and the type of tracing being performed. It is possible an actual counter value will coincide with the marker header value, which would cause decoder confusion, but unlikely This possible confusion could be removed if it was gauantted there would only be one marker message at the beginning of the trace. Currently, it is possible to have multiple markers throuout the trace.
 
-Following the marker identification will be a second 32 bit data acquisition message that contains the counter mask. Non-zero bits in the mask give which HPM counters will be recorded.
+Following the marker identification word will be a second 32 bit data acquisition message that contains the counter mask. Non-zero bits in the mask give which HPM counters will be recorded by their position in the mask.
 
-Following the counter mask will be a series of 0 to 58 data acquisition messages with the programming of any HPM counters from counter 3 and up that are being recorded. There will be two data acquistion messages for every HPM counter from 3 to 31 selected in the counter mask (each configuration register is 64 bits). The programming for HPM counters 0, 1, and 2 is not provided in the marker counter definitions (if they are selected by the mask) because they are fixed-function and cannot be programmed.
+The examples below show the format for a function instrumentation marker written into the trace buffer. It assumes ITC channel 6 for performance data, and an HPM counter mask of 0x0000000c (counters 2 and 3 being collected). Counter 2 is programmed for instructions retired, and counter 3 is programmed for a RAW event counter.
 
-Below is an example of the format for a timer ISR or manual marker written into the trace buffer. It assumes ITC channel 6 for performance data, and an HPM counter mask of 0x00000007. This marker will not contain any counter configuration data because only counters 0, 1, and 2 are being captured.
-
-| Message Number | ID Tag | Value | Description |
-| :------------: | :----: | :---: | :---------- |
-| #1 | 0x00000018 | 0x70657266 | Marker identification header |
-| #2 | 0x00000018 | 0x00000007 | HPM counter mask |
-
-A similar function entry/exit marker would look like:
+The marker and counter mask would be:
 
 | Message Number | ID Tag | Value | Description |
 | :------------: | :----: | :---: | :---------- |
 | #1 | 0x00000018 | 0x66756e6e | Marker identification header |
-| #2 | 0x00000018 | 0x00000007 | HPM counter mask |
+| #2 | 0x00000018 | 0x0000000c | HPM counter mask |
+
+Following the counter mask will be a series of data acquisition messages with the programming of any HPM counters that are being recorded (as indicated by the previous counter mask). HPM performance counters event information data is borrowed from the RICS-V Supervisor Binary Interface Specification, Version 1.0, which uses Type, Code, and Event Data. Each HPM counter will also have a counter info field wich give the size in bits of the counter and the HPM CSR address of the counter. Type is a 32 bit data acqusition message with the type of the event. Legal values for traces are 0 (Hardware General Events), 1 (Hardware Cache Events), and 2 (Hardware Raw Events). For event types of 0 and 1, the next field is a 32 bit Code field. The meanding of the Code field varries by Event Type, and can be found in the RISC-V SBI Specification. Event types of 2 do not have a Code field, but instead have a 64 bit Event Data field (two data acquisition writes; the first is the lower 32 bits, the second is the upper 32 bits). The 64 bit Event Data field contains the raw programming of the HPM event selectors, and is only used for event type 2 (Event Hardware Raw Events).
+
+For all message type, the next field is the counter info field, in a single 32 bit data acquistion message. The format of the counter info field si the same as the lower 32 bits of the counter_info field in the RISC-V SBI specification. Bits 11:0 contain the 12 bit CSR number. Bits 17:12 contain the most significant bit number of the counter. For example, if the counter is 32 bits wide, it would be 31 (for bits 0 - 31).
+
+An example of a counter definiation for counter definition for counter 2 would be:
+
+| #3 | 0x00000018 | 0x00000000 | Type = 0. Hardware General Event |
+| #4 | 0x00000018 | 0x00000002 | Code = 2. Harware General Event SBI_PMU_SW_INSTRUCTIONS |
+| #5 | 0x00000018 | 0x0003fc02 | Counter Info: CSR = 0xc02, width = 64 bits (63..0) |
+
+And for counter 3, programmed as a Raw Event would be:
+
+| #6 | 0x00000018 | 0x00000002 | Type = 2. Hardware Raw Event |
+| #7 | 0x00000018 | 0x00000000 | Event Data: bits 31..0 |
+| #8 | 0x00000018 | 0x00000002 | Event Data: bits 63..32 |
+
+The type, code, event_data, and counter_info fields are repeated for all counters being recorded as indicated by the counter mask.
+
+For description of the raw event data, see the manual for the processor being used, under the Event Selector Encodings section.
 
 Performance Data Format:
 
