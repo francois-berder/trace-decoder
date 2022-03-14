@@ -1650,9 +1650,10 @@ TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,Trac
 			if (rc == 1) {
 				// have file/line info
 
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename,functionname,linenumber);
 			}
 		}
+
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Address]",core,ts,pc);
 
 		if (perfFD >= 0) {
@@ -1712,7 +1713,7 @@ TraceDqr::DQErr PerfConverter::emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,T
 			if (rc == 1) {
 				// have file/line info
 
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename,functionname,linenumber);
 			}
 		}
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Func Enter at 0x%08llx] [Called From 0x%08llx]",core,ts,fnAddr,csAddr);
@@ -1774,7 +1775,7 @@ TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,Tr
 			if (rc == 1) {
 				// have file/line info
 
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename,functionname,linenumber);
 			}
 		}
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Func Exit] [Func at 0x%08llx] [Returning to 0x%08llx]",core,ts,fnAddr,csAddr);
@@ -1838,7 +1839,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 			if (rc == 1) {
 				// have file/line info
 
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename,functionname,linenumber);
 			}
 		}
 
