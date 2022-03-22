@@ -491,37 +491,32 @@ public:
 private:
 	enum perfConverterState {
 		perfStateSync,
-		perfStateStart,
-		perfStateGetMarkerMask,
-		perfStateGetAddrH,
-		perfStateGetCntr,
-		perfStateGetCounterType,
-		perfStateGetCounterCode,
-		perfStateGetCounterEventData,
-		perfStateGetCounterEventDataH,
-		perfStateGetCounterInfo,
-		perfStateFuncStart,
-		perfStateFuncGetMarkerMask,
-		perfStateFuncCallStart,
-		perfStateFuncReturnStart,
-		perfStateFuncReturnStartH,
-		perfStateFuncReturnGetCallSite,
-		perfStateFuncReturnGetCallSiteH,
-		perfStateFuncCallGetfnAddrH,
-		perfStateFuncGetCallSite,
-		perfStateFuncGetCallSiteH,
-		perfStateFuncGetCntr,
-		perfStateFuncGetCounterType,
-		perfStateFuncGetCounterCode,
-		perfStateFuncGetCounterEventData,
-		perfStateFuncGetCounterEventDataH,
-		perfStateFuncGetCounterInfo,
+		perfStateGetCntType,
+		perfStateGetCntrMask,
+		perfStateGetCntrRecord,
+		perfStateGetCntrDef,
+		perfStateGetCntrCode,
+		perfStateGetCntrEventData,
+		perfStateGetCntrInfo,
+		perfStateGetAddr,
+		perfStateGetCallSite,
+		perfStateGetCnts,
 		perfStateError,
 	};
 
-	enum pt_numPerfTypes {
-
+	enum perfCountType {
+		perfCount_Raw = 0,
+		perfCount_Delta = 1,
+		perfCount_DeltaXOR = 2,
 	};
+
+	enum perfRecordType {
+		perfRecord_FuncEnter = 0,
+		perfRecord_FuncExit = 1,
+		perfRecord_Manual = 2,
+		perfRecord_ISR = 3,
+	};
+
 	enum perfClass_t {
 		pt_0Index,
 		pt_1Index,
@@ -580,17 +575,21 @@ private:
 	uint32_t funcMarkerValue;
 	uint32_t cntrMaskIndex[DQR_MAXCORES];
 	uint32_t cntrMask[DQR_MAXCORES];
-	bool     cntrValPending[DQR_MAXCORES];
+	bool     valuePending[DQR_MAXCORES];
+	uint8_t cntType[DQR_MAXCORES];
 	uint32_t cntrType[DQR_MAXCORES];
 	uint32_t cntrCode[DQR_MAXCORES];
 	uint64_t cntrEventData[DQR_MAXCORES];
+	uint8_t recordType[DQR_MAXCORES];
 	uint32_t savedLow32[DQR_MAXCORES];
 	TraceDqr::ADDRESS lastAddress[DQR_MAXCORES];
+	uint64_t *lastCount[DQR_MAXCORES];
 
 	TraceDqr::DQErr emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc);
 	TraceDqr::DQErr emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS callSite);
 	TraceDqr::DQErr emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS callSite);
 	TraceDqr::DQErr emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint64_t cntrVal);
+	TraceDqr::DQErr emitPerfCntType(int core,TraceDqr::TIMESTAMP ts,int cntType);
 	TraceDqr::DQErr emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,uint32_t cntrMask);
 	TraceDqr::DQErr emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint32_t cntrType,uint32_t cntrCode,uint64_t eventData,uint32_t cntrInfo);
 };

@@ -1498,8 +1498,8 @@ PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int 
 		cntrMask[i] = 0;
 	}
 
-	for (int i = 0; i < (int)(sizeof cntrValPending / sizeof cntrValPending[0]); i++) {
-		cntrValPending[i] = false;
+	for (int i = 0; i < (int)(sizeof valuePending / sizeof valuePending[0]); i++) {
+		valuePending[i] = false;
 	}
 
 	for (int i = 0; i < (int)(sizeof cntrCode / sizeof cntrCode[0]); i++) {
@@ -1512,6 +1512,10 @@ PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int 
 
 	for (int i = 0; i < (int)(sizeof perfFDs / sizeof perfFDs[0]); i++) {
 		perfFDs[i] = -1;
+	}
+
+	for (int i = 0; i < (int)(sizeof lastCount / sizeof lastCount[0]); i++) {
+		lastCount[i] = nullptr;
 	}
 
 	this->disassembler = disassembler;
@@ -1604,6 +1608,13 @@ PerfConverter::~PerfConverter()
 	if (elfNamePath != nullptr) {
 		delete [] elfNamePath;
 		elfNamePath = nullptr;
+	}
+
+	for (int i = 0; i < (int)(sizeof lastCount / sizeof lastCount[0]); i++) {
+		if (lastCount[i] != nullptr) {
+			delete [] lastCount[i];
+			lastCount[i] = nullptr;
+		}
 	}
 }
 
@@ -1794,6 +1805,39 @@ TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,Tr
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr PerfConverter::emitPerfCntType(int core,TraceDqr::TIMESTAMP ts,int cntType)
+{
+	char msgBuff[512];
+	int n;
+
+	switch (cntType) {
+	case perfCount_Raw:
+		n = snprintf(msgBuff,sizeof msgBuff,"# Count type: RAW\n");
+		break;
+	case perfCount_Delta:
+		n = snprintf(msgBuff,sizeof msgBuff,"# Count type: Delta\n");
+		break;
+	case perfCount_DeltaXOR:
+		n = snprintf(msgBuff,sizeof msgBuff,"# Count type: DeltaXOR\n");
+		break;
+	default:
+		n = snprintf(msgBuff,sizeof msgBuff,"# Count type: unknown\n");
+		break;
+	}
+
+	if (perfFD >= 0) {
+		write(perfFD,msgBuff,n);
+	}
+
+	for (int i = 0; i < pt_numPerfTypes; i++) {
+		if (perfFDs[pt_addressIndex] >= 0) {
+			write(perfFDs[i],msgBuff,n);
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint64_t cntrVal)
 {
 	char msgBuff[512];
@@ -1938,114 +1982,335 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 	while (!consumed) {
 		switch (state[coreId]) {
 		case perfStateSync:
+			// look for an initial trace marker to sync the trace
+
 //			printf("state sync\n");
+
 			if (data == markerValue) {
-				state[coreId] = perfStateStart;
+				lastAddress[coreId] = 0;
+
+				state[coreId] = perfStateGetCntType;
 			}
-			else if (data == funcMarkerValue) {
-				state[coreId] = perfStateFuncStart;
+
+			consumed = true;
+			break;
+
+		case perfStateGetCntType:
+			// should have an 8 bit count type
+
+//			printf("state perfStateGetCountType\n");
+
+			if ((addr & 0x3) == 0x3) {
+				// 8 bit write
+
+				switch (data) {
+				case perfCount_Raw:
+				case perfCount_Delta:
+				case perfCount_DeltaXOR:
+					cntType[coreId] = (uint8_t)data;
+
+					emitPerfCntType(coreId,ts,cntType[coreId]);
+
+					state[coreId] = perfStateGetCntrMask;
+					consumed = true;
+					break;
+				default:
+					printf("Error: processITCPerf(): perfStateGetCountType: unknown count type %d; resyncing\n",data);
+
+					state[coreId] = perfStateSync;
+					break;
+				}
 			}
 			else {
-				consumed = true;
+				state[coreId] = perfStateSync;
 			}
 			break;
 
 		// states for timer and manual perf data parsing
 
-		case perfStateStart:
-//			printf("state start\n");
-			if (data == markerValue) {
-				state[coreId] = perfStateGetMarkerMask;
-				consumed = true;
-			}
-			else if (data == funcMarkerValue) {
-				state[coreId] = perfStateSync;
-			}
-			else {
-				// should be an instruction pointer
+		case perfStateGetCntrMask:
+			// 32 bit counter mask
 
-				if (data & 1) {
-					savedLow32[coreId] = data ^ 1;
-					state[coreId] = perfStateGetAddrH;
+//			printf("perfStateGetMarkerMask\n");
+
+			if ((addr & 0x3) == 0) {
+				// 32 bit write
+
+				cntrMask[coreId] = data;
+
+				emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
+
+				if (cntrMask[coreId] == 0) {
+					// no counter defs - But still have address
+					state[coreId] = perfStateGetCntrRecord;
 				}
 				else {
-					lastAddress[coreId] = data;
+					if (cntType[coreId] == perfCount_DeltaXOR) {
+						// need to allocate last count array to compute counts for XOR Delta
 
+						if (lastCount[coreId] == nullptr) {
+							lastCount[coreId] = new uint64_t [32];
+
+							for (int i = 0; i < 32; i++) {
+								lastCount[coreId][i] = 0;
+							}
+						}
+					}
+
+					// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+					cntrMaskIndex[coreId] = 0;
+
+					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+						cntrMaskIndex[coreId] += 1;
+					}
+
+					state[coreId] = perfStateGetCntrDef;
+				}
+
+				consumed = true;
+			}
+			else {
+				// this is an error. Try recovery?
+
+				state[coreId] = perfStateSync;
+			}
+			break;
+		case perfStateGetCntrDef:
+			cntrType[coreId] = data;
+
+			switch (cntrType[coreId]) {
+			case 0:
+			case 1:
+				cntrEventData[coreId] = 0;
+				state[coreId] = perfStateGetCntrCode;
+				break;
+			case 2:
+				cntrCode[coreId] = 0;
+				state[coreId] = perfStateGetCntrEventData;
+				break;
+			default:
+				printf("Error: processITCPerf(): invalid counter type: %d\n",cntrType[coreId]);
+
+				state[coreId] = perfStateError;
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetCntrCode:
+			cntrCode[coreId] = data;
+			state[coreId] = perfStateGetCntrInfo;
+
+			consumed = true;
+			break;
+		case perfStateGetCntrEventData:
+			if (valuePending[coreId]) {
+				cntrEventData[coreId] = (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+
+				valuePending[coreId] = false;
+
+				state[coreId] = perfStateGetCntrInfo;
+			}
+			else {
+				savedLow32[coreId] = data;
+				valuePending[coreId] = true;
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetCntrInfo:
+			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],cntrType[coreId],cntrCode[coreId],cntrEventData[coreId],data);
+
+			cntrMaskIndex[coreId] += 1;
+
+			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+				cntrMaskIndex[coreId] += 1;
+			}
+
+			if (cntrMaskIndex[coreId] >= 32) {
+				// out of counter defs, go to get counter record
+
+//				cntrMaskIndex[coreId] = 0;
+//
+//				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+//					cntrMaskIndex[coreId] += 1;
+//				}
+
+				state[coreId] = perfStateGetCntrRecord;
+			}
+			else {
+				// get the next counter def
+				state[coreId] = perfStateGetCntrDef;
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetCntrRecord:
+			if ((addr & 0x3) == 3) {
+				// 8 bit type
+
+				recordType[coreId] = (uint8_t)data;
+				valuePending[coreId] = false;
+
+				state[coreId] = perfStateGetAddr;
+			}
+			else {
+				printf("Error: processITCPerf(): bad record type size.\n");
+
+				state[coreId] = perfStateError;
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetAddr:
+			if (valuePending[coreId] == true) {
+				if (cntType[coreId] == perfCount_DeltaXOR) {
+					lastAddress[coreId] ^= (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+				}
+				else {
+					lastAddress[coreId] = (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+				}
+
+				valuePending[coreId] = false;
+
+				if ((recordType[coreId] == perfRecord_FuncEnter) || (recordType[coreId] == perfRecord_FuncExit)) {
+					state[coreId] = perfStateGetCallSite;
+				}
+				else {
 					emitPerfAddr(coreId,ts,lastAddress[coreId]);
 
 					if (cntrMask[coreId] != 0) {
-						state[coreId] = perfStateGetCntr;
 						cntrMaskIndex[coreId] = 0;
 
-						// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+						while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+								cntrMaskIndex[coreId] += 1;
+						}
+
+						state[coreId] = perfStateGetCnts;
+					}
+					else {
+						state[coreId] = perfStateGetCntrRecord;
+					}
+				}
+			}
+			else if (data & 1) {
+				savedLow32[coreId] = data & ~1;
+				valuePending[coreId] = true;
+			}
+			else {
+				if (cntType[coreId] == perfCount_DeltaXOR) {
+					lastAddress[coreId] ^= data;
+				}
+				else {
+					lastAddress[coreId] = data;
+				}
+
+				if ((recordType[coreId] == perfRecord_FuncEnter) || (recordType[coreId] == perfRecord_FuncExit)) {
+					state[coreId] = perfStateGetCallSite;
+				}
+				else {
+					emitPerfAddr(coreId,ts,lastAddress[coreId]);
+
+					if (cntrMask[coreId] != 0) {
+						cntrMaskIndex[coreId] = 0;
 
 						while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-							cntrMaskIndex[coreId] += 1;
+								cntrMaskIndex[coreId] += 1;
 						}
+
+						state[coreId] = perfStateGetCnts;
 					}
 					else {
-						state[coreId] = perfStateStart; // already in this state, but won't hurt
+						state[coreId] = perfStateGetCntrRecord;
 					}
 				}
-				consumed = true;
 			}
+			consumed = true;
 			break;
-		case perfStateGetAddrH:
-//			printf("perfStateGetAddrH\n");
-			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
+		case perfStateGetCallSite:
+			if (valuePending[coreId] == true) {
+				if (recordType[coreId] == perfRecord_FuncEnter) {
+					emitPerfFnEntry(coreId,ts,lastAddress[coreId],(((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
+				}
+				else {
+					emitPerfFnExit(coreId,ts,lastAddress[coreId],(((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
+				}
 
-			emitPerfAddr(coreId,ts,lastAddress[coreId]);
+				if (cntType[coreId] == perfCount_DeltaXOR) {
+					lastAddress[coreId] ^= (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+				}
+				else {
+					lastAddress[coreId] = (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+				}
 
-			if (cntrMask[coreId] == 0) {
-				state[coreId] = perfStateStart;
+				valuePending[coreId] = false;
+
+				if (cntrMask[coreId] != 0) {
+					cntrMaskIndex[coreId] = 0;
+
+					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+							cntrMaskIndex[coreId] += 1;
+					}
+
+					state[coreId] = perfStateGetCnts;
+				}
+				else {
+					state[coreId] = perfStateGetCntrRecord;
+				}
+			}
+			else if (data & 1) {
+				savedLow32[coreId] = data & ~1;
+				valuePending[coreId] = true;
 			}
 			else {
-				state[coreId] = perfStateGetCntr;
+				if (recordType[coreId] == perfRecord_FuncEnter) {
+					emitPerfFnEntry(coreId,ts,lastAddress[coreId],(uint64_t)data);
+				}
+				else {
+					emitPerfFnExit(coreId,ts,lastAddress[coreId],(uint64_t)data);
+				}
 
-				cntrMaskIndex[coreId] = 0;
+				if (cntType[coreId] == perfCount_DeltaXOR) {
+					lastAddress[coreId] ^= data;
+				}
+				else {
+					lastAddress[coreId] = data;
+				}
 
-				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+				if (cntrMask[coreId] != 0) {
+					cntrMaskIndex[coreId] = 0;
 
-				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
+					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+							cntrMaskIndex[coreId] += 1;
+					}
+
+					state[coreId] = perfStateGetCnts;
+				}
+				else {
+					state[coreId] = perfStateGetCntrRecord;
 				}
 			}
 
 			consumed = true;
 			break;
-		case perfStateGetCntr:
-//			printf("perfStateGetCntr\n");
-			if (addr & 0x3) {
-				// havea partial write - extention of previous write
+		case perfStateGetCnts:
+			switch (addr & 0x3) {
+			case 0:
+				// 32 bit data. This should be a low count. If we have a pending, emit it
 
-				if (cntrValPending[coreId] == false) {
-					state[coreId] = perfStateError;
-					return TraceDqr::DQERR_ERR;
-				}
+				if (valuePending[coreId]) {
 
-				emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+					if (cntType[coreId] == perfCount_DeltaXOR) {
+						lastCount[coreId][cntrMaskIndex[coreId]] ^= savedLow32[coreId];
+						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
+					}
+					else {
+						// emit the previously pending count
 
-				cntrValPending[coreId] = false;
+						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+					}
 
-				cntrMaskIndex[coreId] += 1;
-
-				while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
-				}
-
-				if (cntrMaskIndex[coreId] >= 32) {
-					// out of counter defs, go to start state
-
-					state[coreId] = perfStateStart;
-				}
-
-				consumed = true;
-			}
-			else {
-				// have a full write
-
-				if (cntrValPending[coreId]) {
-					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+					valuePending[coreId] = false;
 
 					cntrMaskIndex[coreId] += 1;
 
@@ -2056,318 +2321,39 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 					if (cntrMaskIndex[coreId] >= 32) {
 						// out of counter defs, go to start state
 
-						cntrValPending[coreId] = false;
+						state[coreId] = perfStateGetCntrRecord;
 
-						state[coreId] = perfStateStart;
-
-						// don't return, just loop again and reprocess this value!! Leave consumed == false to make it happen
+						// do not set consumed!
 					}
 					else {
+						valuePending[coreId] = true;
 						savedLow32[coreId] = data;
-						cntrValPending[coreId] = true;
-
 						consumed = true;
 					}
 				}
 				else {
+					valuePending[coreId] = true;
 					savedLow32[coreId] = data;
-					cntrValPending[coreId] = true;
-
 					consumed = true;
 				}
-			}
-			break;
-		case perfStateGetMarkerMask:
-//			printf("perfStateGetMarkerMask\n");
-			cntrMask[coreId] = data;
-			cntrMaskIndex[coreId] = 0;
-
-			if (cntrMask[coreId] < (1 << 3)) {
-				// no counter defs - goto start
-				state[coreId] = perfStateStart;
-			}
-			else {
-				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
-				}
-
-				state[coreId] = perfStateGetCounterType;
-			}
-
-			emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
-
-			consumed = true;
-			break;
-		case perfStateGetCounterType:
-//			printf("perfStateGetCounterType\n");
-
-			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
-
-			cntrType[coreId] = data;
-
-			switch (data) {
-			case 0:
-			case 1:
-			case 15:
-				cntrEventData[coreId] = 0;
-				state[coreId] = perfStateGetCounterCode;
 				break;
 			case 2:
-				cntrCode[coreId] = 0;
-				state[coreId] = perfStateGetCounterEventData;
-				break;
-			default:
-				state[coreId] = perfStateError;
-			}
+				// 16 bit data. This is a high count. If nothing pending, error
 
-			consumed = true;
-			break;
-		case perfStateGetCounterCode:
-//			printf("perfStateGetCounterCode\n");
-
-			cntrCode[coreId] = data;
-
-			state[coreId] = perfStateGetCounterInfo;
-
-			consumed = true;
-			break;
-		case perfStateGetCounterEventData:
-//			printf("perfStateFuncGetCounterEventData\n");
-
-			savedLow32[coreId] = data;
-
-			state[coreId] = perfStateGetCounterEventDataH;
-
-			consumed = true;
-			break;
-		case perfStateGetCounterEventDataH:
-//			printf("perfStateGetCounterEventDataH\n");
-
-			cntrEventData[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
-
-			state[coreId] = perfStateGetCounterInfo;
-
-			consumed = true;
-			break;
-		case perfStateGetCounterInfo:
-			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],cntrType[coreId],cntrCode[coreId],cntrEventData[coreId],data);
-
-			cntrMaskIndex[coreId] += 1;
-
-			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-				cntrMaskIndex[coreId] += 1;
-			}
-			if (cntrMaskIndex[coreId] >= 32) {
-				// out of counter defs, go to start state
-
-				state[coreId] = perfStateStart;
-			}
-			else {
-				state[coreId] = perfStateGetCounterType;
-			}
-
-			consumed = true;
-			break;
-
-		// states for function entry/exit parsing
-
-		case perfStateFuncStart:
-//			printf("state func start: 0x%08x\n",data);
-
-			if (data == funcMarkerValue) {
-				state[coreId] = perfStateFuncGetMarkerMask;
-				consumed = true;
-			}
-			else if (data == markerValue) {
-				state[coreId] = perfStateSync;
-			}
-			else if ((addr & 0x3) == 3) {
-				if (data == 'C') {
-					state[coreId] = perfStateFuncCallStart;
-				}
-				else {
+				if (valuePending[coreId] == false) {
+					printf("Error: processITCPerf(): bad perf trace.\n");
 					state[coreId] = perfStateError;
 				}
-				consumed = true;
-			}
-			else {
-				state[coreId] = perfStateFuncReturnStart;
-			}
-			break;
-		case perfStateFuncCallStart:
-//			printf("state perfStatFuncCallstart: %08x\n",data);
-			if (data & 1) {
-				savedLow32[coreId] = data ^ 1;
-				state[coreId] = perfStateFuncCallGetfnAddrH;
-			}
-			else {
-				lastAddress[coreId] = data;
-				state[coreId] = perfStateFuncGetCallSite;
-			}
-			consumed = true;
-			break;
-		case perfStateFuncCallGetfnAddrH:
-//			printf("state perfStateFuncCallGetfnAddrH: 0x%08x\n",data);
-			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
-			state[coreId] = perfStateFuncGetCallSite;
-			consumed = true;
-			break;
-		case perfStateFuncGetCallSite:
-//			printf("state perfStateFuncGetCallSite: 0x%08x\n",data);
-			if (data & 1) {
-				savedLow32[coreId] = data ^ 1;
-				state[coreId] = perfStateFuncGetCallSiteH;
-			}
-			else {
-				emitPerfFnEntry(coreId,ts,lastAddress[coreId],(uint64_t)data);
-
-				if (cntrMask[coreId] != 0) {
-					state[coreId] = perfStateFuncGetCntr;
-					cntrMaskIndex[coreId] = 0;
-
-					// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-						cntrMaskIndex[coreId] += 1;
-					}
-				}
 				else {
-					state[coreId] = perfStateFuncStart;
-				}
-			}
-			consumed = true;
-			break;
-		case perfStateFuncGetCallSiteH:
-//			printf("state perfStateFuncGetCallSiteH: 0x%08x\n",data);
-			emitPerfFnEntry(coreId,ts,lastAddress[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
-
-			if (cntrMask[coreId] != 0) {
-				state[coreId] = perfStateFuncGetCntr;
-				cntrMaskIndex[coreId] = 0;
-
-				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
-				}
-			}
-			else {
-				state[coreId] = perfStateFuncStart;
-			}
-			consumed = true;
-			break;
-		case perfStateFuncReturnStart:
-//			printf("state perfStateFuncReturnStart: 0x%08x\n",data);
-			if (data & 1) {
-				savedLow32[coreId] = data ^ 1;
-				state[coreId] = perfStateFuncReturnStartH;
-			}
-			else {
-				lastAddress[coreId] = data;
-				state[coreId] = perfStateFuncReturnGetCallSite;
-			}
-			consumed = true;
-			break;
-		case perfStateFuncReturnStartH:
-//			printf("state perfStateFuncReturnStartH: 0x%08x\n",data);
-
-			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
-			state[coreId] = perfStateFuncReturnGetCallSite;
-			consumed = true;
-			break;
-		case perfStateFuncReturnGetCallSite:
-//			printf("state perfStateFuncReturnGetCallSite: 0x%08x\n",data);
-
-			if (data & 1) {
-				savedLow32[coreId] = data ^ 1;
-				state[coreId] = perfStateFuncReturnGetCallSiteH;
-			}
-			else {
-				emitPerfFnExit(coreId,ts,lastAddress[coreId],(uint64_t)data);
-
-				if (cntrMask[coreId] != 0) {
-					state[coreId] = perfStateFuncGetCntr;
-					cntrMaskIndex[coreId] = 0;
-
-					// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-						cntrMaskIndex[coreId] += 1;
+					if (cntType[coreId] == perfCount_DeltaXOR) {
+						lastCount[coreId][cntrMaskIndex[coreId]] ^= (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
 					}
-				}
-				else {
-					state[coreId] = perfStateFuncStart;
-				}
-			}
-			consumed = true;
-			break;
-		case perfStateFuncReturnGetCallSiteH:
-//			printf("state perfStateFuncReturnGetCallSiteH: 0x%08x\n",data);
+					else {
+						// emit the previously pending count
 
-			emitPerfFnExit(coreId,ts,lastAddress[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
-
-			if (cntrMask[coreId] != 0) {
-				state[coreId] = perfStateFuncGetCntr;
-				cntrMaskIndex[coreId] = 0;
-
-				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
-				}
-			}
-			else {
-				state[coreId] = perfStateFuncStart;
-			}
-			consumed = true;
-			break;
-		case perfStateFuncGetCntr:
-//			printf("state perfStateFuncGetCntr: addr: 0x%08x, data: 0x%08x\n",addr,data);
-
-			if ((addr & 0x03) == 3) {
-				// single byte - this mean new function call start
-				if (cntrValPending[coreId]) {
-					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
-					cntrValPending[coreId] = false;
-				}
-
-				state[coreId] = perfStateFuncStart;
-			}
-			else if (addr & 0x3) {
-				// havea partial write - extention of previous write
-
-				if (cntrValPending[coreId] == false) {
-					state[coreId] = perfStateError;
-					return TraceDqr::DQERR_ERR;
-				}
-
-				emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
-
-				cntrValPending[coreId] = false;
-
-				cntrMaskIndex[coreId] += 1;
-
-				while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
-				}
-
-				if (cntrMaskIndex[coreId] >= 32) {
-					// out of counter defs, go to start state
-
-					state[coreId] = perfStateFuncStart;
-				}
-
-				consumed = true;
-			}
-			else {
-				// have a full write
-
-				if (cntrValPending[coreId]) { // flush pending, add new to pending
-					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
-
-					cntrValPending[coreId] = false;
+						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],(((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
+					}
 
 					cntrMaskIndex[coreId] += 1;
 
@@ -2378,119 +2364,47 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 					if (cntrMaskIndex[coreId] >= 32) {
 						// out of counter defs, go to start state
 
-						state[coreId] = perfStateFuncStart;
+						state[coreId] = perfStateGetCntrRecord;
 
-						// don't return, just loop again and reprocess this value!! Leave consumed == false to make it happen
+						// do not set consumed!
+					}
+
+					valuePending[coreId] = false;
+				}
+
+				consumed = true;
+				break;
+			case 3:
+				// 8 bit data - this is actually a record type. If any pending values, emit.
+				// swtich state to get record
+
+				if (valuePending[coreId] == true) {
+					if (cntType[coreId] == perfCount_DeltaXOR) {
+						lastCount[coreId][cntrMaskIndex[coreId]] ^= (uint64_t)savedLow32[coreId];
+						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
 					}
 					else {
-						savedLow32[coreId] = data;
-						cntrValPending[coreId] = true;
+						// emit the previously pending count
 
-						consumed = true;
+						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],(uint64_t)savedLow32[coreId]);
 					}
-				}
-				else {
-					savedLow32[coreId] = data;
-					cntrValPending[coreId] = true;
 
-					consumed = true;
-				}
-			}
-			break;
+					valuePending[coreId] = false;
 
-		case perfStateFuncGetMarkerMask:
-//			printf("perfStateFuncGetMarkerMask\n");
-
-			cntrMask[coreId] = data;
-			cntrMaskIndex[coreId] = 0;
-
-			if (cntrMask[coreId] < (1 << 3)) {
-				// no counter defs - goto start
-				state[coreId] = perfStateFuncStart;
-			}
-			else {
-				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
+					// could add error checking here to make sure there aren't any more counters expected??
 				}
 
-				state[coreId] = perfStateFuncGetCounterType;
-			}
+				state[coreId] = perfStateGetCntrRecord;
 
-			emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
+				// do not set consumed
 
-			consumed = true;
-			break;
-		case perfStateFuncGetCounterType:
-//			printf("perfStateFuncGetCounterType (type=%d)\n",data);
-
-			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
-
-			cntrType[coreId] = data;
-
-			switch (data) {
-			case 0:
-			case 1:
-			case 15:
-				cntrEventData[coreId] = 0;
-				state[coreId] = perfStateFuncGetCounterCode;
-				break;
-			case 2:
-				cntrCode[coreId] = 0;
-				state[coreId] = perfStateFuncGetCounterEventData;
 				break;
 			default:
+				printf("Error: processITCPerf(): invalid counter size: %d\n",addr & 0x3);
+
 				state[coreId] = perfStateError;
+				break;
 			}
-
-			consumed = true;
-			break;
-		case perfStateFuncGetCounterCode:
-//			printf("perfStateFuncGetCounterCode\n");
-
-			cntrCode[coreId] = data;
-
-			state[coreId] = perfStateFuncGetCounterInfo;
-
-			consumed = true;
-			break;
-		case perfStateFuncGetCounterEventData:
-//			printf("perfStateFuncGetCounterEventData\n");
-
-			savedLow32[coreId] = data;
-
-			state[coreId] = perfStateFuncGetCounterEventDataH;
-
-			consumed = true;
-			break;
-		case perfStateFuncGetCounterEventDataH:
-//			printf("perfStateFuncGetCounterEventDataH\n");
-
-			cntrEventData[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
-
-			state[coreId] = perfStateFuncGetCounterInfo;
-
-			consumed = true;
-			break;
-		case perfStateFuncGetCounterInfo:
-			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],cntrType[coreId],cntrCode[coreId],cntrEventData[coreId],data);
-
-			cntrMaskIndex[coreId] += 1;
-
-			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-				cntrMaskIndex[coreId] += 1;
-			}
-			if (cntrMaskIndex[coreId] >= 32) {
-				// out of counter defs, go to start state
-
-				state[coreId] = perfStateFuncStart;
-			}
-			else {
-				state[coreId] = perfStateFuncGetCounterType;
-			}
-
-			consumed = true;
 			break;
 
 		case perfStateError:
