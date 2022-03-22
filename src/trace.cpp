@@ -1640,6 +1640,23 @@ TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,Trac
 		}
 
 		write(perfFDs[pt_addressIndex],elfNamePath,strlen(elfNamePath));
+
+		switch (cntType[core]) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: unknown\n");
+			break;
+		}
+
+		write(perfFDs[pt_addressIndex],msgBuff,n);
 	}
 
 	if ((perfFDs[pt_addressIndex] >= 0) || (perfFD >= 0)) {
@@ -1703,6 +1720,23 @@ TraceDqr::DQErr PerfConverter::emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,T
 		}
 
 		write(perfFDs[pt_fnIndex],elfNamePath,strlen(elfNamePath));
+
+		switch (cntType[core]) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: unknown\n");
+			break;
+		}
+
+		write(perfFDs[pt_fnIndex],msgBuff,n);
 	}
 
 	if ((perfFDs[pt_fnIndex] >= 0) || (perfFD >= 0)) {
@@ -1765,6 +1799,23 @@ TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,Tr
 		}
 
 		write(perfFDs[pt_fnIndex],elfNamePath,strlen(elfNamePath));
+
+		switch (cntType[core]) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: unknown\n");
+			break;
+		}
+
+		write(perfFDs[pt_fnIndex],msgBuff,n);
 	}
 
 	if ((perfFDs[pt_fnIndex] >= 0) || (perfFD >= 0)) {
@@ -1810,29 +1861,23 @@ TraceDqr::DQErr PerfConverter::emitPerfCntType(int core,TraceDqr::TIMESTAMP ts,i
 	char msgBuff[512];
 	int n;
 
-	switch (cntType) {
-	case perfCount_Raw:
-		n = snprintf(msgBuff,sizeof msgBuff,"# Count type: RAW\n");
-		break;
-	case perfCount_Delta:
-		n = snprintf(msgBuff,sizeof msgBuff,"# Count type: Delta\n");
-		break;
-	case perfCount_DeltaXOR:
-		n = snprintf(msgBuff,sizeof msgBuff,"# Count type: DeltaXOR\n");
-		break;
-	default:
-		n = snprintf(msgBuff,sizeof msgBuff,"# Count type: unknown\n");
-		break;
-	}
-
 	if (perfFD >= 0) {
-		write(perfFD,msgBuff,n);
-	}
-
-	for (int i = 0; i < pt_numPerfTypes; i++) {
-		if (perfFDs[pt_addressIndex] >= 0) {
-			write(perfFDs[i],msgBuff,n);
+		switch (cntType) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: unknown\n");
+			break;
 		}
+
+		write(perfFD,msgBuff,n);
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -1862,6 +1907,23 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 		}
 
 		write(perfFDs[cntrIndex],elfNamePath,strlen(elfNamePath));
+
+		switch (cntType[core]) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: unknown\n");
+			break;
+		}
+
+		write(perfFDs[cntrIndex],msgBuff,n);
 	}
 
 	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
@@ -1943,6 +2005,23 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,i
 		}
 
 		write(perfFDs[cntrIndex],elfNamePath,strlen(elfNamePath));
+
+		switch (cntType[core]) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# Count type: unknown\n");
+			break;
+		}
+
+		write(perfFDs[cntrIndex],msgBuff,n);
 	}
 
 	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
