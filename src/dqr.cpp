@@ -10642,6 +10642,25 @@ void sanePath(TraceDqr::pathType pt,const char *src,char *dst)
 	dst[w] = 0;
 }
 
+int Disassembler::getFunctionName(TraceDqr::ADDRESS addr,const char **function,int *offset)
+{
+	int rc;
+	int index;
+
+	rc = lookup_symbol_by_address(addr,BSF_FUNCTION | BSF_OBJECT,&index,offset);
+	if (rc == 0) {
+		// not found
+
+		return 1;
+	}
+
+	// found symbol
+
+	*function = sorted_syms[index]->name;
+
+	return 0;
+}
+
 int Disassembler::getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *cutPathIndex,const char **functionname,unsigned int *linenumber,const char **lineptr)
 {
 	const char *file = nullptr;

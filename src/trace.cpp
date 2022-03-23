@@ -1680,6 +1680,18 @@ TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,Trac
 
 				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename,functionname,linenumber);
 			}
+			else {
+				// didn't get file, function, line info. Try for function name
+
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,&functionname,&offset);
+				if (rc == 0) {
+					// have function name
+
+					f = snprintf(fileInfoBuff,sizeof fileInfoBuff," f:%s\n",functionname);
+				}
+			}
 		}
 
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Address]",core,ts,pc);
@@ -1760,6 +1772,18 @@ TraceDqr::DQErr PerfConverter::emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,T
 
 				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename,functionname,linenumber);
 			}
+			else {
+				// didn't get file, function, line info. Try for function name
+
+				int offset;
+
+				rc = disassembler->getFunctionName(fnAddr,&functionname,&offset);
+				if (rc == 0) {
+					// have function name
+
+					f = snprintf(fileInfoBuff,sizeof fileInfoBuff," f:%s\n",functionname);
+				}
+			}
 		}
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Func Enter at 0x%08llx] [Called From 0x%08llx]",core,ts,fnAddr,csAddr);
 
@@ -1838,6 +1862,18 @@ TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,Tr
 				// have file/line info
 
 				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename,functionname,linenumber);
+			}
+			else {
+				// didn't get file, function, line info. Try for function name
+
+				int offset;
+
+				rc = disassembler->getFunctionName(fnAddr,&functionname,&offset);
+				if (rc == 0) {
+					// have function name
+
+					f = snprintf(fileInfoBuff,sizeof fileInfoBuff," f:%s\n",functionname);
+				}
 			}
 		}
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Func Exit] [Func at 0x%08llx] [Returning to 0x%08llx]",core,ts,fnAddr,csAddr);
@@ -1946,6 +1982,18 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 				// have file/line info
 
 				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename,functionname,linenumber);
+			}
+			else {
+				// didn't get file, function, line info. Try for function name
+
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,&functionname,&offset);
+				if (rc == 0) {
+					// have function name
+
+					f = snprintf(fileInfoBuff,sizeof fileInfoBuff," f:%s\n",functionname);
+				}
 			}
 		}
 

@@ -639,6 +639,7 @@ public:
 	int   Disassemble(TraceDqr::ADDRESS addr);
 
 	int   getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *cutPathIndex,const char **functionname,unsigned int *linenumber,const char **line);
+	int   getFunctionName(TraceDqr::ADDRESS addr,const char **function,int *offset);
 
 	static int   decodeInstructionSize(uint32_t inst, int &inst_size);
 	static int   decodeInstruction(uint32_t instruction,int archSize,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
