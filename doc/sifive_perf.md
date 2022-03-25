@@ -6,28 +6,48 @@ The SiFive Trace Performance Library is intended as an example of how timestampe
 
 ### Description
 
-Some SiFive processors have both on-processor trace capabilities and performance counters. The SiFive Trace Performance Library provides a mechanism to choose which of the performance counters to write to the trace buffer and when to write it. Performance counter information is written to the trace buffer using the ITC trace mechanism as data acquisition messages. The  performance library supports either manual instrumenting the program under trace with library function calls to collect the performance data and write it to the trace buffer, or using a timer based ISR to collect the performance data and write it to the trace buffer, or recording performance data at the entry and exit of functions.
+Some SiFive processors have both on-processor trace capabilities and performance counters. The SiFive Trace Performance Library provides a mechanism to choose which of the performance counters to write to the trace buffer and when to write them durring program execution for later processing. Performance counter information is written to the trace buffer using the ITC trace mechanism as data acquisition messages. The  performance library supports either manual instrumenting the program under trace with library function calls to collect the performance data and write it to the trace buffer, or using a timer based ISR to collect the performance data and write it to the trace buffer, or recording performance data at the entry and exit of functions using the gcc or clang -finstrument-funtions compiler option.
 
 For details on what trace capabilities and performance counter support the processor design being used supports, reference the documentation for the particular processor implementation being traced.
 
-The Sifive Trace Decoder can extract performance data written with the Sifive Trace Performance Library. Extracted performance and address information is written to text files which can then be processed with Freedom Studio/Trace Compass. For information on using the trace decoder to manually extract the performance information and the format of the extracted information, reference the SiFive Trace Decoder Performance Counter document. To view the information in Freedom Studio with Trace Compass, see the Freedom Studio documentation.
+The Sifive Trace Decoder can extract performance data written with the Sifive Trace Performance Library. Extracted performance and address information is written to text files which can then be processed with Freedom Studio/Trace Compass, or with a custom tool. For information on using the trace decoder to manually extract the performance information and the format of the extracted information, reference the SiFive Trace Decoder Performance Counter document. To view the information in Freedom Studio with Trace Compass, see the Freedom Studio documentation.
 
 The performance library supports collecting performance data for both single core processors and multiple cores processors. Currently it does not support multi-cluster (more than one funnel), but that support would be easy to add.
 
 ### API
 
-The SiFive perf library provides the following routines for initializing and collecting performance data:
+The SiFive perf library provides the following routines and data types for initializing and collecting performance data:
 
 ```
+typedef enum {
+    perfCount_Raw = 0,
+    perfCount_Delta = 1,
+    perfCount_DeltaXOR = 2,
+} perfCountType_t;
+
+typedef struct {
+        unsigned int ctrIdx;
+        int type;
+        union {
+                int code;
+                struct {
+                        int cache_id;
+                        int op_id;
+                        int result_id;
+                };
+        };
+        unsigned long event_data;
+	unsigned long ctrInfo;
+} perfEvent;
+
 int perfInit(int num_cores,int num_funnels)
-int perfManualInit(uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)
-int perfTimerISRInitint interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)
-int perfFuncEntryExitInit(uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)
+int perfManualInit(perfEvent *perfCntrList,int numCntrs,int itcChannel,perfCountType_t cntType,uint32_t SBABufferSize)
+int perfTimerISRInit(perfEvent *perfCntrList,int numCntrs,int itcChannel,perfCountType_t cntType,uint32_t SBABufferSize,int interval)
+int perfFuncEntryExitInit(perfEvent *perfCntrList,int numCntrs,int itcChannel,perfCountType_t cntType,uint32_t SBABufferSize)
 int perfWriteCntrs()
 int perfTraceOn()
 int perfTraceOff()
-int perfResetCntrs(uint32_t cntrMask)
-
+int perfWriteTrace(char *file)
 ```
 
 Below, each of the routines are described.
@@ -42,41 +62,51 @@ Arguments:
 
 `int num_cores:` The number of cores for the processor being traced.
 
-`int num_funnels:` The number of trace funnels for the processor being traced. In the current implementation, more than one funnel is not currently supported (multi-cluster).
+`int num_funnels:` The number of trace funnels for the processor being traced. In the current implementation, more than one funnel is not currently supported (multi-cluster). If there are no funnels, use 0.
 
 Returns 0 on success, otherwise error.
 
 ```
-int perfManualInit(uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)
+int perfManualInit(perfEvent *perfEventList,int numEvents,int itcChannel,perfCountType_t cntType,uint32_t SBABufferSize)
 ```
 
-`PerfManualInit()` should be used when manually instrumenting the program (adding explicit calls to perfWriteCntrs() where you would like to record the performance counters). It will program the trace engine and do any needed setup. `PerfManualInit()` should be called after `perfInit()` and before any performance data is collected.
+`PerfManualInit()` should be used when manually instrumenting the program (adding explicit calls to perfWriteCntrs() at the places you would like to record the performance counters). It will program the trace engine and do any needed setup. `PerfManualInit()` should be called after `perfInit()` and before any performance data is collected.
 
-The trace engine will be set up with trace mode `teInstruction = 0` (no instruction trace) and `teInstrumentation = 1` (generate ITC message for all itStimulus registers). Also, timestamps will be on. note that if instruction trace and itc instrumentation is enabled, the number of itc (data acquisition) messages that will fit in the buffer will be greatly reduced because of the presence of BTM or HTM messages in the buffer.
+The trace engine will be set up with trace mode `teInstruction = 0` (no instruction trace) and `teInstrumentation = 1` (generate ITC message for all itStimulus registers). Also, timestamps will be on. The stop on wrap bit will be set so that if the buffer fills, tracing will stop (instead of wrapping to the beginning of he buffer and continuing). Note that if instruction trace and itc instrumentation is enabled (through your own or customized init), the number of itc (data acquisition) messages that will fit in the buffer will be greatly reduced because of the presence of BTM or HTM messages in the buffer.
 
-If tracing multiple cores, each core to trace needs to call `perfManualInit()`. If only tracing a single core, only that core needs to call `perfManualInit()`.
+If tracing multiple cores, each core to trace needs to call `perfManualInit()`. If only tracing a single core, only that core needs to call `perfManualInit()`. (Note: Currently if tracing on a Linux system, only tracing a single core is supported, but the system may be multi-core.)
 
 Arguments:
 
-`uint32_t counterMask:` There are up to 32 HPM performance counters that can be recorded, although actual implementations may be less. Counters are identified by a number 0 - 31, and the bit position in the mask specifies the counter number (e.g. bit 3 is counter 3). Bits that are set in the mask will be recorded. The program counter is always recorded, as are timestamps. Each core being traced can have a different `counterMask`.
+`perfEventList:` There are up to 32 HPM performance counters that can be recorded, although actual implementations may be less. The perfEventList arument should be a pointer to an array of perfEvent structures that define how to program the counters and what events to count. The elements of the structure loosly follow the OpenSBI event programming/selection format. The fields that must be initialized prior to calling perfManualInit are:
 
-`int itcChannel:` Which ITC channel to write the performance data out to. The channel number can be 0 - 31. Channel 6 is the commonly used channel for performance data, and the default channel for the trace decoder (but it can be overridden). All cores being traced should use the same channel. Each core will write to its own set of ITC stimulus registers, so each core's data can be identified in the trace (the trace decoder will supply the source core information in the decoded output).
+type: The type field follows the deffinition in the RISC-V OpenSBI Specification. The types supported in the perf library are 0 (hardware general events), 1 (Hardware cache events), and 2 (Hardware raw events).
 
-`int stopOnWrap:` This is a boolean that specifies if the teStopOnWrap bit should be set in the teControl register. Typically, the stop-on-wrap bit should be set. If it is not, the trace decoder may not be able to successfully decode the trace because the trace may never contain an uncompressed time stamp which is needed to decoder timestamps correctly.
+code: The deffinitaion of the code field is dependant on the type field. For type 0, the code filed specifies which general event to count. See the OpenSBI specification for a complete list. For type 1, the code field is not used. Instead, the cache_id, op_id, and result_id fields should be initialized with the values from the OpenSBI specification. Type 2 events do not use the code field.
 
-`int markerCnt:` Specifies how often to write a marker into the trace message stream. If 0, an initial marker will be written only on the first call to `perfWriteCntrs()`, and never again. If greater than 0, specifies how many times `perfWriteCntrs()` will be called before inserting a marker message (for example, 100 would write a marker message every 100 times the `perfWriteCntrs()` is invoked). An initial marker message is always written before the very first time performance data is written to the trace buffer. The marker ensures the trace decoder can synchronize the expected performance data item with what is in the buffer, and also informs the trace decoder what performance data is being written. The marker contains a header value that can be identified as a marker, the `coutnerMask`, and the performance counter programming for all HPM performance counters 3 and greater. Performance counters 0 - 2 are fixed function and not programmable, so no definition is needed.
+cache_id, op_id, result_id: Used only for type 1 events. Use the values in the OpenSBI specification
+
+event_data: Only used for type 2 events (Raw). The event data field should be programmed with the value desired to program into the HPM event registers. See the manual for the processor being traced to see what value to program.
+
+The order of events in the perfEventList is not important. The first three event counters are fixed function, and if selected will be programmed correctly independant of where they are in the perf event list.
+
+`numEvents:` The number of perf counter events in the perfEventList array.
+
+`itcChannel:` Which ITC channel to write the performance data out to. The channel number can be 0 - 31. Channel 6 is the commonly used channel for performance data, and the default channel for the trace decoder (but it can be overridden). All cores being traced should use the same channel. Each core will write to its own set of ITC stimulus registers, so each core's data can be identified in the trace (the trace decoder will supply the source core information in the decoded output).
+
+`cntType:` Selects one of `perfCount_Raw`, `perfCount_Delta`, or `perfCount_DeltaXOR` for how the performance counts are recorded in the trace buffer. `perfCount_Raw` records the full raw value of the performance counter and addresses. `perfCount_Delta` records the additive delta of the performance counter since the last write, and full addresses. `perfCounte_DeltaXOR` records the XOR delta of the performance counters and addresses since the last write, and most closely mimics how data is recorded by the trace engine (addresses and timestamps). Performace counter wrap is automatically handled for PerfCount_Delta and perfCount_DeltaXOR if the counter does not wrap more than once. PerfCount_Raw always records the actual raw value of the counter read out of the register.
+
+`SBABufferSize:` The SBABufferSize argument specifies the size of the trace buffer to allocate. If SBABufferSize is 0, the SRAM buffer in the trace engine will be selected as the trace buffer. If the SBABufferSize argument is greater than 0, a system memory buffer will be allocated with the specified size, which is usefull when a larger buffer is desired.
 
 Returns 0 on success, otherwise error.
 
 ```
-int perfTimerISRInit(int interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)
+int perfTimerISRInit(perfEvent *perfCntrList,int numCntrs,int itcChannel,perfCountType_t cntType,uint32_t SBABufferSize,int interval)
 ```
 
-The `perfTimerISRInit()` function performs the following tasks: Programs a timer based ISR that will be invoked every interval microseconds and write the current execution address and selected HPM counters to the trace buffer using ITC writes for the selected core. The trace engine is programmed for ITC instrumentation and no instruction trace.
+The `perfTimerISRInit()` function performs the following tasks: Programs a timer based ISR that will be invoked every interval microseconds and write the current execution address and selected HPM counters to the trace buffer using ITC writes for the selected core. The trace engine is programmed the same as perfManualInit(). In addition to the requested performance counters, the address of where execution was at the time of the interrupt is recorded. TimerISR tracing is currently not supported for Linux performance tracing.
 
-The trace engine will be set up with trace mode `teInstruction = 0` (no instruction trace) and `teInstrumentation = 1` (generate ITC message for all itStimulus registers). Also, timestamps will be on. note that if instruction trace and itc instrumentation is enabled, the number of itc (data acquisition) messages that will fit in the buffer will be greatly reduced because of the presence of BTM or HTM messages in the buffer.
-
-When using timer based performance tracing, a stack size of at least 800 bytes is needed. Check the linker script for your project, and if the stack size is less than 800 bytes, adjust it accordingly. The default stack size for a project is typically 400 bytes. If odd behavior is observed, such as program crashes, try increasing the stack size further.
+When using timer based performance tracing on bare metel, a stack size of at least 800 bytes is needed. Check the linker script for your project, and if the stack size is less than 800 bytes, adjust it accordingly. The default stack size for a project is typically 400 bytes. If odd behavior is observed, such as program crashes, try increasing the stack size further.
 
 If tracing multiple cores, each core to be traced must call `perfTimerISRInit()`.
 
@@ -84,15 +114,69 @@ After calling `perfTimerISRInit()`, the counters are running and the ISR is bein
 
 Arguments:
 
-`int interval:` The period in microseconds the timer ISR will be called at. If less than 100, 100 will be used.
+`perfEventList:` There are up to 32 HPM performance counters that can be recorded, although actual implementations may be less. The perfEventList arument should be a pointer to an array of perfEvent structures that define how to program the counters and what events to count. The elements of the structure loosly follow the OpenSBI event programming/selection format. The fields that must be initialized prior to calling perfManualInit are:
 
-`uint32_t counterMask:` a 32 bit mask that specifies which HPM counters to read and record in the trace buffer using ITC writes. The address of where the timer interrupt occured is also always written.
+`type:` The type field follows the deffinition in the RISC-V OpenSBI Specification. The types supported in the perf library are 0 (hardware general events), 1 (Hardware cache events), and 2 (Hardware raw events).
 
-`int itcChannel:` Specifies which ITC stimulus register to write the performance data to. Can be 0 - 31. Channel 6 is the normal performance data channel.
+`code:` The deffinitaion of the code field is dependant on the type field. For type 0, the code filed specifies which general event to count. See the OpenSBI specification for a complete list. For type 1, the code field is not used. Instead, the cache_id, op_id, and result_id fields should be initialized with the values from the OpenSBI specification. Type 2 events do not use the code field.
 
-`int stopOnWrap:` If non-zero, will set the stop-on-wrap bit in the teControl register, otherwise it will be cleared. If stop-on-wrap is cleared, the trace decoder may not be able to decode the trace correctly because buffer wrap may overwrite any timestamp synchronization messages (ICT Control message).
+`cache_id, op_id, result_id:` Used only for type 1 events. Use the values in the OpenSBI specification
 
-`int markerCnt:` Specifies how often to write a marker into the trace message stream. If 0, an initial marker will be written only the first time the ISR is invoked, and never again. If greater than 0, specifies how many times the ISR will write performance data to the trace buffer before inserting a marker message (for example, 100 would write a marker message every 100 times the timer ISR is invoked). An initial marker message is always written before the very first time performance data is written to the trace buffer. The marker ensures the trace decoder can synchronize the expected performance data item with what is in the buffer, and also informs the trace decoder what performance data is being written. The marker contains an initial value that can be identified as a marker, the coutnerMask, and the performance counter programming for all HPM performance counters 3 and greater. Performance counters 0, 1, and 2 are fixed function and not programmable.
+`event_data:` Only used for type 2 events (Raw). The event data field should be programmed with the value desired to program into the HPM event registers. See the manual for the processor being traced to see what value to program.
+
+The order of events in the perfEventList is not important. The first three event counters are fixed function, and if selected will be programmed correctly independant of where they are in the perf event list.
+
+`numEvents:` The number of perf counter events in the perfEventList array.
+
+`itcChannel:` Which ITC channel to write the performance data out to. The channel number can be 0 - 31. Channel 6 is the commonly used channel for performance data, and the default channel for the trace decoder (but it can be overridden). All cores being traced should use the same channel. Each core will write to its own set of ITC stimulus registers, so each core's data can be identified in the trace (the trace decoder will supply the source core information in the decoded output).
+
+`cntType:` Selects one of `perfCount_Raw`, `perfCount_Delta`, or `perfCount_DeltaXOR` for how the performance counts are recorded in the trace buffer. `perfCount_Raw` records the full raw value of the performance counter and addresses. `perfCount_Delta` records the additive delta of the performance counter since the last write, and full addresses. `perfCounte_DeltaXOR` records the XOR delta of the performance counters and addresses since the last write, and most closely mimics how data is recorded by the trace engine (addresses and timestamps). Performace counter wrap is automatically handled for PerfCount_Delta and perfCount_DeltaXOR if the counter does not wrap more than once. PerfCount_Raw always records the actual raw value of the counter read out of the register.
+
+`SBABufferSize:` The SBABufferSize argument specifies the size of the trace buffer to allocate. If SBABufferSize is 0, the SRAM buffer in the trace engine will be selected as the trace buffer. If the SBABufferSize argument is greater than 0, a system memory buffer will be allocated with the specified size, which is usefull when a larger buffer is desired.
+
+`interval:` The period in microseconds the timer ISR will be called at. If less than 100, 100 will be used.
+
+Note: Not currently support for the Linux performance library.
+
+Returns 0 on success, otherwise error.
+
+```
+int perfFuncEntryExitInit(perfEvent *perfCntrList,int numCntrs,int itcChannel,perfCountType_t cntType,uint32_t SBABufferSize)
+```
+
+`PerfFuncEntryExitInit()` should be used when the program being traced has been compiled with function entry/exit instrumentation (by using the -finstrument-functions compiler switch). The -finstrument-functions compiler switch automatically addes calls at all function entries and exits to routines provided in the performance library that will record information in the trace buffer. When running on bare metel, all cores should call `perfFunctionEntryExitInit()`, and performance trace information will be recorded for all cores. The exception would be if any core is executing code that is not instrumented with the -finstrument-functions option, they do not need to call `perfFunctionEntryExitInit()`. Typipcly, all cores run the same program, so they will all be executing instrumented functions.
+
+The Linux version of the performance trace library does no currently support collecting data on multiple cores. If collecting a performance trace on a multicore Linux platform, the application being traced should be limited to a single core using the linux `taskset` command.
+
+In addtion to the requested performance counters, each time a function is called, the address of the function being called and the address of the function it being called from will be recorded. Each time a function exits, the address of the funciton exiting and the address of the function returning to will be recorded. Note that these addresses are the address of the funciton start, and not the address of the call or return.
+
+The `perfFuncEntryExitInit()` function will program the trace engine and do any needed setup. `perfFunctEntryExitInit()` should be called after `perfInit()` and before any performance data is collected.
+
+The trace engine will be set up with trace mode `teInstruction = 0` (no instruction trace) and `teInstrumentation = 1` (generate ITC message for all itStimulus registers). Also, timestamps will be on. The stop on wrap bit will be set so that if the buffer fills, tracing will stop (instead of wrapping to the beginning of he buffer and continuing). Note that if instruction trace and itc instrumentation is enabled (through your own or customized init), the number of itc (data acquisition) messages that will fit in the buffer will be greatly reduced because of the presence of BTM or HTM messages in the buffer.
+
+If tracing multiple cores on bare metal, each core needs to call `perfFuncEntryExitInit()` (all cores should be traced because they will all execute code with the function entry/exits instrumented by the compiler).
+
+Arguments:
+
+`perfEventList:` There are up to 32 HPM performance counters that can be recorded, although actual implementations may be less. The perfEventList arument should be a pointer to an array of perfEvent structures that define how to program the counters and what events to count. The elements of the structure loosly follow the OpenSBI event programming/selection format. The fields that must be initialized prior to calling perfManualInit are:
+
+`type:` The type field follows the deffinition in the RISC-V OpenSBI Specification. The types supported in the perf library are 0 (hardware general events), 1 (Hardware cache events), and 2 (Hardware raw events).
+
+`code:` The deffinitaion of the code field is dependant on the type field. For type 0, the code filed specifies which general event to count. See the OpenSBI specification for a complete list. For type 1, the code field is not used. Instead, the cache_id, op_id, and result_id fields should be initialized with the values from the OpenSBI specification. Type 2 events do not use the code field.
+
+`cache_id, op_id, result_id:` Used only for type 1 events. Use the values in the OpenSBI specification
+
+`event_data:` Only used for type 2 events (Raw). The event data field should be programmed with the value desired to program into the HPM event registers. See the manual for the processor being traced to see what value to program.
+
+The order of events in the perfEventList is not important. The first three event counters are fixed function, and if selected will be programmed correctly independant of where they are in the perf event list.
+
+`numEvents:` The number of perf counter events in the perfEventList array.
+
+`itcChannel:` Which ITC channel to write the performance data out to. The channel number can be 0 - 31. Channel 6 is the commonly used channel for performance data, and the default channel for the trace decoder (but it can be overridden). All cores being traced should use the same channel. Each core will write to its own set of ITC stimulus registers, so each core's data can be identified in the trace (the trace decoder will supply the source core information in the decoded output).
+
+`cntType:` Selects one of `perfCount_Raw`, `perfCount_Delta`, or `perfCount_DeltaXOR` for how the performance counts are recorded in the trace buffer. `perfCount_Raw` records the full raw value of the performance counter and addresses. `perfCount_Delta` records the additive delta of the performance counter since the last write, and full addresses. `perfCounte_DeltaXOR` records the XOR delta of the performance counters and addresses since the last write, and most closely mimics how data is recorded by the trace engine (addresses and timestamps). Performace counter wrap is automatically handled for PerfCount_Delta and perfCount_DeltaXOR if the counter does not wrap more than once. PerfCount_Raw always records the actual raw value of the counter read out of the register.
+
+`SBABufferSize:` The SBABufferSize argument specifies the size of the trace buffer to allocate. If SBABufferSize is 0, the SRAM buffer in the trace engine will be selected as the trace buffer. If the SBABufferSize argument is greater than 0, a system memory buffer will be allocated with the specified size, which is usefull when a larger buffer is desired.
 
 Returns 0 on success, otherwise error.
 
@@ -100,21 +184,7 @@ Returns 0 on success, otherwise error.
 int perfWriteCntrs()
 ```
 
-Used for manual instrumentation of the program. Calling `perfWriteCntr()` performs the same function as the timer ISR, but is explicitly called in the program when manually instrumenting for performance data collection. The `perfInit()` and `perfManualInit()` functions must be called before the first call to `perfWriteCntrs()`. When called, performance data will be written for the calling core. the perormance data specified in the call to perfManualInit() for that core will be written.
-
-After calling `perfManualInit()`, the counters are enabled and trace is enabled, but calls to perWriteCntrs() will not write data to the trace buffer until `perfTraceOn()` is called.
-
-Returns 0 on success, otherwise error.
-
-```
-int perfFuncEntryExitInit(uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)
-```
-
-Initializes the system for collecting performance information on the entry and exit to functions. On entry to a function, the information collected is the beginning address of the function being entered (called), the address of where it was called from, and any performance counters specified by the counterMask argument. The same data is recored on function exit; the beginning address of the function being exited is recored and not the address of the return.
-
-Using function level performance data collection requires compiling the code of interest with the -finstrument-functions switch to insert special calls at the entry and exit of functions. Versions of these special entry/exit functions are provided by the SiFive Perf Library. Function level instrumention using the -finstrument-functions has been verified to work with both gcc and with clang (LLVM). You will need to modify your projects Makefiles and add the -finstrument-functions swith where appropriate. Also, normally you do not want to compile any of the metal library routines with the -finstrument-functions switch because the entry/exit functions provided in the SiFive Perf Library make use of some of them, which could cause infinite recursion.
-
-If the processor has multiple cores, all cores should call this init function. All cores will execute code that call functions that have been instrumented with the function entry/exit routines. If not all cores have called the `perfFuncEntryExitInit()` function, you will see unexpected results and program crashes.
+Used for manual instrumentation of the program. Calling `perfWriteCntrs()` writes the performance counters  selected with the perfManualInit() function for the core calling `perfWriteCntrs()`, and also records the address of where perfWriteCntrs() was called.
 
 Returns 0 on success, otherwise error.
 
@@ -122,9 +192,11 @@ Returns 0 on success, otherwise error.
 int perfTraceOn()
 ```
 
-Enables writing performance information to the trace buffer. By default after calling the init routines, capturing performance data is disabled. After calling `perTraceOn()`, performance data will be written to the trace buffer.
+After calling the desired init functions, `perfTraceOn()` must be called before any performance data will be recorded. Prior to calling perfTraceOn(), calls to the performance collection routines (either manual, timer based, or compiler instrumentation) perform not operations. Calling `perfTraceOn()` should not be called until after the initialization routines have been called, and doing so will return a non-zero value.
 
-The `perfTraceOn()` function enables capturing trace data for all cores that have been initialized to capture performance data. If using function entry/exit performance data tracing, it will be on for all cores.
+If doing multicore performace data collection, only one core being collecting performance data needs to call perfTraceOn().
+
+Calling `perfTraceOn()` also write trace configuration information to the trace buffer. This information include the type of the counts recorded (raw, delta, or delta XOR), what counters will be recorded and how they are configured.
 
 Returns 0 on success, otherwise error.
 
@@ -132,17 +204,19 @@ Returns 0 on success, otherwise error.
 int perfTraceOff()
 ```
 
-Disbles writing performance information to the trace buffer. Performance counters will still be running, but no data will be written to the trace buffer.
-
-The `perfTraceOff()` function disables capturing trace data for all cores. A call to `perfTraceOn()` will resume capturing trace data.
+Calling `perfTraceOff()` disables collection of performance data until the next call to `perfTraceOn()`. After calling `perfTraceOff()`, calls to either manual or automatic performace data collection do not record data.
 
 Returns 0 on success, otherwise error.
 
 ```
-int perfResetCntrs(uint32_t cntrMask)
+int perfWriteTrace(char *file)
 ```
 
-The `perfResetCntrs()` function will reset all the counters specified by the cntrMask argument for the calling cores. Counters specified by the cntrMask will be reset to 0. If there are multiple cores, only the calling core's counters will be reset.
+The `perfWriteTrace()` function writes the trace data in the trace buffer out to disk. Only as much valid data as has been recorded is written. It is not necessary to disable tracing using the `perfTraceOff()` funtion prior to calling `perfWriteTrace()`. Calling `perfWriteTrace()` does not change the state of tracing being on or off. The `perfWriteTrace()` function is only supported on Linux targets. If collectoion performance data on a bare-metal target, the debugger will capture the performance data and write it to a file.
+
+Arguments:
+
+`file:` The path/name of the file to write the performance data to. If the `file` argument is NULL, the name `trace.rtd` will be used, and created in the current working directory.
 
 Returns 0 on success, otherwise error.
 
@@ -150,159 +224,382 @@ Returns 0 on success, otherwise error.
 
 Whether using manual performance data collection, a timer ISR to collect performance data, or function entry/exit performance data collection, some modification of the program under trace will need to be done. All methods are outlined below. As a general rule, only one type of performance data collection may be supported at a time. For example, you cannot do both function entry/exit and timer ISR based data collection. This is also true for manual performance data collection.
 
-If using any HPM counters other than 0, 1, or 2 to collect performance data, it is the programmers responsibility to add code to program the desired counters correctly using the metal HPM functions. Counter 0, 1, and 2 are fixed function and cannot be configured differently.
+Independant of the type of performance data collection (manual, timer ISR, or function entry/exit), the following includes will need to be added to any files with explicit calls to the data collection routines (such as the initialization routins, manual collection routine, the on/off routines, or the write data to a file routine):
+
+```
+#include "sifive_trace.h"
+#include "sifive_perf.h"
+```
+
+Also, an array named tmm will need to be defined that lists the base addresses of the trace funnels for the system, such as:
+
+```
+#define traceBaseAddress 0x10000000
+
+// create the trace memory map object
+struct TraceRegMemMap volatile * tmm[] = {(struct TraceRegMemMap*)traceBaseAddress,(struct TraceRegMemMap*)(traceBaseAddress+0x1000)};
+```
+
+The tmm array lists the base addresses for two a dual core system.
+
+Next, the address of the trace funnel (if present) will need to be defined, as in:
+
+```
+#define tfBaseAddress	0x10018000
+
+// create the trace funnel memory map object
+struct TfTraceRegMemMap volatile * fmm = (struct TfTraceRegMemMap*)tfBaseAddress;
+```
+
+If the system does not have a trace funnel, set fmm to NULL.
 
 Manual Performance Data Collection:
 
 Prior to collecting performance data, a call to `perfInit(int numCore, int numFunnels)` must be made. The first argument specifies the number of cores in the processor, and numFunnels specifies the number of funnels. NumFunnels should be 0 if there are no funnels. If multi-core, only one core should call `perfInit()`.
 
-After calling `perfInif()`, `perfManualInit(uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)` should be called. Each core that will be collecting performance data should call `perfManualInit()` before any performance data is collected. After calling `perfManualINit()`, `perfTraceOn()` will need to be collected to enable writing performance data to the trace buffer.
+After calling `perfInif()`, `perfManualInit()` should be called. Each core that will be collecting performance data should call `perfManualInit()` before any performance data is collected. After calling `perfManualInit()`, `perfTraceOn()` will need to be called to enable writing performance data to the trace buffer.
 
 Add calls to your code for `perfWriteCntrs()` wherever you want performance data to be collected and written to the trace buffer.
 
+If collection performance data for a Linux target, When done collecting performance data, a call to `perfWriteTrace()` must be made. If on a bare-metal target, the debugger will collect the performance data and write it to a file when done.
+
 Timer ISR Performance Data Collection:
 
-To enable a timer ISR to collect performance data, First call `perfInit(int numCore, int numFunnels)`, similar to manual performance data collection. If multi-core, only one core should `call perfInit()`. Next, add a call to `perfTimerISRInit(int interval,uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)`. After the call to `perfTimerISRInit()`, the timer is running but data will not be written to the trace buffer until `perfTraceOn()` is called. Each core wishing to collect performance data for should call `perfTimerISRInit()`. The `perfTraceOn()` function should not be called until all cores that are going to call `perfTimerISRInit()` have done so.
+To enable a timer ISR to collect performance data, First call `perfInit()`, similar to manual performance data collection. If multi-core, only one core should `call perfInit()`. Next, add a call to `perfTimerISRInit()`. After the call to `perfTimerISRInit()`, the timer is running but data will not be written to the trace buffer until `perfTraceOn()` is called. Each core wishing to collect performance data for should call `perfTimerISRInit()`. The `perfTraceOn()` function should not be called until all cores that are going to be traced have called `perfTimerISRInit()`. If running on a Linux target, a call to `perfWriteCntrs()` should be made to write the performance data to a file.
 
 Function Entry/Exit Performance Data Collection:
 
-To enable collecting performance data at the entry/exit of functions, first add code so a single core calls `perfInit()`. Next, every core should call `perfFuncEntryExitInit(uint32_t counterMask,int itcChannel,int stopOnWrap,int markerCnt)`. When doing function entry/exit performance data collection, all cores will be calling code that has been instrumented by the compiler to call special functions at the entry and exit of functions. After calling `perfFuncEntryExitInit()`, performance data will not be collected until a call to `perfTraceOn()`.
+To enable collecting performance data at the entry/exit of functions, first add code so a single core calls `perfInit()`. Next, every core should call `perfFuncEntryExitInit()`. When doing function entry/exit performance data collection, all cores will be calling code that has been instrumented by the compiler to call special functions at the entry and exit of functions. After calling `perfFuncEntryExitInit()`, performance data will not be collected until a call to `perfTraceOn()`. If running on a Linux target, after the perforamnce data has been collected, a call to `perfWriteCntrs()` should be made to write the performance data to a file.
 
 Function entry/exit level tracing requires compiling the desired code to trace with the -finstrument-functions switch. This will add special code to the entry and exit of functions to call the functions `__cyg_profile_func_exit()` and `__cyg_profile_funct_enter()` in the SiFive perf library. Makefile modifications will be required. It is advised to not compile the metal functions with the -finstrument-functions switch because the __cyg_profile_func entry and exit functions make use of some of the metal functions, which would cause infinite recursion. To explicitly force a function to not be compiled with the function entry/exit instruementation, you can annotate a function declaration with the no_instruemnt_function attribute (see the sifive_perf.c file for examples).
+
+A complete example is at the end of this document in the Example Program section.
 
 ### Performance Data Format
 
 All performance data is written to the trace buffer using ITC stimulus register writes creating data acquisition messages in the trace buffer. Only the itc channel specified in the initialization functions is used for all writes. All data is in binary.
 
-The captured performance trace is a combination of header information and performance trace data. The header contains information on the type of performance trace (function entry-exit information or periodic and manual information). The header also contains information on the HPM counters being measured (which ones, and how they are configured). The header is called the marker, which also identifies the start of the trace.
+The captured performance trace is a combination of header information and performance trace data. The header contains information on the format of performance count information (raw, delta, or detla XOR). The header also contains information on the HPM counters being measured (which ones, and how they are configured). The header is written to the trace buffer when perfTraceOn() is called.
 
-Marker Message Format:
+The performance data records following the header contain one or two addresses, and the count information for all the counters being recorded.
 
-Marker messages provide information to the trace decoder on what HPM counters are being recorded and the programming of the HPM counters, as well as the type of performance trace. Every marker messages begins with a full 32 bit data acquisition messages with the data value `0x70657266` (which is ('p'<<24)|('e'<<16)|('r'<<8)|('f'<<0)) for manual and timer based writes. If doing function entry/exit instrumentation, the marker message will begin with a `0x66756e63` (which is ('f'<<24|('u'<<16)|('n'<<8)|('c')<<0). The beginning value allows the trace decoder to identify a marker in the performance data stream, and the type of tracing being performed. It is possible an actual counter value will coincide with the marker header value, which would cause decoder confusion, but unlikely This possible confusion could be removed if it was gauantted there would only be one marker message at the beginning of the trace. Currently, it is possible to have multiple markers throuout the trace.
+Headder Format:
 
-Following the marker identification word will be a second 32 bit data acquisition message that contains the counter mask. Non-zero bits in the mask give which HPM counters will be recorded by their position in the mask.
+The header provides information to the trace decoder on what HPM counters are being recorded and the programming of the HPM counters, as well as the type of format of the performance data. Every headder begins with a full 32 bit data acquisition messages with the data value `0x70657266` (which is ('p'<<24)|('e'<<16)|('r'<<8)|('f'<<0)). The beginning value allows the trace decoder to identify a header in the performance data stream. It is possible an actual counter value will coincide with the marker header value, which would cause decoder confusion, but unlikely. This possible confusion could be removed if it was gauantted there would only be one marker message at the beginning of the trace. Currently, it is possible to have multiple markers throuout the trace (by starting and stopping the trace multiple times).
 
-The examples below show the format for a function instrumentation marker written into the trace buffer. It assumes ITC channel 6 for performance data, and an HPM counter mask of 0x0000000c (counters 2 and 3 being collected). Counter 2 is programmed for instructions retired, and counter 3 is programmed for a RAW event counter.
+Following the header identification word will be a 8 bit data acquisition message that contains the type of the count data (perfCount_Raw = 0, perfCount_Delta = 1, perfCount_DeltaXOR = 2).
 
-The marker and counter mask would be:
+Next, a 32 bit performance counter mask is written. 1 bits in the mask indicate that counter in that bit position will be collected. For example, if bit 5 is set, HPM counter 5 will be present.
 
-| Message Number | ID Tag | Value | Description |
-| :------------: | :----: | :---: | :---------- |
-| #1 | 0x00000018 | 0x66756e6e | Marker identification header |
-| #2 | 0x00000018 | 0x0000000c | HPM counter mask |
+After the performance counter mask, the definiations for how the counters are programmed, and their size and CSR address is written. For each bit in the mask that is set, the following will be written:
 
-Following the counter mask will be a series of data acquisition messages with the programming of any HPM counters that are being recorded (as indicated by the previous counter mask). HPM performance counters event information data is borrowed from the RICS-V Supervisor Binary Interface Specification, Version 1.0, which uses Type, Code, and Event Data. Each HPM counter will also have a counter info field wich give the size in bits of the counter and the HPM CSR address of the counter. Type is a 32 bit data acqusition message with the type of the event. Legal values for traces are 0 (Hardware General Events), 1 (Hardware Cache Events), and 2 (Hardware Raw Events). For event types of 0 and 1, the next field is a 32 bit Code field. The meanding of the Code field varries by Event Type, and can be found in the RISC-V SBI Specification. Event types of 2 do not have a Code field, but instead have a 64 bit Event Data field (two data acquisition writes; the first is the lower 32 bits, the second is the upper 32 bits). The 64 bit Event Data field contains the raw programming of the HPM event selectors, and is only used for event type 2 (Event Hardware Raw Events).
+counter type: 32 bit write with the values 0 = OpenSBI type 0 counter (hardware general event), 1 = OpenSBI type 1 counter (hardware cache event), or 2 = OpenSBIG type 2 counter (hardware raw event).
 
-For all message type, the next field is the counter info field, in a single 32 bit data acquistion message. The format of the counter info field si the same as the lower 32 bits of the counter_info field in the RISC-V SBI specification. Bits 11:0 contain the 12 bit CSR number. Bits 17:12 contain the most significant bit number of the counter. For example, if the counter is 32 bits wide, it would be 31 (for bits 0 - 31).
+If the counter type is 0 or 1:
 
-An example of a counter definiation for counter definition for counter 2 would be:
+code: 32 bit write. This is the code value for OpenSBI type 0 and 1 events.
 
-| #3 | 0x00000018 | 0x00000000 | Type = 0. Hardware General Event |
-| #4 | 0x00000018 | 0x00000002 | Code = 2. Harware General Event SBI_PMU_SW_INSTRUCTIONS |
-| #5 | 0x00000018 | 0x0003fc02 | Counter Info: CSR = 0xc02, width = 64 bits (63..0) |
+If the counter type is 2:
 
-And for counter 3, programmed as a Raw Event would be:
+event_data: A single 32 bit write if the architecture is 32 bit; two 32 bit writes if the architecure is 64 bits. This is because 32 bit system use a 32 bit event selector register while 64 bits systems use a 64 bit event selector register.
 
-| #6 | 0x00000018 | 0x00000002 | Type = 2. Hardware Raw Event |
-| #7 | 0x00000018 | 0x00000000 | Event Data: bits 31..0 |
-| #8 | 0x00000018 | 0x00000002 | Event Data: bits 63..32 |
+Next, for all counters:
 
-The type, code, event_data, and counter_info fields are repeated for all counters being recorded as indicated by the counter mask.
+counter_info: 32 bit write. This is the lower 32 bits of the OpenSBI counter_info field. The lower 32 bits contain the  most significant bit of the counter in bits 12 - 17 (used to determine the size of the coutner), and the CSR number of the counter (in bits 0 - 11). The exception is the HW_TIMESTAMP counter, which is not CSR mapped (the trace encoder timestamp is used instead). The CSR number field for the TIMESTAMP counter will be 0, but the most significant bit field will be correct. If the most significant bit field is n, then the width of the coutner is n+1.
 
-For description of the raw event data, see the manual for the processor being used, under the Event Selector Encodings section.
+Counter definiations are written to the trace buffer from the lease significant selected bit in the mask to the most significan.
 
-Performance Data Format:
+The ID tag value is used to determine the size of the data (8, 16, or 32 bits), as shown below:
 
-For timer ISR performance tracing or manual performance tracing, every time performance data is recorded in the trace buffer, the first thing written is the address of where in the binary being traced execution was as when either the ISR was invoked or a manual write to record perfdata was called. On processors with 32 bit address space, a single full 32 bit data acquisition message will be written. On systems with more than 32 bits of address space, if the upper 32 bits of the address are 0, only a single 32 bit data acquisition message will be written. If the upper 32 bits are not 0, bit 0 in the lower 32 bits will be set and written using a full 32 bit data acquisition message. Next, the upper 32 bits will be written using a second 32 bit data acquisition message. Valid addresses for the processor will always have bit 0 clear, so setting bit 0 to signal a second 32 bits of address follows can be used when the address is greater than 32 bits. When the trace decoder sees bit 0 set in the first address message, it knows there is a second address following for the upper 32 bits.
+| ID Tag | Size of data |
+| :----: | :----------: |
+| 0x00000018 | 32 bits |
+| 0x0000001a | 16 bits |
+| 0x0000001b | 8 bits |
 
-For function entry/exit performance tracing, the format is similar, but has some differences. For function entry, the first thing will be a single byte data acquisition message with the value 'C'. Single byte data acquisition messages can be identified by an ID tag with the lower two bits set. Following the 'C' will be two addresses, using the same 32 or 64 bit address as described above for the timer ISR and manual messages. The first address is the beginning address of the funciton being entered, and the second address is the address of where it was called from. For function exit messages, there will be no single byte data acquisition messsage, just the two addresses. For function exit, the first address will be the beginning address for the function being exited, and the second address will be where it was called from.
+Tabular Representation of Header:
 
-For timer ISR, manaual, and function entry/exit performance tracing, following the address(es), the selected HPM counters will be written from the lower numbers to the higher numbered (the order is deterministic). To reduce the size of the performance data write to the trace buffer and increase the number of performance data measurements that will fit in the trace buffer, the number of writes to the trace buffer for each performance counter is variable. HPM performance counters can be up to 64 bits each. The actual size is implementation dependent. Currently, the SiFive performance library will do either a single 32 bit write for each performance counter (the lower 32 bits), or a 48 bit write (more than 32 bits).  If the actual value of the performance counter fits in 32 bits (the upper 32 bits are 0), a single 32 bit data acquisition message will be written into the trace buffer. If the upper 32 bits are not 0, the lower 32 bits will first be written as a full ITC stimulus write and the next 16 bits (bits 32 - 47) will be written as a 16 bit ITC stimulus write. This allows the trace decoder to deterministically parse the data acquisition stream and determine if 32 or 48 bits were written for a performance counter (by the presence of 16 bit data acquisition messages). 48 bits per counter is likely adequate, but if this restriction proves problematic, the format will be modified to provide additional bits.
+```
++----------------+--------+------------+--------------------------------------------------------------------+
+| Message Number | Bits   | Value      | Description                                                        |
++----------------+--------+------------+--------------------------------------------------------------------+
+| 1              | 32     | 0x70657266 | Magic number identifying header                                    |
++----------------+--------+------------+--------------------------------------------------------------------+
+| 2              | 8      | 0 - 2      | Type of count data; 0, 1, or 2                                     |
++----------------+--------+------------+--------------------------------------------------------------------+
+| 3              | 32     | Mask       | 32 bit counter mask; indicates wich HPM counters will be collected |
++----------------+--------+------------+--------------------------------------------------------------------+
 
-Below is an example of the format for performance counter data in the trace buffer. It assumes ITC channel 6 for performance data, more than 32 bits of address space, and an HPM counter mask of 0x00000003. In this example, HPM counter 0 has more than 32 bits of significant data and counter 1 has 32 bits or less.
+```
 
-| Message Number | ID Tag | Value | Description |
-| :------------: | :----: | :---: | :---------- |
-| #1 | 0x00000018 | 0x800022c6 | Lower 32 bits of address. Bit 0 is clear which indicates the address fits in 32 bits |
-| #2 | 0x00000018 | 0x000029e3 | Lower 32 bits of count 0 |
-| #3 | 0x0000001a | 0x1234 | Next 16 bits of counter 0. The ID tag of 0x1a instead of 0x18 indicates this is a 16 bit write and not 32 |
-| #4 | 0x00000018 | 0x12345678 | Lower 32 bits of counter 1. Upper 32 bats are all 0, so no additional write for counter 1 |
+For each counter slected in the mask, from least significant to most significant bit in the mask:
 
-Support for programming what the HPM counters 3 and up actually count can be done using the HPM Metal routines, and is not part of this SiFive performance library.
+```
++----------------+--------+------------+--------------------------------------------------------------------+
+| Message Number | Bits   | Value      | Description                                                        |
++----------------+--------+------------+--------------------------------------------------------------------+
+| n              | 32     | 0 - 2      | OpenSBI type field for the counter                                 | 
++----------------+--------+------------+--------------------------------------------------------------------+
+
+```
+
+If counter type = 0 or 1 (event_data field not present):
+
+```
++----------------+--------+--------------+------------------------------------------------------------------+
+| Message Number | Bits   | Value        | Description                                                      |
++----------------+--------+--------------+------------------------------------------------------------------+
+| n+1            | 32     | code         | OpenSBI code value of OpenSBI type 0 and 1 events                |
++----------------+--------+--------------+------------------------------------------------------------------+
+| n+2            | 32     | counter_info | Lower 32 bits of OpenSBI counter_info.                           |
++----------------+--------+------------+--------------------------------------------------------------------+
+
+```
+Else, if counter type = 2, archsize == 32 bits (32 bit event_data, code field not present):
+
+```
++----------------+--------+--------------+------------------------------------------------------------------+
+| Message Number | Bits   | Value        | Description                                                      |
++----------------+--------+--------------+------------------------------------------------------------------+
+| n+1            | 32     | event_data   | Lower 32 bits of the OpenSBI event_data field                    |
++----------------+--------+--------------+------------------------------------------------------------------+
+| n+2            | 32     | counter_info | Lower 32 bits of OpenSBI counter_info.                           |
++----------------+--------+--------------+------------------------------------------------------------------+
+
+```
+
+Else, if counter type = 2, archsize == 64 bits (64 bit event_data, code field not present):
+
+```
++----------------+--------+--------------+-------------------------------------------------------------------+
+| Message Number | Bits   | Value        | Description                                                       |
++----------------+--------+--------------+-------------------------------------------------------------------+
+| n+1            | 32     | event_dataL  | Lower 32 bits of the OpenSBI event_data field                     |
++----------------+--------+--------------+-------------------------------------------------------------------+
+| n+2            | 32     | event_dataH  | Upper 32 bits of the OpenSBI event_data field                     |
++----------------+--------+--------------+-------------------------------------------------------------------+
+| n+3            | 32     | counter_info | Lower 32 bits of OpenSBI counter_info.                            |
++----------------+--------+--------------+-------------------------------------------------------------------+
+
+```
+
+Endif
+
+EndFor
+
+Trace Record Format:
+
+A trace record is written into the trace buffer each time addresses and performace counter data are recorded (timer ISR, funciton entry or exit, manual instrumentation - which ever has been selected). Each trace record contains a trace record type, either one or two addresses (depending on the trace record type), and 0 to 31 performance counters, depending on the number available and the number selected. To save space in the trace buffer, addresses and counters are written using the following formats:
+
+Trace Record Type: Each trace record starts with a trace record type written as an 8 bit data acquisition message. Valid trace record types are: perfRecord_FuncEnter (0), perfRecord_FuncExit (1), perfRecord_Manual (2), and perfRecord_ISR (3). 
+
+Addresses: One or two addresses will be written after the trace record type for each trace record. If the trace format is either perfCount_Raw (0) or perfCount_Delta (1), the entire address will be written in either 1 or two 32 bit writes. All program counter addresses will be at even addresses, which means bit 0 will always be clear. Because of this, the lower bit of the first write (the lower 32 bits of the addres) is left as a 0 if the entire address fits in 32 bits (a single write), otherwise, bit 0 is set to 1 before writting it to the buffer, and then a second write of the upper 32 bits is performed. The decoding the trace and reading an address, when the first (lower) 32 bits of an address are read from the buffer, if bit 0 is set, anohter read of the upper 32 bits must be done.
+
+For perfCount_DeltaXOR (2) trace format, first an xor of the last address and the new address is performed, and the result is written to the trace buffer. If the XOR result fits in 32 bits, a single write is performed. If there are bits set in the upper 32 bits, bit 0 is set before the first write, and then the upper 32 bits of the XOR result are written.
+
+For manual and timer ISR trace records, there will be a single address in each trace record. For function entry/exit trace records, there wil be two address in each trace record (the second immeadiately following the first). For manual and timer ISR trace records, the single address is the address of where execution was before the trace record was written. For entry/exit records, the first address is the address of the start of the current function; the second address is the start of the function control is transferring to (either through a call or return).
+
+Each address that fits in 32 bits has the format:
+
+```
++----------------+------+-----------+--------------------------------------------------------------------+
+| Message Number | Bits | Value     | Description                                                        |
++----------------+------+-----------+--------------------------------------------------------------------+
+| n              | 32   | Address   | Lower 32 bits of the address (could be actual address or DeltaXOR) |
+|                |      |           | Least significant bit on Address will be clear to indicate no      |
+|                |      |           | upper portion of address follows                                   |
++----------------+------+-----------+--------------------------------------------------------------------+
+```
+
+If the address does not fit in 32 bits:
+
+```
++----------------+------+-----------+--------------------------------------------------------------------+
+| Message Number | Bits | Value     | Description                                                        |
++----------------+------+-----------+--------------------------------------------------------------------+
+| n              | 32   | AddressL  | Lower 32 bits of the address (could be actual address or DeltaXOR) |
+|                |      |           | Least significant bit in AddressL will be set to indicate upper    |
+|                |      |           | portion of address follows                                         |
++----------------+------+-----------+--------------------------------------------------------------------+
+| n+1            | 32   | AddressH  | Upper 32 bits of the address (could be actual address or DeltaXOR) |
++----------------+------+-----------+--------------------------------------------------------------------+
+```
+
+Note that on a 64 bit system, some addresses will fit in 32 bits, and some will need more. This means that some address portions of the trace record may have a single 32 bit write for the addres, and others may be two 32 bits writes; depending if that particular address being recorded fits in 32 bits or not. If the lease significan bit is set in the lower address, there will be a second write for the upper address following. Tools processing the trace should clear the lower bit in the lower address if it is set (after reading the upper portion of the address that follows the lower portion). Each address may be one or two writes.
+
+Performance counter counts: After the address(s), the values of the performance counters being recorded (as indicated by the previous mask) will be written. Performance counters may have the least significant bit (bit 0) either set or clear, so the same algorithm as is used for addresses cannot be used. Instead if the value to be written (either the count value read (RAW), the difference between the new count value read and the previous count value read (Delta), or the XOR difference between the new count value and the previous count value (DeltaXOR))) fits in 32 bits, a single 32 bit write is performed. If instead, the value is greater than 32 bits, a second 16 bit write for bits 32 - 47 is done. This allows recording up to 48 bits for each performance counter. It is unlikly that 48 bits will not be enough, especially if doing delta recording. Performance counter information will be repeased for all counters selected in the mask, from the counter indicated by the lease significant set bit in the mask, to the most significan set bit.
+
+The table below shows the formats for counter data:
+
+If the counter value (Raw, Delta, or DeltaXOR - whichever is being recorded) fits in 32 bits:
+
+```
++----------------+------+-----------------+-----------------------------------------------------------------------+
+| Message Number | Bits | Value           | Description                                                           |
++----------------+------+-----------------+-----------------------------------------------------------------------+
+| n              | 32   | Counter Value L | Lower 32 bits of the counter value (could be Raw, Delta, or DeltaXOR) |
++----------------+------+-----------------+-----------------------------------------------------------------------+
+```
+
+If the counter value (Raw, Delta, or DeltaXOR - whichever is being recorded) is more than 32 bits:
+
+```
++----------------+------+-----------------+-----------------------------------------------------------------------+
+| Message Number | Bits | Value           | Description                                                           |
++----------------+------+-----------------+-----------------------------------------------------------------------+
+| n              | 32   | Counter Value L | Lower 32 bits of the counter value (could be Raw, Delta, or DeltaXOR) |
++----------------+------+-----------------+-----------------------------------------------------------------------+
+| n+1            | 16   | Counter Value H | Next 16 bits of the counter value (could be Raw, Delta, or DeltaXOR)  |
++----------------+------+-----------------+-----------------------------------------------------------------------+
+```
+
+When decoding the trace, each time the lower 32 bits of the perforamnce counter is read, the next message in the trace is checked to see if it is a 32 bit write or a 16 bit write. If it is a 16 bit write, that message is consumed and the vlue is added to bits 32 - 47 of the lower 32 bits of the counter previously read.
+
+Trace records are repeated until the end of the trace data collected.
 
 ### Current Limitations
 
-Freedom Studio (and perhaps other debuggers) alter the trace encoder and funnel registers on break/resume. It is recommended you do not set any breakpoints between the calls to the performance library init routines until after you have executed the code you wish to collect performance data for.
+If using Freedom Studio while collecting a trace: Freedom Studio (and perhaps other debuggers) alter the trace encoder and funnel registers on break/resume. It is recommended you do not set any breakpoints between the calls to the performance library init routines until after you have executed the code you wish to collect performance data for.
 
-Stack size needs to be at least 800 bytes. Check the linker script to make sure. If odd behavior is seen, try increasing the stack size further. The amount needed will depend on the actual program being traced.
+When doing bare-metal tracing and using timer ISR data collection, the stack size needs to be at least 800 bytes. Check the linker script to make sure. If odd behavior is seen, try increasing the stack size further. The amount needed will depend on the actual program being traced.
 
-The current SiFive performance library has the following known limitations:
+When collecting a performance trace on a Linux system, tracing a multi-core application is not supported. If on a multi-core processor, the appliction must have its affinity set to a single core (using the Linux taskset command).
 
-Counter definitions as part of the perf markers are only the lower 32 bits. The limitation is created by the metal library routine `metal_hpm_get_event()`, and will be fixed in the future.
+On Linux systems, multicore support is functional, but mutli-cluster is currently not supported (more than one funnel).
 
-Multicore support is functional, but mutli-cluster is currently not supported (more than one funnel).
+On Linux systems, the timer ISR method is not currently supported. Users can add one if needed.
 
-Only processors with support for the ICT Control Message CKSRC = 0, CKDF = 0 are known to work for collecting decodable traces. This is because the Control 0, 0 message is used to insert an uncompressed timestamp into the trace buffer using an ICT message. Without an initial uncompressed timestamp, timestamp values cannot be correctly decoded. Processors with support for event trace should have the needed ICT Control Message.
+On bare-metal, the perfWriteTrace9() function is not supported; the debugging/trace tools being used should read the trace (either SRAM or SBA).
+
+The bare-metal version does not support OpenSBI type 0 (Hardware general events) and type 1 (Hardware cache events). Use raw events instead (type 2).
+
+Only processors with trace encoders that have support for the ICT Control Message CKSRC = 0, CKDF = 0 are known to work for collecting decodable traces. This is because the Control 0, 0 message is used to insert an uncompressed timestamp into the trace buffer using an ICT message. Without an initial uncompressed timestamp, timestamp values cannot be correctly decoded. Processors with support for event trace should have the needed ICT Control Message.
 
 The SRAM trace buffers on processors have limited size and may restrict the amount of data that can be collected. If available, the SBA sink may be used to collect larger amounts of performance data. Using an SBA sink will require modifications to the init routines in the SiFive perf library for programming the trace engine.
 
-### Example Program
+### Example Proram
 
-The program below shows how to use the timer ISR performance data collection. Create a project in Freedom Studio and replace the main program with the one below. Make sure traceBaseAddress is set correctly for the processor being used. Also, add sifive_trace.h, sifive_perf.h, and sifive_perf.c to the project. The program below requires a stack size of 800, set in the linker script.
+Below is a complete example of a simple program that recursively computes a fibinachi number. The program has the necessary calls descirbed above to collection function entry/exit performance data.
 
 ```
-/* Copyright 2019 SiFive, Inc */
-/* SPDX-License-Identifier: Apache-2.0 */
-
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "sifive_trace.h"
 #include "sifive_perf.h"
 
 #define traceBaseAddress 0x10000000
+#define tfBaseAddress	0x10018000
 
 // create the trace memory map object
-struct TraceRegMemMap volatile * const tmm[] = {(struct TraceRegMemMap*)traceBaseAddress};
+struct TraceRegMemMap volatile * tmm[] = {(struct TraceRegMemMap*)traceBaseAddress,(struct TraceRegMemMap*)(traceBaseAddress+0x1000)};
 
-#define caBaseAddress 0
-// create the cycle accurate trace memory map object
-struct CaTraceRegMemMap volatile * const cmm[] = {(struct CaTraceRegMemMap*)caBaseAddress};
-
-#define tfBaseAddress 0
 // create the trace funnel memory map object
-struct TfTraceRegMemMap volatile * const fmm = (struct TfTraceRegMemMap*)tfBaseAddress;
+struct TfTraceRegMemMap volatile * fmm = (struct TfTraceRegMemMap*)tfBaseAddress;
 
-int foo22()
+// Define the perfomrance events to collect:
+
+perfEvent perfCntrList[] = {
+        {
+                .type = perfEventHWGeneral,
+                .code = HW_CPU_CYCLES,
+                .event_data = 0
+        },
+        {
+                .type = perfEventHWGeneral,
+                .code = HW_TIMESTAMP,
+                .event_data = 0
+        },
+        {
+                .type = perfEventHWGeneral,
+                .code = HW_INSTRUCTIONS,
+                .event_data = 0
+        },
+        {
+                .type = perfEventHWGeneral,
+                .code = HW_CACHE_MISSES,
+                .event_data = 0
+        },
+        {
+                .type = perfEventHWGeneral,
+                .code = HW_BRANCH_INSTRUCTIONS,
+                .event_data = 0
+        },
+        {
+                .type = perfEventHWGeneral,
+                .code = HW_BRANCH_MISSES,
+                .event_data = 0
+        },
+        {
+                .type = perfEventHWRaw,
+                .code = 0,
+                .event_data = (2 << 16) | (0 << 0)
+        }
+};
+
+unsigned long fib(unsigned long f)
 {
-	return 22;
-}
-
-int main (void)
-{
-	int rc;
-
-    rc = perfInit(sizeof tmm / sizeof tmm[0],0);
-    if (rc != 0) {
-    	return rc;
-    }
-
-        rc = perfTimerISRInit(100,7,6,1,10);
-    if (rc != 0) {
-    	return rc;
-    }
-
-    perfTraceOn();
-
-    // loop until trace buffer wraps
-
-	while ((getTeSinkWp(0) & 1) == 0) {
-		rc = foo22();
-		printf("control: 0x%08x rp: %d wp: %d, itcTraceEnable: 0x%08x\n",getTeControl(0),getTeSinkRp(0),getTeSinkWp(0),getITCTraceEnable(0));
-	}
-
-	perfTraceOff();
-
-	printf("control: 0x%08x rp: %d wp: %d, itcTraceEnable: 0x%08x\n",getTeControl(0),getTeSinkRp(0),getTeSinkWp(0),getITCTraceEnable(0));
-
+  if (f == 0) {
     return 0;
+  }
+
+  if (f == 1) {
+    return 1;
+  }
+
+  return fib(f-2) + fib(f-1);
 }
+
+int main()
+{
+  unsigned long f;
+  int rc;
+
+  rc = perfInit(sizeof tmm / sizeof tmm[0],1);
+  if (rc != 0) {
+    printf("perfInit() failed. Exiting\n");
+
+    return rc;
+  }
+
+  rc = perfFuncEntryExitInit(perfCntrList,sizeof perfCntrList/sizeof perfCntrList[0],6,perfCount_Delta,32*1024);
+
+  if (rc != 0) {
+    printf("perfFuncEntryExitInit(): failed\n");
+
+    return rc;
+  }
+
+  perfTraceOn();
+
+  unsigned long i = 20;
+
+  f = fib(i);
+
+  printf("fib(%lu) = %lu\n",i,f);
+  
+  perfTraceOff();
+
+  perfWriteTrace(NULL);
+
+  return 0;
+}
+```
+
+The program should be compiled with the -finstrument-functions compiler switch, and linked with sifve_perf.o. The sifive_perf.c program does not need to be compiled with the -finstrument functions.  For example, on a Linux system:
+
+```
+cc -c -finstrument-functions fib.c
+cc -c sifive_perf.c
+cc -static -o fib.elf fib.o sifive_perf.o
+```
+
+On Linux, the -static sitch is necessary for the SiFive trace decoder to correctly resoved function addresses, otherwise it is not needed.
+
+To execute the program on a multi-core Linux system, use the `taskset` command to restrict tracing to a single core, as in:
+
+```
+taskset 2 ./fib.elf
+```
+
+The taskset command above will confine program execution to core 1 (starting from core 0).
