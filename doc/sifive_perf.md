@@ -504,7 +504,7 @@ The SRAM trace buffers on processors have limited size and may restrict the amou
 
 ### Example Program
 
-Below is a complete example of a simple program that recursively computes a Fibonacci number. The program has the necessary calls described above to collect function entry/exit performance data on a Linux target. The bare-metal version is similar.
+Below is a complete example of a simple program that recursively computes a Fibonacci number. The program has the necessary calls described above to collect function entry/exit performance data on a Linux target. The bare-metal version is similar. This Linux example assumed the necessary trace-perf device driver has been previously loaded. See the trace-perf documentation for instructions on how to build and load the device driver (TBD).
 
 ```
 #include <stdio.h>
