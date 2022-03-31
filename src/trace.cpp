@@ -2029,6 +2029,9 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,
 	return TraceDqr::DQERR_OK;
 }
 
+//should def break type 1 into cache_id, op_id, result_id?
+//function entry/exit second address is messing up following addresses!!
+
 TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint32_t cntrType,uint32_t cntrCode,uint64_t eventData,uint32_t cntrInfo)
 {
 	char msgBuff[512];
@@ -2104,8 +2107,6 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 		return TraceDqr::DQERR_OK;
 	}
 
-//	printf("--> processITCPerf(): data: 0x%08x address: 0x%08x state:%d core:%d\n",data,addr,state[coreId],coreId);
-
 	while (!consumed) {
 		switch (state[coreId]) {
 		case perfStateSync:
@@ -2158,7 +2159,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 		case perfStateGetCntrMask:
 			// 32 bit counter mask
 
-//			printf("perfStateGetMarkerMask\n");
+//			printf("perfStateGetMarkerMask (mask: 0x%08x\n",data);
 
 			if ((addr & 0x3) == 0) {
 				// 32 bit write
@@ -2204,6 +2205,8 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			}
 			break;
 		case perfStateGetCntrDef:
+//			printf("state perfStateGetCntrDef\n");
+
 			cntrType[coreId] = data;
 
 			switch (cntrType[coreId]) {
@@ -2225,12 +2228,16 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateGetCntrCode:
+//			printf("state perfStateGetCntrCode\n");
+
 			cntrCode[coreId] = data;
 			state[coreId] = perfStateGetCntrInfo;
 
 			consumed = true;
 			break;
 		case perfStateGetCntrEventData:
+//			printf("state perfStateGetCntrEventData\n");
+
 			if (valuePending[coreId]) {
 				cntrEventData[coreId] = (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
 
@@ -2246,6 +2253,8 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateGetCntrInfo:
+//			printf("state perfStateGetCntrInfo\n");
+
 			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],cntrType[coreId],cntrCode[coreId],cntrEventData[coreId],data);
 
 			cntrMaskIndex[coreId] += 1;
@@ -2273,6 +2282,8 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateGetCntrRecord:
+//			printf("state perfStateGetCntrRecord (type: %d)\n",data);
+
 			if ((addr & 0x3) == 3) {
 				// 8 bit type
 
@@ -2290,9 +2301,11 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateGetAddr:
+//			printf("state perfStateGetAddr (%d:0x%08x)\n",valuePending[coreId],data);
+
 			if (valuePending[coreId] == true) {
 				if (cntType[coreId] == perfCount_DeltaXOR) {
-					lastAddress[coreId] ^= (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+					lastAddress[coreId] ^= ((((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
 				}
 				else {
 					lastAddress[coreId] = (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
@@ -2324,7 +2337,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 				savedLow32[coreId] = data & ~1;
 				valuePending[coreId] = true;
 			}
-			else {
+			else { // nothing pending. LSb is not set
 				if (cntType[coreId] == perfCount_DeltaXOR) {
 					lastAddress[coreId] ^= data;
 				}
@@ -2355,6 +2368,8 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateGetCallSite:
+//			printf("state perfStateGetCallSite (%d:0x%08x)\n",valuePending[coreId],data);
+
 			if (valuePending[coreId] == true) {
 				if (recordType[coreId] == perfRecord_FuncEnter) {
 					emitPerfFnEntry(coreId,ts,lastAddress[coreId],(((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
@@ -2421,12 +2436,13 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateGetCnts:
+//			printf("state perfStateGetCnts p:%d i:%d s:%d\n",valuePending[coreId],cntrMaskIndex[coreId],32-(addr&3)*8);
+
 			switch (addr & 0x3) {
 			case 0:
 				// 32 bit data. This should be a low count. If we have a pending, emit it
 
 				if (valuePending[coreId]) {
-
 					if (cntType[coreId] == perfCount_DeltaXOR) {
 						lastCount[coreId][cntrMaskIndex[coreId]] ^= savedLow32[coreId];
 						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
@@ -2473,7 +2489,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 				}
 				else {
 					if (cntType[coreId] == perfCount_DeltaXOR) {
-						lastCount[coreId][cntrMaskIndex[coreId]] ^= (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+						lastCount[coreId][cntrMaskIndex[coreId]] ^= ((((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
 						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
 					}
 					else {
