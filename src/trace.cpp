@@ -1857,7 +1857,7 @@ TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,Tr
 			unsigned int   linenumber;
 			const char *line;
 
-			rc = disassembler->getSrcLines(fnAddr,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			rc = disassembler->getSrcLines(csAddr,&filename,&cutPathIndex,&functionname,&linenumber,&line);
 			if (rc == 1) {
 				// have file/line info
 
@@ -1868,7 +1868,7 @@ TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,Tr
 
 				int offset;
 
-				rc = disassembler->getFunctionName(fnAddr,&functionname,&offset);
+				rc = disassembler->getFunctionName(csAddr,&functionname,&offset);
 				if (rc == 0) {
 					// have function name
 
@@ -2116,6 +2116,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 
 			if (data == markerValue) {
 				lastAddress[coreId] = 0;
+				cntrAddress[coreId] = 0;
 
 				state[coreId] = perfStateGetCntType;
 			}
@@ -2317,6 +2318,8 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 					state[coreId] = perfStateGetCallSite;
 				}
 				else {
+					cntrAddress[coreId] = lastAddress[coreId];
+
 					emitPerfAddr(coreId,ts,lastAddress[coreId]);
 
 					if (cntrMask[coreId] != 0) {
@@ -2349,6 +2352,8 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 					state[coreId] = perfStateGetCallSite;
 				}
 				else {
+					cntrAddress[coreId] = lastAddress[coreId];
+
 					emitPerfAddr(coreId,ts,lastAddress[coreId]);
 
 					if (cntrMask[coreId] != 0) {
@@ -2382,9 +2387,11 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 
 				if (recordType[coreId] == perfRecord_FuncEnter) {
 					emitPerfFnEntry(coreId,ts,lastAddress[coreId],nextAddr);
+					cntrAddress[coreId] = lastAddress[coreId];
 				}
 				else {
 					emitPerfFnExit(coreId,ts,lastAddress[coreId],nextAddr);
+					cntrAddress[coreId] = nextAddr;
 				}
 
 				lastAddress[coreId] = nextAddr;
@@ -2420,9 +2427,11 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 
 				if (recordType[coreId] == perfRecord_FuncEnter) {
 					emitPerfFnEntry(coreId,ts,lastAddress[coreId],nextAddr);
+					cntrAddress[coreId] = lastAddress[coreId];
 				}
 				else {
 					emitPerfFnExit(coreId,ts,lastAddress[coreId],nextAddr);
+					cntrAddress[coreId] = nextAddr;
 				}
 
 				lastAddress[coreId] = nextAddr;
@@ -2453,12 +2462,12 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 				if (valuePending[coreId]) {
 					if (cntType[coreId] == perfCount_DeltaXOR) {
 						lastCount[coreId][cntrMaskIndex[coreId]] ^= savedLow32[coreId];
-						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
 					}
 					else {
 						// emit the previously pending count
 
-						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
 					}
 
 					valuePending[coreId] = false;
@@ -2498,12 +2507,12 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 				else {
 					if (cntType[coreId] == perfCount_DeltaXOR) {
 						lastCount[coreId][cntrMaskIndex[coreId]] ^= ((((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
-						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
 					}
 					else {
 						// emit the previously pending count
 
-						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],(((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],(((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
 					}
 
 					cntrMaskIndex[coreId] += 1;
@@ -2532,12 +2541,12 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 				if (valuePending[coreId] == true) {
 					if (cntType[coreId] == perfCount_DeltaXOR) {
 						lastCount[coreId][cntrMaskIndex[coreId]] ^= (uint64_t)savedLow32[coreId];
-						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
 					}
 					else {
 						// emit the previously pending count
 
-						emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],(uint64_t)savedLow32[coreId]);
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],(uint64_t)savedLow32[coreId]);
 					}
 
 					valuePending[coreId] = false;
