@@ -12,7 +12,7 @@
 #include <sys/mman.h>
 
 #include "sifive_trace.h"
-#include "linux_sifive_perf.h"
+#include "sifive_linux_perf.h"
 
 #define PERF_IOCTL_NONE                         0
 #define PERF_IOCTL_GET_HW_CNTR_MASK             100
@@ -24,7 +24,7 @@
 #define PERF_IOCTL_ALLOC_SBA_DMA_BUFFER         106
 #define PERF_IOCTL_FREE_SBA_DMA_BUFFER          107
 #define PERF_IOCTL_GET_SBA_BUFFER_PHYS_ADDR     108
-#define PERF_IOCTL_GET_SBA_BUFFER_SIZE          109f
+#define PERF_IOCTL_GET_SBA_BUFFER_SIZE          109
 #define PERF_IOCTL_READ_SBA_BUFFER              110
 #define PERF_IOCTL_GET_EVENT_CNTR_INFO          111
 
@@ -558,6 +558,7 @@ __attribute__((no_instrument_function)) static int initTraceEncoder(int core,per
 		setTeSinkWp(core,teSinkWP);
 		setTeSinkRp(core,0);
 	}
+    }
 
     // setup the timestamp unit. If multicore, only one core or one funnel will be the source
 
@@ -807,7 +808,7 @@ __attribute__((no_instrument_function)) static int initTraceFunnels(perfSettings
             sinkLimit = (uint64_t)settings->sink.sinkBase + (uint64_t)(settings->sink.sinkSize-1);
 
             if ((sinkLimit >> 32) != 0) {
-                printf("Warning: initTraceEncoder(): SBA sink buffer extends across 32 bit boundry. Truncated\n");
+                printf("Warning: initTraceFunnels(): SBA sink buffer extends across 32 bit boundry. Truncated\n");
 
                 sinkLimit = 0xfffffffcUL;
             }
@@ -863,7 +864,7 @@ __attribute__((no_instrument_function)) static int initTraceEngineDefaults()
 
     // initialize all trace encoders to defaults. Trace encoder are disabled
 
-    rc = initTraceEncoder(core,&settings);
+    rc = initTraceEncoder(numCores,&settings);
     if (rc!= 0) {
         return 1;
     }
@@ -941,7 +942,7 @@ __attribute__((no_instrument_function)) static int perfInitCntrs(int core,int de
         for (int i = 0; i < nCntrs; i++) {
             if ((pCntrLst[i].type == 0) && (pCntrLst[i].code == HW_CPU_CYCLES)) {
                 if (perfCntrLst[0].ctrIdx == -1) {
-                    perfCntrLst[0] = pCntrLst[i]; <= why isn't this fixing type?
+                    perfCntrLst[0] = pCntrLst[i];
                     perfCntrLst[0].ctrIdx = 0;
 
                     perfCntrMask |= 1 << 0;

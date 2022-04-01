@@ -98,5 +98,7 @@ int main()
 
   perfTraceOff();
 
+// perfWriteTrace(NULL);
+
   return 0;
 }
