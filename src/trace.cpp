@@ -2371,19 +2371,23 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 //			printf("state perfStateGetCallSite (%d:0x%08x)\n",valuePending[coreId],data);
 
 			if (valuePending[coreId] == true) {
-				if (recordType[coreId] == perfRecord_FuncEnter) {
-					emitPerfFnEntry(coreId,ts,lastAddress[coreId],(((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
-				}
-				else {
-					emitPerfFnExit(coreId,ts,lastAddress[coreId],(((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
-				}
+				uint64_t nextAddr;
 
 				if (cntType[coreId] == perfCount_DeltaXOR) {
-					lastAddress[coreId] ^= (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+					nextAddr = lastAddress[coreId] ^ ((((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
 				}
 				else {
-					lastAddress[coreId] = (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+					nextAddr = (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
 				}
+
+				if (recordType[coreId] == perfRecord_FuncEnter) {
+					emitPerfFnEntry(coreId,ts,lastAddress[coreId],nextAddr);
+				}
+				else {
+					emitPerfFnExit(coreId,ts,lastAddress[coreId],nextAddr);
+				}
+
+				lastAddress[coreId] = nextAddr;
 
 				valuePending[coreId] = false;
 
@@ -2405,19 +2409,23 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 				valuePending[coreId] = true;
 			}
 			else {
-				if (recordType[coreId] == perfRecord_FuncEnter) {
-					emitPerfFnEntry(coreId,ts,lastAddress[coreId],(uint64_t)data);
-				}
-				else {
-					emitPerfFnExit(coreId,ts,lastAddress[coreId],(uint64_t)data);
-				}
+				uint64_t nextAddr;
 
 				if (cntType[coreId] == perfCount_DeltaXOR) {
-					lastAddress[coreId] ^= data;
+					nextAddr = lastAddress[coreId] ^ (uint64_t)data;
 				}
 				else {
-					lastAddress[coreId] = data;
+					nextAddr = (uint64_t)data;
 				}
+
+				if (recordType[coreId] == perfRecord_FuncEnter) {
+					emitPerfFnEntry(coreId,ts,lastAddress[coreId],nextAddr);
+				}
+				else {
+					emitPerfFnExit(coreId,ts,lastAddress[coreId],nextAddr);
+				}
+
+				lastAddress[coreId] = nextAddr;
 
 				if (cntrMask[coreId] != 0) {
 					cntrMaskIndex[coreId] = 0;
