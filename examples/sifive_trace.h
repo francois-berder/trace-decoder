@@ -390,7 +390,7 @@ Register Manipulation
 
 // The te_SinkRP register
 #define getTeSinkRp(core)            (tmm[core]->te_sink_rp_register)
-#define setTeSinkRp(core, opt)       (tmm[core]->te_sink_wp_register = (opt))
+#define setTeSinkRp(core, opt)       (tmm[core]->te_sink_rp_register = (opt))
 
 // The te_SinkData register
 #define setTeSinkData(core, value)      (tmm[core]->te_sink_data_register = (value))
