@@ -583,6 +583,7 @@ private:
 	uint8_t recordType[DQR_MAXCORES];
 	uint32_t savedLow32[DQR_MAXCORES];
 	TraceDqr::ADDRESS lastAddress[DQR_MAXCORES];
+	TraceDqr::ADDRESS cntrAddress[DQR_MAXCORES];
 	uint64_t *lastCount[DQR_MAXCORES];
 
 	TraceDqr::DQErr emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc);
