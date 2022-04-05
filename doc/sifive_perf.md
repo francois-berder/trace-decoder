@@ -10,21 +10,25 @@ Some SiFive processors have both on-processor trace capabilities and performance
 
 For details on what trace capabilities and performance counter support the processor design being used supports, reference the documentation for the particular processor implementation being traced.
 
-The Sifive Trace Decoder can extract performance data written with the Sifive Trace Performance Library. Extracted performance and address information is written to text files which can then be processed with Freedom Studio/Trace Compass, or with a custom tool. For information on using the trace decoder to manually extract the performance information and the format of the extracted information, reference the SiFive Trace Decoder Performance Counter document. To view the information in Freedom Studio with Trace Compass, see the Freedom Studio documentation.
+The Sifive trace decoder can extract performance data written with the Sifive Trace Performance Library. Extracted performance and address information is written to text files which can then be processed with Freedom Studio/Trace Compass, or with a custom tool. For information on using the trace decoder to manually extract the performance information and the format of the extracted information, reference the SiFive Trace Decoder Performance Counter document. To view the information in Freedom Studio with Trace Compass, see the Freedom Studio documentation.
 
-The performance library supports collecting performance data for both single-core processors and multiple cores processors. Currently it does not support multi-cluster (more than one funnel), but that support would be easy to add. On Linux systems, currently collecting performance data for single-core applications is supported, but the processor may be multi-core.
+The performance library supports collecting performance data for both single-core processors and multiple cores processors. Currently it does not support multi-cluster (more than one funnel), but that support would be easy to add. Even though performance data can be collected on multi-core processors, currently performance data can only be collected on one of the cores (multi-core support is incomplete).
 
 ### API
 
 The SiFive perf library consists of a Linux version and a bare-metal version. For Linux, use the files:
 
+```
 sifive_linux_perf.h
 sifive_linux_perf.c
+```
 
 For bare metal, use the Freedom Metal versions:
 
+```
 sifive_bare_perf.h
 sifive_bare_perf.c
+```
 
 The SiFive perf library provides the following routines and data types for initializing and collecting performance data:
 
@@ -84,7 +88,7 @@ int perfManualInit(perfEvent *perfEventList,int numEvents,int itcChannel,perfCou
 
 The trace engine will be set up with trace mode `teInstruction = 0` (no instruction trace) and `teInstrumentation = 1` (generate ITC message for all itStimulus registers). Also, timestamps will be on. The stop-on-wrap bit will be set so that if the buffer fills, tracing will stop (instead of wrapping to the beginning of the buffer and continuing). Note that if instruction trace and itc instrumentation is enabled (through your own or customized init), the number of itc (data acquisition) messages that will fit in the buffer will be greatly reduced because of the presence of BTM or HTM messages in the buffer.
 
-If tracing multiple cores, each core to trace needs to call `perfManualInit()`. If only tracing a single core, only that core needs to call `perfManualInit()`. (Note: Currently if tracing on a Linux system, only tracing a single core is supported, but the system may be multi-core.)
+If tracing multiple cores, each core to trace needs to call `perfManualInit()`. If only tracing a single core, only that core needs to call `perfManualInit()`. (Note: Currently only tracing a single core is supported, but the system may be multi-core.)
 
 Arguments:
 
@@ -156,15 +160,13 @@ int perfFuncEntryExitInit(perfEvent *perfCntrList,int numCntrs,int itcChannel,pe
 
 `PerfFuncEntryExitInit()` should be used when the program being traced has been compiled with function entry/exit instrumentation (by using the -finstrument-functions compiler switch). The -finstrument-functions compiler switch automatically adds calls at all function entries and exits to routines provided in the performance library that will record information in the trace buffer. When running on bare metal, all cores should call `perfFunctionEntryExitInit()`, and performance trace information will be recorded for all cores. The exception would be if any core is executing code that is not instrumented with the -finstrument-functions option, they do not need to call `perfFunctionEntryExitInit()`. Typically, all cores run the same program, so they will all be executing instrumented functions.
 
-The Linux version of the performance trace library does not currently support collecting data on multiple cores. If collecting a performance trace on a multicore Linux platform, the application being traced should be limited to a single core using the linux `taskset` command.
+The performance trace library does not currently support collecting data on multiple cores. If collecting a performance trace on a multicore platform, the application being traced should be limited to a single core using the linux `taskset` command.
 
 In addition to the requested performance counters, each time a function is called, the address of the function being called and the address of the function it being called from will be recorded. Each time a function exits, the address of the function exiting and the address of the function returning to will be recorded. Note that these addresses are the address of the function start, and not the address of the call or return.
 
 The `perfFuncEntryExitInit()` function will program the trace engine and do any needed setup. `perfFunctEntryExitInit()` should be called after `perfInit()` and before any performance data is collected.
 
 The trace engine will be set up with trace mode `teInstruction = 0` (no instruction trace) and `teInstrumentation = 1` (generate ITC message for all itStimulus registers). Also, timestamps will be on. The stop on wrap bit will be set so that if the buffer fills, tracing will stop (instead of wrapping to the beginning of the buffer and continuing). Note that if instruction trace and itc instrumentation is enabled (through your own or customized init), the number of itc (data acquisition) messages that will fit in the buffer will be greatly reduced because of the presence of BTM or HTM messages in the buffer.
-
-If tracing multiple cores on bare metal, each core needs to call `perfFuncEntryExitInit()` (all cores should be traced because they will all execute code with the function entry/exits instrumented by the compiler).
 
 Arguments:
 
@@ -204,8 +206,6 @@ int perfTraceOn()
 
 After calling the desired init functions, `perfTraceOn()` must be called before any performance data will be recorded. Prior to calling perfTraceOn(), calls to the performance collection routines (either manual, timer based, or compiler instrumentation) perform no-operations. Calling `perfTraceOn()` should not be called until after the initialization routines have been called, and calling `perfTraceOn()` before finishing initialization will return a non-zero value.
 
-If doing multi-core performance data collection, only one core collecting performance data needs to call `perfTraceOn()`.
-
 Calling `perfTraceOn()` also writes a trace configuration header to the trace buffer. This information includes the type of the counts recorded (raw, delta, or delta XOR), what counters will be recorded and how they are configured.
 
 Returns 0 on success, otherwise error.
@@ -231,6 +231,18 @@ Arguments:
 `file:` The path/name of the file to write the performance data to. If the `file` argument is NULL, the name `trace.rtd` will be used, and created in the current working directory.
 
 Returns 0 on success, otherwise error.
+
+### Memory Allocation:
+
+When performing performance tracing on bare-metal systems, there is an issue with `malloc()` not functioning properly. The performance trace library needs to do some memory allocation for internal data structures and the SBA trace buffer if used. The workaround is the library statically allocates a memory buffer and allocates memory from that.
+
+In the file sifive_bare_perf.h, there is a define:
+
+```
+#define PERF_MEM_POOL_SIZE (256*1024)
+```
+
+The PERF_MEM_POOL_SIZE define specifies how many bytes to statically allocate for use by the performance trace library. It needs to be at least the size of the SBA buffer (if used) plus a few kbytes for internal usage.
 
 ### SiFive Perf Library Usage
 
@@ -482,19 +494,29 @@ When decoding the trace, each time the lower 32 bits of the performance counter 
 
 Trace records are repeated until the end of the trace data collected.
 
+### Alternate Implementations
+
+A dissadvantage of the current implementation is it requires modification of the application to gather performance data for; init calls must be added, calls to traceOn() and traceOff() added, and a call to writeTrace() added to finally write the collected information to a disk file.
+
+One alternative to this would be to write a stand-alone utility that could be run before launching the appliction (or it could lanunch the appliction) that would allocate a trace buffer, program the trace engine as desired, enable reading of performance counter CSR registers in user mode, and program the event registers as desired. When the appliction being traced finishes, the stand-alone utility could be invoked to write the trace buffer to a file.
+
+Even with such a utility, there would still be obsticals. The program being traced still needs to read the desired HPM counters where desired, and to write them and address information to the trace buffer. If doing function entry/exit instrumentation, much of that could be accomplished by the automatically called function entry/exit instrumentation routines. The function entry/exit routines would need a mechanism for determining what HPM counters to collect, as well as they would still need to map the trace engine into user space for writing to the ITC stimulus registers. The function entry/exit routines could keep an initialized flag or use a function pointer so that on the first call certain necessary initialization could be performed (such as opening the device driver and performing operations to do the mapping and get the HPM Counter list which could be written to the device driver by the stand-alone utility). Such an approach would not work for timer based data colleciton; it would still need to have a call to initialization code added to the program under trace.
+
+Another possible approach would be to provide a custom crt0.o replacement. Such a replacement could scan the command line argument list for special arguements specifying what HPM counters to collect and how to program the Event counters. It would perforam all needed initiallization for either function entry/exit data collection or timer based data collection. Providing a customized application exit handler could then write the collected trace out to a trace file.
+
 ### Current Limitations
 
 If using Freedom Studio while collecting a trace: Freedom Studio (and perhaps other debuggers) alter the trace encoder and funnel registers on break/resume. It is recommended you do not set any breakpoints between the calls to the performance library initialization routines until after you have executed the code you wish to collect performance data for.
 
 When doing bare-metal tracing and using timer ISR data collection, the stack size needs to be at least 800 bytes. Check the linker script to make sure. If odd behavior is seen, try increasing the stack size further. The amount needed will depend on the actual program being traced.
 
-When collecting a performance trace on a Linux system, tracing a multi-core application is not supported. If on a multi-core processor, the application must have its affinity set to a single core (using the Linux taskset command).
+When collecting a performance trace on a Linux or bare-metal system, tracing a multi-core application is not supported. If on a multi-core Linux system, the application must have its affinity set to a single core (using the Linux taskset command).
 
-On Linux systems, multicore support is functional, but mutli-cluster is currently not supported (more than one funnel).
+On Linux systems, multicore support is functional (but limited to a single core), but mutli-cluster is currently not supported (more than one funnel).
 
 On Linux systems, the timer ISR method is not currently supported. Users can add one if needed.
 
-On bare-metal, the `perfWriteTrace9()` function is not supported; the debugging/trace tools being used should read the trace (either SRAM or SBA).
+On bare-metal, the `perfWriteTrace()` function is not supported; the debugging/trace tools being used should read the trace (either SRAM or SBA).
 
 The bare-metal version does not support OpenSBI type 0 (Hardware general events), except for a few (see the sifive_bare_perf.h file) and type 1 (Hardware cache events). Use raw events instead (type 2).
 
