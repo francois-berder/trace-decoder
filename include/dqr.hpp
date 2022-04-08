@@ -1026,12 +1026,9 @@ private:
 	char **lines;
 	int numLines;
 	int nextLine;
-	int currentCore;
-	bool flushing;
 
-	bool haveCurrentSrec[DQR_MAXCORES];
-	SRec currentSrec[DQR_MAXCORES];
-	TraceDqr::DQErr deferredStatus;
+	bool haveLookaheadSrec;
+	SRec lookaheadSrec;
 
 	Instruction  instructionInfo;
 	Source       sourceInfo;
@@ -1046,19 +1043,16 @@ private:
 	disassembler_ftype disasm_func;
 	uint32_t instructionBuffer[2];
 
-	TraceDqr::ADDRESS currentAddress[DQR_MAXCORES];
-	TraceDqr::ADDRESS currentTime[DQR_MAXCORES];
-
+	uint64_t currentTime[DQR_MAXCORES];
 	int  enterISR[DQR_MAXCORES];
 
 	TraceDqr::DQErr readFile(char *file);
 	TraceDqr::DQErr parseFile();
-	TraceDqr::DQErr parseLine(int l,SRec *srec);
-	TraceDqr::DQErr getNextSrec(int nextLine,SRec &srec);
+	TraceDqr::DQErr parseLine(int l,int core,SRec *srec);
+	TraceDqr::DQErr getNextSrec(int nextLine,int core,SRec &srec);
 
 //	need to rename nextAddr to compueFlags or something
-	TraceDqr::DQErr computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint32_t currentInst,TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag);
-	TraceDqr::DQErr flushNextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo);
+	TraceDqr::DQErr computeBranchFlags(int core,TraceDqr::ADDRESS currentAddr,uint32_t currentInst,TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag);
 	TraceDqr::DQErr buildInstructionFromSrec(SRec *srec,TraceDqr::BranchFlags brFlags,int crFlag);
 };
 

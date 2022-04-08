@@ -11011,8 +11011,6 @@ Simulator::Simulator(char *f_name,int arch_size)
 	lines = nullptr;
 	numLines = 0;
 	nextLine = 0;
-	currentCore = 0;
-	flushing = false;
 	cutPath = nullptr;
 	newRoot = nullptr;
 
@@ -11049,7 +11047,8 @@ Simulator::Simulator(char *f_name,int arch_size)
 		mach = bfd_mach_riscv32;
 	}
 
-	disasm_func = ::disassembler((bfd_architecture)67/*bfd_arch_riscv*/,false,mach,nullptr);
+//	disasm_func = ::disassembler((bfd_architecture)67/*bfd_arch_riscv*/,false,mach,nullptr);
+	disasm_func = ::disassembler((bfd_architecture)bfd_arch_riscv,false,mach,nullptr);
 	if (disasm_func == nullptr) {
 		status = TraceDqr::DQERR_ERR;
 		return;
@@ -11062,16 +11061,8 @@ Simulator::Simulator(char *f_name,int arch_size)
 
 	disassemble_init_for_target(&disasm_info);
 
-	for (int i = 0; (size_t)i < sizeof currentAddress / sizeof currentAddress[0]; i++) {
-		currentAddress[i] = 0;
-	}
-
 	for (int i = 0; (size_t)i < sizeof currentTime / sizeof currentTime[0]; i++) {
 		currentTime[i] = 0;
-	}
-
-	for (int i = 0; (size_t)i < sizeof haveCurrentSrec / sizeof haveCurrentSrec[0]; i++) {
-		haveCurrentSrec[i] = false;
 	}
 
 	for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
@@ -11091,8 +11082,6 @@ Simulator::Simulator(char *f_name,char *e_name)
 	lines = nullptr;
 	numLines = 0;
 	nextLine = 0;
-	currentCore = 0;
-	flushing = false;
 	elfReader = nullptr;
 	disassembler = nullptr;
 	cutPath = nullptr;
@@ -11155,16 +11144,8 @@ Simulator::Simulator(char *f_name,char *e_name)
 
 	archSize = elfReader->getArchSize();
 
-	for (int i = 0; (size_t)i < sizeof currentAddress / sizeof currentAddress[0]; i++) {
-		currentAddress[i] = 0;
-	}
-
 	for (int i = 0; (size_t)i < sizeof currentTime / sizeof currentTime[0]; i++) {
 		currentTime[i] = 0;
-	}
-
-	for (int i = 0; (size_t)i < sizeof haveCurrentSrec / sizeof haveCurrentSrec[0]; i++) {
-		haveCurrentSrec[i] = false;
 	}
 
 	for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
@@ -11414,7 +11395,7 @@ void SRec::dump()
 	}
 }
 
-TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
+TraceDqr::DQErr Simulator::parseLine(int l,int core,SRec *srec)
 {
 	if (l >= numLines) {
 		return TraceDqr::DQERR_EOF;
@@ -11463,6 +11444,11 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
+	}
+
+	if ((core != -1) && (core != srec->coreId)) {
+		// wrong core
+		return TraceDqr::DQERR_OK;
 	}
 
 	ci = ep - lp;
@@ -11598,7 +11584,7 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 			printf("Simulator::parseLine(): extra input on end of line parsing vrf; ignoring\n");
 		}
 
-		// don't set srec->valid to true because frf records are different
+		// don't set srec->valid to true because vrf records are different
 
 		srec->haveVRF = true;
 		srec->validLine = true;
@@ -11983,7 +11969,7 @@ TraceDqr::DQErr Simulator::parseFile()
 	SRec srec;
 
 	for (int i = 0; i < numLines; i++) {
-		s = parseLine(i,&srec);
+		s = parseLine(i,-1,&srec);
 		if (s != TraceDqr::DQERR_OK) {
 			status = s;
 			printf("Error parsing file!\n");
@@ -11995,7 +11981,7 @@ TraceDqr::DQErr Simulator::parseFile()
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Simulator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint32_t currentInst, TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag)
+TraceDqr::DQErr Simulator::computeBranchFlags(int core,TraceDqr::ADDRESS currentAddr,uint32_t currentInst, TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag)
 {
 	int inst_size;
 	TraceDqr::InstType inst_type;
@@ -12006,12 +11992,8 @@ TraceDqr::DQErr Simulator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint
 	TraceDqr::Reg rd;
 
 	brFlag = TraceDqr::BRFLAG_none;
-	crFlag = enterISR[currentCore];
-	enterISR[currentCore] = 0;
-
-//	if ((expectedAddress != -1) &&(expectedAddress != currentAddress) {
-//		crFlag |= TraceDqr::isInterrupt;
-//	}
+	crFlag = enterISR[core];
+	enterISR[core] = 0;
 
 	// figure out how big the instruction is
 	// Note: immediate will already be adjusted - don't need to mult by 2 before adding to address
@@ -12027,8 +12009,8 @@ TraceDqr::DQErr Simulator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint
 
 	switch (inst_type) {
 	case TraceDqr::INST_UNKNOWN:
-		if ((currentAddr + inst_size/8) != nextAddr) {
-			enterISR[currentCore] = TraceDqr::isInterrupt;
+		if ((nextAddr != 0) && ((currentAddr + inst_size/8) != nextAddr)) {
+			enterISR[core] = TraceDqr::isInterrupt;
 		}
 		break;
 	case TraceDqr::INST_JAL:
@@ -12041,8 +12023,8 @@ TraceDqr::DQErr Simulator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint
 			crFlag |= TraceDqr::isCall;
 		}
 
-		if (currentAddr + immediate != nextAddr) {
-			enterISR[currentCore] = TraceDqr::isInterrupt;
+		if ((nextAddr != 0) && (currentAddr + immediate != nextAddr)) {
+			enterISR[core] = TraceDqr::isInterrupt;
 		}
 		break;
 	case TraceDqr::INST_JALR:
@@ -12080,22 +12062,24 @@ TraceDqr::DQErr Simulator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint
 		// pc = pc + (sign extend immediate offset) (BLTU and BGEU are not sign extended)
 		// inferrable conditional
 
-		if (nextAddr == (currentAddr + inst_size / 8)) {
-			brFlag = TraceDqr::BRFLAG_notTaken;
-		}
-		else if (nextAddr == (currentAddr + immediate)) {
-			brFlag = TraceDqr::BRFLAG_taken;
-		}
-		else {
-			enterISR[currentCore] = TraceDqr::isInterrupt;
+		if (nextAddr != 0) {
+			if (nextAddr == (currentAddr + inst_size / 8)) {
+				brFlag = TraceDqr::BRFLAG_notTaken;
+			}
+			else if (nextAddr == (currentAddr + immediate)) {
+				brFlag = TraceDqr::BRFLAG_taken;
+			}
+			else {
+				enterISR[core] = TraceDqr::isInterrupt;
+			}
 		}
 		break;
 	case TraceDqr::INST_C_J:
 		// pc = pc + (signed extended immediate offset)
 		// inferrable unconditional
 
-		if (currentAddr + immediate != nextAddr) {
-			enterISR[currentCore] = TraceDqr::isInterrupt;
+		if ((nextAddr != 0) && (currentAddr + immediate != nextAddr)) {
+			enterISR[core] = TraceDqr::isInterrupt;
 		}
 		break;
 	case TraceDqr::INST_C_JAL:
@@ -12109,8 +12093,8 @@ TraceDqr::DQErr Simulator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint
 			crFlag |= TraceDqr::isCall;
 		}
 
-		if (currentAddr + immediate != nextAddr) {
-			enterISR[currentCore] = TraceDqr::isInterrupt;
+		if ((nextAddr != 0) && (currentAddr + immediate != nextAddr)) {
+			enterISR[core] = TraceDqr::isInterrupt;
 		}
 		break;
 	case TraceDqr::INST_C_JR:
@@ -12155,8 +12139,8 @@ TraceDqr::DQErr Simulator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint
 		// could include register info and then we could tell
 		break;
 	default:
-		if ((currentAddr + inst_size/8) != nextAddr) {
-			enterISR[currentCore] = TraceDqr::isInterrupt;
+		if ((nextAddr != 0) && ((currentAddr + inst_size/8) != nextAddr)) {
+			enterISR[core] = TraceDqr::isInterrupt;
 		}
 		break;
 	}
@@ -12172,12 +12156,12 @@ TraceDqr::DQErr Simulator::getTraceFileOffset(int &size,int &offset)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Simulator::getNextSrec(int nextLine,SRec &srec)
+TraceDqr::DQErr Simulator::getNextSrec(int nextLine,int core,SRec &srec)
 {
 	TraceDqr::DQErr rc;
 
 	do {
-		rc = parseLine(nextLine,&srec);
+		rc = parseLine(nextLine,core,&srec);
 		nextLine += 1;
 
 		if (rc != TraceDqr::DQERR_OK) {
@@ -12188,27 +12172,6 @@ TraceDqr::DQErr Simulator::getNextSrec(int nextLine,SRec &srec)
 	// when we get here, we have read the next valid SRec in the input. Could be for any core
 
 	return TraceDqr::DQERR_OK;
-}
-
-TraceDqr::DQErr Simulator::flushNextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo)
-{
-	TraceDqr::DQErr rc;
-
-	for (int i = 0; i < DQR_MAXCORES; i++) {
-		if (haveCurrentSrec[i]){
-			haveCurrentSrec[i] = false;
-
-			// don't need to compute branch flags for call/return because this is the last instrucition
-			// and we can't tell if a branch is taken or not. But e could determine call/return info.
-			// We should be doing that. Dang!
-
-			rc = buildInstructionFromSrec(&currentSrec[i],TraceDqr::BRFLAG_none,TraceDqr::isNone);
-
-			return rc;
-		}
-	}
-
-	return deferredStatus;
 }
 
 TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchFlags brFlags,int crFlag)
@@ -12384,67 +12347,54 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage 
 		return TraceDqr::DQERR_EOF;
 	}
 
-	if (!flushing) {
-		bool done = false;
+	// see if we have a cached lookahead Srec and use it if the lines match
+
+	if (haveLookaheadSrec && (nextLine == lookaheadSrec.line)) {
+		nextSrec = lookaheadSrec;
+		nextLine = nextSrec.line+1;
+	}
+	else {
+		// read next record for any core
 
 		do {
-			rc = getNextSrec(nextLine,nextSrec);
-
+			rc = getNextSrec(nextLine,-1,nextSrec);
 			if (rc != TraceDqr::DQERR_OK) {
-				deferredStatus = rc;
-				flushing = true;
-				done = true;
+				return rc;
 			}
-			else {
-				nextLine = nextSrec.line+1;	// as long as rc is not an error, nextSrec.line is valid
 
-				if (nextSrec.validLine && nextSrec.valid) {
-					if (haveCurrentSrec[nextSrec.coreId] == false) {
-						currentSrec[nextSrec.coreId] = nextSrec;
-						haveCurrentSrec[nextSrec.coreId] = true;
-
-						nextSrec.valid = false;
-
-						// don't set done to true, because we still don't have current and new srecs!
-					}
-					else {
-						// have two consecutive srecs for the same core. We are done looping
-
-						done = true;
-					}
-				}
-				else if (nextSrec.validLine && (nextSrec.haveFRF || nextSrec.haveVRF)) {
-					// for now, just ignore frf records. Don't update time because cycle
-					// count time for frf records does not seem to be associated with an
-					// instruction
-
-					// currentTime[nextSrec.coreId] = nextSrec.cycles;
-				}
-			}
-		} while (((nextSrec.validLine == false) || (nextSrec.valid == false)) && !done);
+			nextLine = nextSrec.line+1;	// as long as rc is not an error, nextSrec.line is valid
+		} while ((nextSrec.validLine == false) || (nextSrec.valid == false) || nextSrec.haveFRF || nextSrec.haveVRF);
 	}
 
-	if (flushing) {
-		rc = flushNextInstruction(&instructionInfo,&messageInfo,&sourceInfo);
+	// read next record for same core that the last read returned
 
-		if (instInfo != nullptr) {
-			*instInfo = &instructionInfo;
+	bool eof;
+	eof = false;
+	int lookaheadLine;
+	lookaheadLine = nextLine;
+
+	do {
+		rc = getNextSrec(lookaheadLine,nextSrec.coreId,lookaheadSrec);
+		if (rc != TraceDqr::DQERR_OK) {
+			eof = true;
 		}
-
-		if (srcInfo != nullptr) {
-			if (disassembler != nullptr) {
-//				shouldn't need to call getsrclines. FlushNextInstruciotn should be callingbuildinstructionfromsrec which fills it all in
-//
-//				disassembler->getSrcLines(instructionInfo.address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
-//
-				*srcInfo = &sourceInfo;
-			}
+		else {
+			lookaheadLine = lookaheadSrec.line+1;	// as long as rc is not an error, nextSrec.line is valid
 		}
+	} while (((lookaheadSrec.validLine == false) || (lookaheadSrec.valid == false) || lookaheadSrec.haveFRF || lookaheadSrec.haveVRF) && !eof);
 
-		return rc;
+	TraceDqr::ADDRESS lookaheadPC;
+
+	if (eof == false) {
+		haveLookaheadSrec = true;
+		lookaheadPC = lookaheadSrec.pc;
+	}
+	else {
+		haveLookaheadSrec = false;
+		lookaheadPC = 0;
 	}
 
-	rc = computeBranchFlags(currentSrec[currentCore].pc,currentSrec[currentCore].inst,nextSrec.pc,crFlag,brFlags);
+	rc = computeBranchFlags(nextSrec.coreId,nextSrec.pc,nextSrec.inst,lookaheadPC,crFlag,brFlags);
 	if (rc != TraceDqr::DQERR_OK) {
 		printf("Error: Simulator::NextInstruction(): could not compute branch flags\n");
 
@@ -12452,11 +12402,7 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage 
 		return status;
 	}
 
-	currentCore = nextSrec.coreId;
-
-	rc = buildInstructionFromSrec(&currentSrec[currentCore],brFlags,crFlag);
-
-	currentSrec[currentCore] = nextSrec;
+	rc = buildInstructionFromSrec(&nextSrec,brFlags,crFlag);
 
 	if (instInfo != nullptr) {
 		*instInfo = &instructionInfo;
@@ -12473,7 +12419,8 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage 
 	// improve print callback disassembly routines to use stream as a pointer to a struct with a buffer and
 	// and length to improve performance and allow multithreading (or multi object)
 	// improve disassembly to not print 32 bit literals as 64 bits
-	// bfd.h seems outof sync with libbfe. bfd_arch_riskv is wrong! Update bfd.h in lib\xx\bfd.h
+	// this may have been fixed - need to check:
+	//  bfd.h seems outof sync with libbfe. bfd_arch_riskv is wrong! Update bfd.h in lib\xx\bfd.h
 
 	return TraceDqr::DQERR_OK;
 }

@@ -452,7 +452,7 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
-		else if (strncmp("-tssize=",argv[i],sizeof "-tssize=") == 0) {
+		else if (strncmp("-tssize=",argv[i],strlen("-tssize=")) == 0) {
 			tssize = atoi(argv[i]+strlen("-tssize="));
 
 			if ((tssize <= 0) || (tssize > 64)) {
@@ -495,7 +495,7 @@ int main(int argc, char *argv[])
 
 			sf_name = argv[i];
 		}
-		else if (strncmp("-archsize=",argv[i],sizeof "-archsize=") == 0) {
+		else if (strncmp("-archsize=",argv[i],strlen("-archsize=")) == 0) {
 			archSize = atoi(argv[i]+strlen("-archsize="));
 
 			if ((archSize != 32) && (archSize != 64)) {
@@ -503,7 +503,7 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
-		else if (strncmp("-msglevel=",argv[i],sizeof "-msglevel") == 0) {
+		else if (strncmp("-msglevel=",argv[i],strlen("-msglevel=")) == 0) {
 			msgLevel = atoi(argv[i]+strlen("-msglevel="));
 
 			if ((msgLevel < 0) || (msgLevel > 3)) {
