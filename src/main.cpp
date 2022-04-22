@@ -661,6 +661,8 @@ int main(int argc, char *argv[])
 		}
 
 		sim->setLabelMode(labelFlag);
+
+		srcbits = 1;
 	}
 	else if ((pf_name != nullptr) || (tf_name != nullptr)) {
 		TraceDqr::DQErr rc;
